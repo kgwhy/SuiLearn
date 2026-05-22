@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Ops"
+  short_description: "Git workflows with Conventional Commits"
+  default_prompt: "Use $git-ops to inspect changes and create a Conventional Commits message."

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">SuiLearn 学习</string>
+    <string name="home_title">SuiLearn 学习</string>
+    <string name="home_subtitle">Java 基础学习包</string>
+    <string name="search_hint">搜索题目、知识点、分类和解析</string>
+    <string name="reset_confirm_title">重置本地学习数据？</string>
+    <string name="reset_confirm_text">这将清空答题记录、错题本、收藏和练习会话。</string>
+</resources>

@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "packId": "java_interview_v1",
+  "packName": "Java 基础",
+  "packVersion": 1,
+  "description": "SuiLearn 初始题包",
+  "categories": [
+    {
+      "categoryId": "jvm",
+      "name": "JVM",
+      "description": "JVM",
+      "sortOrder": 1
+    },
+    {
+      "categoryId": "concurrency",
+      "name": "并发",
+      "description": "并发",
+      "sortOrder": 2
+    }
+  ],
+  "knowledgePoints": [
+    {
+      "knowledgePointId": "volatile",
+      "categoryId": "concurrency",
+      "name": "volatile",
+      "description": "volatile 关键字",
+      "sortOrder": 1
+    },
+    {
+      "knowledgePointId": "synchronized",
+      "categoryId": "concurrency",
+      "name": "synchronized",
+      "description": "synchronized 与锁",
+      "sortOrder": 2
+    }
+  ],
+  "questions": [
+    {
+      "questionId": "concurrency_volatile_001",
+      "categoryId": "concurrency",
+      "type": "SINGLE_CHOICE",
+      "stem": "volatile 的作用是什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "保证原子性"
+        },
+        {
+          "key": "B",
+          "content": "保证可见性和有序性"
+        },
+        {
+          "key": "C",
+          "content": "代替 synchronized"
+        },
+        {
+          "key": "D",
+          "content": "让对象不可变"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "volatile 保证可见性并限制重排序。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "volatile"
+      ],
+      "sortOrder": 1
+    },
+    {
+      "questionId": "concurrency_sync_001",
+      "categoryId": "concurrency",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "关于 synchronized 的说法哪些正确？",
+      "options": [
+        {
+          "key": "A",
+          "content": "它提供互斥"
+        },
+        {
+          "key": "B",
+          "content": "它提供可见性"
+        },
+        {
+          "key": "C",
+          "content": "它总是比 volatile 更快"
+        },
+        {
+          "key": "D",
+          "content": "它只能用于静态方法"
+        }
+      ],
+      "answer": [
+        "A",
+        "B"
+      ],
+      "explanation": "synchronized 提供互斥与可见性。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "synchronized"
+      ],
+      "sortOrder": 2
+    },
+    {
+      "questionId": "jvm_gc_001",
+      "categoryId": "jvm",
+      "type": "TRUE_FALSE",
+      "stem": "大多数 Java 对象会被 GC 自动回收。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "在 Java 中，大多数对象生命周期由 GC 管理。",
+      "difficulty": 1,
+      "knowledgePointIds": [],
+      "sortOrder": 3
+    },
+    {
+      "questionId": "short_answer_001",
+      "categoryId": "jvm",
+      "type": "SHORT_ANSWER",
+      "stem": "用一句话说明 JVM 负责什么。",
+      "options": [],
+      "answer": [
+        "运行时"
+      ],
+      "explanation": "JVM 负责执行字节码，并管理内存和 GC 等运行时服务。",
+      "difficulty": 2,
+      "knowledgePointIds": [],
+      "sortOrder": 4
+    }
+  ]
+}
