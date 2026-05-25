@@ -2,6 +2,9 @@ package com.suilearn.navigation
 
 sealed class AppDestination(val route: String) {
     data object Home : AppDestination("home")
+    data object Library : AppDestination("library")
+    data object Review : AppDestination("review")
+    data object Profile : AppDestination("profile")
     data object Practice : AppDestination("practice")
     data object Categories : AppDestination("categories")
     data object WrongBook : AppDestination("wrongbook")

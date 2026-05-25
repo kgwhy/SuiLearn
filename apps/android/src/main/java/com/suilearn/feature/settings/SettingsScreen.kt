@@ -46,11 +46,11 @@ fun SettingsScreen(settingsViewModel: SettingsViewModel) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(20.dp),
     ) {
         item {
-            AppSectionCard(title = "设置") {
+            AppSectionCard(title = "我的", subtitle = "管理本地题包与学习数据。") {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("当前题包：${uiState.studyPackName ?: "未初始化"}")
                     Text("题包版本：${uiState.packVersion?.toString() ?: "-"}")

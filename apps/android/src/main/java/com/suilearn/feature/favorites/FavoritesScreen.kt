@@ -20,15 +20,16 @@ import com.suilearn.ui.AppSectionCard
 fun FavoritesScreen(
     favoritesViewModel: FavoritesViewModel,
     onStartFavoritePractice: () -> Unit,
+    onStartQuestionPractice: (String) -> Unit,
 ) {
     val uiState by favoritesViewModel.uiState.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(20.dp),
     ) {
         item {
-            AppSectionCard(title = "收藏", action = "练习", onActionClick = onStartFavoritePractice) {
+            AppSectionCard(title = "收藏", subtitle = "把高价值题目集中回看。", action = "练习", onActionClick = onStartFavoritePractice) {
                 Text("这里显示已收藏的题目。")
             }
         }
@@ -36,8 +37,10 @@ fun FavoritesScreen(
             QuestionSummaryRow(
                 model = favorite,
                 leadingIcon = Icons.Outlined.StarBorder,
-                trailingAction = null,
-                onTrailingAction = null,
+                trailingAction = "练习",
+                onTrailingAction = { onStartQuestionPractice(favorite.questionId) },
+                secondaryAction = "取消收藏",
+                onSecondaryAction = { favoritesViewModel.onEvent(FavoritesEvent.ToggleFavorite(favorite.questionId)) },
             )
         }
     }

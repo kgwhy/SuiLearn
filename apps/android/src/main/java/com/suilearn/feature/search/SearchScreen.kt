@@ -10,13 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.suilearn.core.model.QuestionSearchResult
 import com.suilearn.core.model.SearchResultType
+import com.suilearn.ui.AppOutlinedActionButton
 import com.suilearn.ui.AppSectionCard
 
 @Composable
@@ -44,11 +45,11 @@ fun SearchScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        contentPadding = PaddingValues(20.dp),
     ) {
         item {
-            AppSectionCard(title = "搜索") {
+            AppSectionCard(title = "搜索题目", subtitle = "从题干、分类和知识点里快速定位。") {
                 OutlinedTextField(
                     value = uiState.query,
                     onValueChange = { newValue: String ->
@@ -77,33 +78,33 @@ private fun SearchResultRow(
     onStartPractice: (String) -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(result.title, fontWeight = FontWeight.SemiBold)
-            Text(result.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(result.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(result.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("类型：${result.type.label()}")
+                Text("类型：${result.type.label()}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (result.categoryName.isNotBlank()) {
-                    Text("分类：${result.categoryName}")
+                    Text("分类：${result.categoryName}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                AppOutlinedActionButton(
+                    text = if (result.type == SearchResultType.QUESTION) "去练习" else "打开",
                     onClick = {
                         if (result.type == SearchResultType.QUESTION) {
                             onStartPractice(result.id)
                         } else {
                             onOpenKnowledgePoint(result.id)
                         }
-                    }
-                ) {
-                    Text(if (result.type == SearchResultType.QUESTION) "去练习" else "打开")
-                }
+                    },
+                )
             }
         }
     }

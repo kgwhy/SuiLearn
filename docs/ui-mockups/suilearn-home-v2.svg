@@ -1,0 +1,78 @@
+<svg width="390" height="844" viewBox="0 0 390 844" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="390" height="844" rx="34" fill="#F7F8F5"/>
+  <rect x="18" y="18" width="354" height="808" rx="28" fill="#FAFBF8" stroke="#DDE4DA"/>
+
+  <text x="34" y="58" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#222B26">9:41</text>
+  <rect x="304" y="48" width="21" height="10" rx="3" stroke="#222B26" stroke-width="1.4"/>
+  <rect x="327" y="51" width="2.5" height="4" rx="1" fill="#222B26"/>
+  <rect x="308" y="51" width="13" height="4" rx="2" fill="#222B26"/>
+
+  <text x="34" y="96" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#59645E">今天继续</text>
+  <text x="34" y="127" font-family="Inter, system-ui, sans-serif" font-size="28" font-weight="800" letter-spacing="0" fill="#17221C">Java 面试题</text>
+  <rect x="300" y="88" width="42" height="42" rx="12" fill="#EAF2EC" stroke="#D7E4D8"/>
+  <path d="M313 109h16M321 101v16" stroke="#2F6B5B" stroke-width="2.2" stroke-linecap="round"/>
+
+  <rect x="34" y="152" width="322" height="154" rx="18" fill="#214D43"/>
+  <path d="M292 152H338C348 152 356 160 356 170V216C331 212 307 190 292 152Z" fill="#E8B44F"/>
+  <text x="54" y="185" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="600" fill="#BFD8CF">学习进度</text>
+  <text x="54" y="222" font-family="Inter, system-ui, sans-serif" font-size="38" font-weight="850" letter-spacing="0" fill="#FFFFFF">42%</text>
+  <text x="54" y="247" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="500" fill="#DDECE5">已练 126 / 300 题</text>
+  <rect x="54" y="266" width="132" height="24" rx="12" fill="#EAF2EC"/>
+  <text x="74" y="283" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#214D43">继续上次练习</text>
+  <circle cx="285" cy="232" r="38" stroke="#3D7468" stroke-width="12"/>
+  <path d="M285 194A38 38 0 0 1 322 241" stroke="#F1C764" stroke-width="12" stroke-linecap="round"/>
+  <text x="269" y="238" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="800" fill="#FFFFFF">18</text>
+  <text x="263" y="258" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="600" fill="#DDECE5">天连续</text>
+
+  <rect x="34" y="322" width="153" height="64" rx="14" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <rect x="50" y="340" width="30" height="30" rx="9" fill="#FFF4D8"/>
+  <path d="M65 348l3 6 6 1-5 4 1 7-5-4-6 4 2-7-5-4 6-1 3-6Z" fill="#C78A11"/>
+  <text x="92" y="349" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="600" fill="#67736B">今日目标</text>
+  <text x="92" y="371" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#17221C">20 题</text>
+
+  <rect x="203" y="322" width="153" height="64" rx="14" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <rect x="219" y="340" width="30" height="30" rx="9" fill="#FFE9E3"/>
+  <path d="M228 356h13M234 349v14" stroke="#B94F3E" stroke-width="2.2" stroke-linecap="round"/>
+  <text x="261" y="349" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="600" fill="#67736B">待复盘</text>
+  <text x="261" y="371" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#17221C">7 道</text>
+
+  <text x="34" y="424" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="800" fill="#17221C">学习路径</text>
+  <text x="34" y="446" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="500" fill="#67736B">优先补薄弱点，再进入综合练习</text>
+
+  <rect x="34" y="464" width="322" height="78" rx="16" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <rect x="50" y="482" width="42" height="42" rx="12" fill="#EAF2EC"/>
+  <path d="M62 504h18M62 496h18M62 512h11" stroke="#2F6B5B" stroke-width="2.2" stroke-linecap="round"/>
+  <text x="108" y="493" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="800" fill="#17221C">集合与泛型</text>
+  <text x="108" y="516" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#67736B">正确率 54% · 12 道相关题</text>
+  <rect x="277" y="489" width="56" height="28" rx="14" fill="#214D43"/>
+  <text x="294" y="508" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#FFFFFF">练习</text>
+
+  <rect x="34" y="554" width="322" height="78" rx="16" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <rect x="50" y="572" width="42" height="42" rx="12" fill="#FFF4D8"/>
+  <path d="M61 592c7-12 16-12 23 0M61 603c7-12 16-12 23 0" stroke="#A66E05" stroke-width="2.1" stroke-linecap="round"/>
+  <text x="108" y="583" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="800" fill="#17221C">JVM 内存模型</text>
+  <text x="108" y="606" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#67736B">正确率 61% · 推荐复盘</text>
+  <rect x="277" y="579" width="56" height="28" rx="14" fill="#EEF2ED" stroke="#DDE4DA"/>
+  <text x="294" y="598" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#214D43">查看</text>
+
+  <text x="34" y="670" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="800" fill="#17221C">快速入口</text>
+  <rect x="34" y="688" width="96" height="70" rx="16" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <path d="M70 715h24M82 703v24" stroke="#2F6B5B" stroke-width="2.3" stroke-linecap="round"/>
+  <text x="65" y="745" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#17221C">顺序练习</text>
+  <rect x="147" y="688" width="96" height="70" rx="16" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <circle cx="195" cy="715" r="11" stroke="#B94F3E" stroke-width="2.3"/>
+  <path d="M203 723l8 8" stroke="#B94F3E" stroke-width="2.3" stroke-linecap="round"/>
+  <text x="183" y="745" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#17221C">搜索</text>
+  <rect x="260" y="688" width="96" height="70" rx="16" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <path d="M296 727l9-24 8 15 9-8" stroke="#C78A11" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="295" y="745" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="700" fill="#17221C">统计</text>
+
+  <rect x="34" y="778" width="322" height="52" rx="22" fill="#FFFFFF" stroke="#DDE4DA"/>
+  <rect x="48" y="788" width="70" height="32" rx="16" fill="#EAF2EC"/>
+  <path d="M74 805l9-8 9 8v7H76v-7Z" stroke="#214D43" stroke-width="2" stroke-linejoin="round"/>
+  <text x="128" y="809" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#67736B">题库</text>
+  <path d="M205 797h20M205 805h20M205 813h12" stroke="#7C887F" stroke-width="2" stroke-linecap="round"/>
+  <text x="244" y="809" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#67736B">复盘</text>
+  <circle cx="318" cy="803" r="8" stroke="#7C887F" stroke-width="2"/>
+  <path d="M305 817c5-9 21-9 26 0" stroke="#7C887F" stroke-width="2" stroke-linecap="round"/>
+</svg>
