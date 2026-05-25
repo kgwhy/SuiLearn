@@ -1,112 +1,393 @@
 {
   "schemaVersion": 1,
   "packId": "java_interview_v1",
-  "packName": "Java 基础",
-  "packVersion": 1,
-  "description": "SuiLearn 初始题包",
+  "packName": "Java 八股学习包",
+  "packVersion": 2,
+  "description": "面向 Java 后端面试复习的第一版内置学习包，覆盖 JVM、Java 基础、集合、并发、Spring、MySQL、Redis、计算机网络、操作系统、设计模式和项目场景。",
   "categories": [
     {
       "categoryId": "jvm",
       "name": "JVM",
-      "description": "JVM",
+      "description": "Java 虚拟机内存、类加载和垃圾回收等核心知识。",
       "sortOrder": 1
+    },
+    {
+      "categoryId": "java_basics",
+      "name": "Java 基础",
+      "description": "Java 语言基础、面向对象、字符串和异常机制。",
+      "sortOrder": 2
+    },
+    {
+      "categoryId": "collections",
+      "name": "集合",
+      "description": "常用集合结构、HashMap、List 和迭代行为。",
+      "sortOrder": 3
     },
     {
       "categoryId": "concurrency",
       "name": "并发",
-      "description": "并发",
-      "sortOrder": 2
+      "description": "线程、锁、JMM、线程池和并发工具。",
+      "sortOrder": 4
+    },
+    {
+      "categoryId": "spring",
+      "name": "Spring / Spring Boot",
+      "description": "IoC、AOP、事务和 Spring Boot 自动配置。",
+      "sortOrder": 5
+    },
+    {
+      "categoryId": "mysql",
+      "name": "MySQL",
+      "description": "索引、事务隔离、MVCC 和 SQL 优化。",
+      "sortOrder": 6
+    },
+    {
+      "categoryId": "redis",
+      "name": "Redis",
+      "description": "Redis 数据结构、缓存问题、持久化和分布式锁。",
+      "sortOrder": 7
+    },
+    {
+      "categoryId": "computer_networks",
+      "name": "计算机网络",
+      "description": "TCP/IP、HTTP/HTTPS、连接建立和网络排查。",
+      "sortOrder": 8
+    },
+    {
+      "categoryId": "operating_system",
+      "name": "操作系统",
+      "description": "进程线程、内存管理、I/O 模型和系统资源。",
+      "sortOrder": 9
+    },
+    {
+      "categoryId": "design_patterns",
+      "name": "设计模式",
+      "description": "单例、工厂、策略等常见设计模式。",
+      "sortOrder": 10
+    },
+    {
+      "categoryId": "project_scenarios",
+      "name": "项目场景题",
+      "description": "幂等、分布式锁、性能优化和故障定位等实践问题。",
+      "sortOrder": 11
     }
   ],
   "knowledgePoints": [
     {
-      "knowledgePointId": "volatile",
-      "categoryId": "concurrency",
-      "name": "volatile",
-      "description": "volatile 关键字",
+      "knowledgePointId": "jvm_memory_model",
+      "categoryId": "jvm",
+      "name": "JVM 内存模型",
+      "description": "运行时数据区、堆、栈、方法区和对象分配。",
       "sortOrder": 1
     },
     {
-      "knowledgePointId": "synchronized",
-      "categoryId": "concurrency",
-      "name": "synchronized",
-      "description": "synchronized 与锁",
+      "knowledgePointId": "garbage_collection",
+      "categoryId": "jvm",
+      "name": "垃圾回收",
+      "description": "可达性分析、GC Roots、常见收集器和调优方向。",
       "sortOrder": 2
+    },
+    {
+      "knowledgePointId": "class_loading",
+      "categoryId": "jvm",
+      "name": "类加载机制",
+      "description": "加载、验证、准备、解析、初始化和双亲委派模型。",
+      "sortOrder": 3
+    },
+    {
+      "knowledgePointId": "oop_principles",
+      "categoryId": "java_basics",
+      "name": "面向对象",
+      "description": "封装、继承、多态、抽象类和接口。",
+      "sortOrder": 4
+    },
+    {
+      "knowledgePointId": "string_and_equals",
+      "categoryId": "java_basics",
+      "name": "String 与 equals",
+      "description": "字符串不可变、常量池、equals 与 hashCode 约定。",
+      "sortOrder": 5
+    },
+    {
+      "knowledgePointId": "exceptions",
+      "categoryId": "java_basics",
+      "name": "异常机制",
+      "description": "受检异常、运行时异常、try-catch-finally 和异常处理边界。",
+      "sortOrder": 6
+    },
+    {
+      "knowledgePointId": "hashmap",
+      "categoryId": "collections",
+      "name": "HashMap",
+      "description": "数组、链表、红黑树、扩容和哈希冲突处理。",
+      "sortOrder": 7
+    },
+    {
+      "knowledgePointId": "arraylist_linkedlist",
+      "categoryId": "collections",
+      "name": "ArrayList 与 LinkedList",
+      "description": "顺序表和链表在随机访问、插入删除上的差异。",
+      "sortOrder": 8
+    },
+    {
+      "knowledgePointId": "fail_fast",
+      "categoryId": "collections",
+      "name": "fail-fast",
+      "description": "集合迭代时结构性修改检测和 ConcurrentModificationException。",
+      "sortOrder": 9
+    },
+    {
+      "knowledgePointId": "thread_lifecycle",
+      "categoryId": "concurrency",
+      "name": "线程生命周期",
+      "description": "线程状态、启动、阻塞、等待和终止。",
+      "sortOrder": 10
+    },
+    {
+      "knowledgePointId": "synchronized_locks",
+      "categoryId": "concurrency",
+      "name": "synchronized 与锁",
+      "description": "互斥、可见性、锁升级、ReentrantLock 和锁粒度。",
+      "sortOrder": 11
+    },
+    {
+      "knowledgePointId": "volatile_jmm",
+      "categoryId": "concurrency",
+      "name": "volatile 与 JMM",
+      "description": "可见性、有序性、happens-before 和原子性边界。",
+      "sortOrder": 12
+    },
+    {
+      "knowledgePointId": "thread_pool",
+      "categoryId": "concurrency",
+      "name": "线程池",
+      "description": "核心参数、拒绝策略、队列选择和线程池治理。",
+      "sortOrder": 13
+    },
+    {
+      "knowledgePointId": "ioc_di",
+      "categoryId": "spring",
+      "name": "IoC 与 DI",
+      "description": "Bean 生命周期、依赖注入和容器管理。",
+      "sortOrder": 14
+    },
+    {
+      "knowledgePointId": "aop_proxy",
+      "categoryId": "spring",
+      "name": "AOP 与代理",
+      "description": "JDK 动态代理、CGLIB、切面和自调用失效。",
+      "sortOrder": 15
+    },
+    {
+      "knowledgePointId": "spring_transaction",
+      "categoryId": "spring",
+      "name": "Spring 事务",
+      "description": "事务传播行为、隔离级别、回滚规则和代理边界。",
+      "sortOrder": 16
+    },
+    {
+      "knowledgePointId": "mysql_indexes",
+      "categoryId": "mysql",
+      "name": "MySQL 索引",
+      "description": "B+ 树、联合索引、覆盖索引和索引失效。",
+      "sortOrder": 17
+    },
+    {
+      "knowledgePointId": "transactions_isolation",
+      "categoryId": "mysql",
+      "name": "事务隔离",
+      "description": "ACID、隔离级别、脏读、不可重复读和幻读。",
+      "sortOrder": 18
+    },
+    {
+      "knowledgePointId": "mvcc",
+      "categoryId": "mysql",
+      "name": "MVCC",
+      "description": "版本链、ReadView、快照读和当前读。",
+      "sortOrder": 19
+    },
+    {
+      "knowledgePointId": "redis_data_structures",
+      "categoryId": "redis",
+      "name": "Redis 数据结构",
+      "description": "String、Hash、List、Set、ZSet 及典型使用场景。",
+      "sortOrder": 20
+    },
+    {
+      "knowledgePointId": "cache_penetration",
+      "categoryId": "redis",
+      "name": "缓存穿透与击穿",
+      "description": "缓存穿透、击穿、雪崩的成因和常见治理手段。",
+      "sortOrder": 21
+    },
+    {
+      "knowledgePointId": "redis_persistence",
+      "categoryId": "redis",
+      "name": "Redis 持久化",
+      "description": "RDB、AOF、混合持久化和恢复权衡。",
+      "sortOrder": 22
+    },
+    {
+      "knowledgePointId": "tcp_ip",
+      "categoryId": "computer_networks",
+      "name": "TCP/IP",
+      "description": "TCP、UDP、可靠传输、拥塞控制和流量控制。",
+      "sortOrder": 23
+    },
+    {
+      "knowledgePointId": "http_https",
+      "categoryId": "computer_networks",
+      "name": "HTTP 与 HTTPS",
+      "description": "HTTP 方法、状态码、TLS 握手和证书校验。",
+      "sortOrder": 24
+    },
+    {
+      "knowledgePointId": "tcp_handshake",
+      "categoryId": "computer_networks",
+      "name": "TCP 三次握手",
+      "description": "连接建立、四次挥手、TIME_WAIT 和半连接队列。",
+      "sortOrder": 25
+    },
+    {
+      "knowledgePointId": "process_thread",
+      "categoryId": "operating_system",
+      "name": "进程与线程",
+      "description": "资源分配、调度、上下文切换和线程共享资源。",
+      "sortOrder": 26
+    },
+    {
+      "knowledgePointId": "memory_management",
+      "categoryId": "operating_system",
+      "name": "内存管理",
+      "description": "虚拟内存、分页、缺页中断和内存映射。",
+      "sortOrder": 27
+    },
+    {
+      "knowledgePointId": "io_model",
+      "categoryId": "operating_system",
+      "name": "I/O 模型",
+      "description": "阻塞、非阻塞、多路复用、同步和异步 I/O。",
+      "sortOrder": 28
+    },
+    {
+      "knowledgePointId": "singleton",
+      "categoryId": "design_patterns",
+      "name": "单例模式",
+      "description": "懒汉、饿汉、双重检查和枚举单例。",
+      "sortOrder": 29
+    },
+    {
+      "knowledgePointId": "factory",
+      "categoryId": "design_patterns",
+      "name": "工厂模式",
+      "description": "简单工厂、工厂方法、抽象工厂和对象创建解耦。",
+      "sortOrder": 30
+    },
+    {
+      "knowledgePointId": "strategy",
+      "categoryId": "design_patterns",
+      "name": "策略模式",
+      "description": "封装可替换算法，减少条件分支并提升扩展性。",
+      "sortOrder": 31
+    },
+    {
+      "knowledgePointId": "idempotency",
+      "categoryId": "project_scenarios",
+      "name": "接口幂等",
+      "description": "重复请求、唯一约束、Token、状态机和去重表。",
+      "sortOrder": 32
+    },
+    {
+      "knowledgePointId": "distributed_lock",
+      "categoryId": "project_scenarios",
+      "name": "分布式锁",
+      "description": "锁唯一标识、过期时间、续期、释放安全和 Redisson。",
+      "sortOrder": 33
+    },
+    {
+      "knowledgePointId": "performance_tuning",
+      "categoryId": "project_scenarios",
+      "name": "性能优化",
+      "description": "慢接口定位、缓存、异步、SQL 优化和容量评估。",
+      "sortOrder": 34
     }
   ],
   "questions": [
     {
-      "questionId": "concurrency_volatile_001",
-      "categoryId": "concurrency",
+      "questionId": "jvm_memory_area_001",
+      "categoryId": "jvm",
       "type": "SINGLE_CHOICE",
-      "stem": "volatile 的作用是什么？",
+      "stem": "JVM 运行时数据区中，线程私有的是哪一组？",
       "options": [
         {
           "key": "A",
-          "content": "保证原子性"
+          "content": "堆和方法区"
         },
         {
           "key": "B",
-          "content": "保证可见性和有序性"
+          "content": "虚拟机栈、本地方法栈和程序计数器"
         },
         {
           "key": "C",
-          "content": "代替 synchronized"
+          "content": "堆和虚拟机栈"
         },
         {
           "key": "D",
-          "content": "让对象不可变"
+          "content": "方法区和程序计数器"
         }
       ],
       "answer": [
         "B"
       ],
-      "explanation": "volatile 保证可见性并限制重排序。",
+      "explanation": "虚拟机栈、本地方法栈和程序计数器随线程创建和销毁，属于线程私有；堆和方法区主要被线程共享。",
       "difficulty": 2,
       "knowledgePointIds": [
-        "volatile"
+        "jvm_memory_model"
       ],
-      "sortOrder": 1
+      "sortOrder": 1,
+      "deprecated": false
     },
     {
-      "questionId": "concurrency_sync_001",
-      "categoryId": "concurrency",
+      "questionId": "jvm_gc_roots_001",
+      "categoryId": "jvm",
       "type": "MULTIPLE_CHOICE",
-      "stem": "关于 synchronized 的说法哪些正确？",
+      "stem": "下列哪些对象通常可以作为 GC Roots？",
       "options": [
         {
           "key": "A",
-          "content": "它提供互斥"
+          "content": "虚拟机栈中引用的对象"
         },
         {
           "key": "B",
-          "content": "它提供可见性"
+          "content": "方法区中类静态属性引用的对象"
         },
         {
           "key": "C",
-          "content": "它总是比 volatile 更快"
+          "content": "本地方法栈 JNI 引用的对象"
         },
         {
           "key": "D",
-          "content": "它只能用于静态方法"
+          "content": "只存在于不可达环中的对象"
         }
       ],
       "answer": [
         "A",
-        "B"
+        "B",
+        "C"
       ],
-      "explanation": "synchronized 提供互斥与可见性。",
+      "explanation": "可达性分析从 GC Roots 出发，栈帧引用、静态属性引用、常量引用、JNI 引用等都可能是根；不可达环本身不能成为根。",
       "difficulty": 3,
       "knowledgePointIds": [
-        "synchronized"
+        "garbage_collection"
       ],
-      "sortOrder": 2
+      "sortOrder": 2,
+      "deprecated": false
     },
     {
-      "questionId": "jvm_gc_001",
+      "questionId": "jvm_parent_delegation_001",
       "categoryId": "jvm",
       "type": "TRUE_FALSE",
-      "stem": "大多数 Java 对象会被 GC 自动回收。",
+      "stem": "双亲委派模型可以避免核心 Java 类被应用自定义类加载器随意替换。",
       "options": [
         {
           "key": "A",
@@ -120,24 +401,1372 @@
       "answer": [
         "A"
       ],
-      "explanation": "在 Java 中，大多数对象生命周期由 GC 管理。",
-      "difficulty": 1,
-      "knowledgePointIds": [],
-      "sortOrder": 3
+      "explanation": "双亲委派会先让父加载器尝试加载类，核心类通常由启动类加载器加载，有助于保证基础类库类型安全。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "class_loading"
+      ],
+      "sortOrder": 3,
+      "deprecated": false
     },
     {
-      "questionId": "short_answer_001",
+      "questionId": "jvm_oom_short_001",
       "categoryId": "jvm",
       "type": "SHORT_ANSWER",
-      "stem": "用一句话说明 JVM 负责什么。",
+      "stem": "排查 Java 线上 OOM 时，你会优先收集哪些信息？",
       "options": [],
       "answer": [
-        "运行时"
+        "优先保留错误日志、JVM 参数、GC 日志、堆转储 dump、进程内存和最近发布变更，再用 MAT、jmap、jcmd 等工具分析大对象、泄漏链路和内存增长趋势。"
       ],
-      "explanation": "JVM 负责执行字节码，并管理内存和 GC 等运行时服务。",
+      "explanation": "OOM 排查不能只看异常名，要先保留现场，再区分堆溢出、元空间溢出、直接内存或线程过多等原因，结合 GC 日志和 dump 才能定位根因。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "jvm_memory_model",
+        "garbage_collection"
+      ],
+      "sortOrder": 4,
+      "deprecated": false
+    },
+    {
+      "questionId": "jvm_class_init_001",
+      "categoryId": "jvm",
+      "type": "SINGLE_CHOICE",
+      "stem": "类加载过程里，执行静态变量赋值和静态代码块的是哪个阶段？",
+      "options": [
+        {
+          "key": "A",
+          "content": "加载"
+        },
+        {
+          "key": "B",
+          "content": "验证"
+        },
+        {
+          "key": "C",
+          "content": "准备"
+        },
+        {
+          "key": "D",
+          "content": "初始化"
+        }
+      ],
+      "answer": [
+        "D"
+      ],
+      "explanation": "准备阶段会为类变量分配内存并设置零值，初始化阶段才执行类构造器 <clinit>，包括静态变量显式赋值和静态代码块。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "class_loading"
+      ],
+      "sortOrder": 5,
+      "deprecated": false
+    },
+    {
+      "questionId": "java_oop_001",
+      "categoryId": "java_basics",
+      "type": "SINGLE_CHOICE",
+      "stem": "面向对象三大特性通常指什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "封装、继承、多态"
+        },
+        {
+          "key": "B",
+          "content": "编译、链接、运行"
+        },
+        {
+          "key": "C",
+          "content": "同步、异步、阻塞"
+        },
+        {
+          "key": "D",
+          "content": "索引、事务、锁"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "封装隐藏对象内部实现，继承复用和扩展父类能力，多态让同一接口在不同实现下表现出不同行为。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "oop_principles"
+      ],
+      "sortOrder": 6,
+      "deprecated": false
+    },
+    {
+      "questionId": "java_string_001",
+      "categoryId": "java_basics",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "关于 Java String，下列说法正确的是哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "String 对象不可变"
+        },
+        {
+          "key": "B",
+          "content": "字符串字面量通常会进入字符串常量池"
+        },
+        {
+          "key": "C",
+          "content": "== 总是比较两个字符串的内容"
+        },
+        {
+          "key": "D",
+          "content": "equals 通常用于比较字符串内容"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "D"
+      ],
+      "explanation": "String 不可变，字面量会复用常量池对象；== 比较引用是否相同，内容比较应使用 equals。",
       "difficulty": 2,
-      "knowledgePointIds": [],
-      "sortOrder": 4
+      "knowledgePointIds": [
+        "string_and_equals"
+      ],
+      "sortOrder": 7,
+      "deprecated": false
+    },
+    {
+      "questionId": "java_checked_exception_001",
+      "categoryId": "java_basics",
+      "type": "TRUE_FALSE",
+      "stem": "受检异常必须在编译期被捕获或声明抛出。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "除 RuntimeException 及其子类外，Exception 下的受检异常需要 catch 或 throws，否则无法通过编译。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "exceptions"
+      ],
+      "sortOrder": 8,
+      "deprecated": false
+    },
+    {
+      "questionId": "java_hashcode_short_001",
+      "categoryId": "java_basics",
+      "type": "SHORT_ANSWER",
+      "stem": "为什么重写 equals 时通常也必须重写 hashCode？",
+      "options": [],
+      "answer": [
+        "因为 HashMap、HashSet 等哈希集合先依赖 hashCode 定位桶，再用 equals 判断相等；两个 equals 相等的对象必须返回相同 hashCode，否则集合查找、去重可能出错。"
+      ],
+      "explanation": "equals 和 hashCode 有契约关系：相等对象必须有相同哈希值。只改 equals 会破坏哈希容器的定位逻辑，导致同一个逻辑对象被放入不同桶。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "string_and_equals"
+      ],
+      "sortOrder": 9,
+      "deprecated": false
+    },
+    {
+      "questionId": "java_interface_abstract_001",
+      "categoryId": "java_basics",
+      "type": "SINGLE_CHOICE",
+      "stem": "关于接口和抽象类，下列说法最准确的是哪一项？",
+      "options": [
+        {
+          "key": "A",
+          "content": "接口只能被一个类实现"
+        },
+        {
+          "key": "B",
+          "content": "抽象类不能包含普通方法"
+        },
+        {
+          "key": "C",
+          "content": "接口偏向能力约定，抽象类可承载共性状态和模板逻辑"
+        },
+        {
+          "key": "D",
+          "content": "接口和抽象类没有任何区别"
+        }
+      ],
+      "answer": [
+        "C"
+      ],
+      "explanation": "Java 类只能单继承但可实现多个接口。接口更适合定义能力和契约，抽象类可以保存状态并复用部分实现。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "oop_principles"
+      ],
+      "sortOrder": 10,
+      "deprecated": false
+    },
+    {
+      "questionId": "collections_hashmap_resize_001",
+      "categoryId": "collections",
+      "type": "SINGLE_CHOICE",
+      "stem": "HashMap 默认负载因子通常是多少？",
+      "options": [
+        {
+          "key": "A",
+          "content": "0.25"
+        },
+        {
+          "key": "B",
+          "content": "0.5"
+        },
+        {
+          "key": "C",
+          "content": "0.75"
+        },
+        {
+          "key": "D",
+          "content": "1.0"
+        }
+      ],
+      "answer": [
+        "C"
+      ],
+      "explanation": "JDK 中 HashMap 默认负载因子是 0.75，是空间利用率和冲突概率之间的折中。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "hashmap"
+      ],
+      "sortOrder": 11,
+      "deprecated": false
+    },
+    {
+      "questionId": "collections_arraylist_linkedlist_001",
+      "categoryId": "collections",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "关于 ArrayList 和 LinkedList，下列说法正确的是哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "ArrayList 底层主要是动态数组"
+        },
+        {
+          "key": "B",
+          "content": "LinkedList 随机访问通常比 ArrayList 更快"
+        },
+        {
+          "key": "C",
+          "content": "LinkedList 在已定位节点附近插入删除成本较低"
+        },
+        {
+          "key": "D",
+          "content": "ArrayList 扩容可能带来数组复制成本"
+        }
+      ],
+      "answer": [
+        "A",
+        "C",
+        "D"
+      ],
+      "explanation": "ArrayList 支持 O(1) 随机访问但扩容要复制数组；LinkedList 随机访问要遍历，优势主要在已定位节点后的插入删除。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "arraylist_linkedlist"
+      ],
+      "sortOrder": 12,
+      "deprecated": false
+    },
+    {
+      "questionId": "collections_fail_fast_001",
+      "categoryId": "collections",
+      "type": "TRUE_FALSE",
+      "stem": "fail-fast 机制可以保证并发修改集合时一定安全。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "fail-fast 只是尽力检测迭代期间的结构性修改并抛出 ConcurrentModificationException，不是并发安全保证。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "fail_fast"
+      ],
+      "sortOrder": 13,
+      "deprecated": false
+    },
+    {
+      "questionId": "collections_hashmap_short_001",
+      "categoryId": "collections",
+      "type": "SHORT_ANSWER",
+      "stem": "简述 HashMap 在 JDK 8 中处理哈希冲突的大致方式。",
+      "options": [],
+      "answer": [
+        "HashMap 通过数组定位桶，冲突时先使用链表存放节点；当链表长度达到阈值且容量足够时会树化为红黑树，以降低极端冲突下的查询成本。"
+      ],
+      "explanation": "JDK 8 的 HashMap 使用数组加链表加红黑树。树化不仅看链表长度，也看表容量，容量太小时会优先扩容而不是树化。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "hashmap"
+      ],
+      "sortOrder": 14,
+      "deprecated": false
+    },
+    {
+      "questionId": "collections_concurrent_hashmap_001",
+      "categoryId": "collections",
+      "type": "SINGLE_CHOICE",
+      "stem": "在需要高并发读写 Map 的场景中，通常优先选择哪种集合？",
+      "options": [
+        {
+          "key": "A",
+          "content": "HashMap"
+        },
+        {
+          "key": "B",
+          "content": "TreeMap"
+        },
+        {
+          "key": "C",
+          "content": "ConcurrentHashMap"
+        },
+        {
+          "key": "D",
+          "content": "WeakHashMap"
+        }
+      ],
+      "answer": [
+        "C"
+      ],
+      "explanation": "ConcurrentHashMap 面向并发访问设计，JDK 8 通过 CAS、volatile 和桶级 synchronized 等机制降低锁粒度。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "hashmap",
+        "synchronized_locks"
+      ],
+      "sortOrder": 15,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_volatile_001",
+      "categoryId": "concurrency",
+      "type": "SINGLE_CHOICE",
+      "stem": "volatile 变量主要保证什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "复合操作的原子性"
+        },
+        {
+          "key": "B",
+          "content": "可见性和一定的有序性"
+        },
+        {
+          "key": "C",
+          "content": "线程一定按创建顺序执行"
+        },
+        {
+          "key": "D",
+          "content": "对象不可变"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "volatile 写对后续读可见，并通过内存屏障限制相关重排序；但 i++ 这类复合操作仍不具备原子性。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "volatile_jmm"
+      ],
+      "sortOrder": 16,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_synchronized_001",
+      "categoryId": "concurrency",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "关于 synchronized，下列说法正确的是哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "可以保证临界区互斥"
+        },
+        {
+          "key": "B",
+          "content": "进入和退出同步块会建立可见性语义"
+        },
+        {
+          "key": "C",
+          "content": "只能修饰静态方法"
+        },
+        {
+          "key": "D",
+          "content": "锁对象不同则不能互斥同一份共享状态"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "D"
+      ],
+      "explanation": "synchronized 可修饰方法或代码块，关键在于所有线程必须竞争同一把锁；退出锁会把修改刷新出去，进入锁会读取最新值。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "synchronized_locks"
+      ],
+      "sortOrder": 17,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_thread_start_001",
+      "categoryId": "concurrency",
+      "type": "TRUE_FALSE",
+      "stem": "调用 Thread 的 run 方法会启动一个新的线程。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "直接调用 run 只是普通方法调用，仍在当前线程执行。只有调用 start 才会创建新线程并由 JVM 调度执行 run。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "thread_lifecycle"
+      ],
+      "sortOrder": 18,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_thread_pool_short_001",
+      "categoryId": "concurrency",
+      "type": "SHORT_ANSWER",
+      "stem": "为什么不建议直接使用 Executors.newFixedThreadPool 创建生产线程池？",
+      "options": [],
+      "answer": [
+        "因为 newFixedThreadPool 默认使用无界 LinkedBlockingQueue，任务堆积时可能导致内存压力甚至 OOM；生产环境应显式设置核心线程数、最大线程数、队列容量、线程名和拒绝策略。"
+      ],
+      "explanation": "线程池的风险往往来自无界队列或无界线程。显式配置参数可以让容量、降级和告警都可控，也便于排查线程来源。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "thread_pool"
+      ],
+      "sortOrder": 19,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_happens_before_001",
+      "categoryId": "concurrency",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "下列哪些属于常见 happens-before 关系？",
+      "options": [
+        {
+          "key": "A",
+          "content": "同一线程内，前面的操作 happens-before 后面的操作"
+        },
+        {
+          "key": "B",
+          "content": "对 volatile 变量的写 happens-before 后续对该变量的读"
+        },
+        {
+          "key": "C",
+          "content": "线程 start 操作 happens-before 被启动线程中的操作"
+        },
+        {
+          "key": "D",
+          "content": "任意两个线程中的操作天然 happens-before"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "程序次序规则、volatile 规则、线程启动规则都是 JMM 常见 happens-before 规则；不同线程之间不存在天然顺序。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "volatile_jmm",
+        "thread_lifecycle"
+      ],
+      "sortOrder": 20,
+      "deprecated": false
+    },
+    {
+      "questionId": "concurrency_deadlock_short_001",
+      "categoryId": "concurrency",
+      "type": "SHORT_ANSWER",
+      "stem": "线上怀疑 Java 服务发生死锁时，你会如何确认和处理？",
+      "options": [],
+      "answer": [
+        "先通过 jstack、jcmd Thread.print 或监控平台获取线程栈，查找 BLOCKED 线程和死锁检测信息；确认锁等待环后，可临时隔离流量或重启止血，再修复加锁顺序、锁粒度或超时策略。"
+      ],
+      "explanation": "死锁处理分为止血和根治。线程栈能看到线程持有和等待的 monitor 或 Lock，根治通常需要统一加锁顺序、减少嵌套锁或使用可超时锁。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "synchronized_locks",
+        "thread_lifecycle"
+      ],
+      "sortOrder": 21,
+      "deprecated": false
+    },
+    {
+      "questionId": "spring_ioc_001",
+      "categoryId": "spring",
+      "type": "SINGLE_CHOICE",
+      "stem": "Spring IoC 容器最核心的职责是什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "管理对象创建、依赖装配和生命周期"
+        },
+        {
+          "key": "B",
+          "content": "替代数据库执行 SQL"
+        },
+        {
+          "key": "C",
+          "content": "保证所有方法自动异步执行"
+        },
+        {
+          "key": "D",
+          "content": "把 Java 代码编译成字节码"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "IoC 将对象创建和依赖关系交给容器管理，应用通过依赖注入获取协作对象，从而降低耦合。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "ioc_di"
+      ],
+      "sortOrder": 22,
+      "deprecated": false
+    },
+    {
+      "questionId": "spring_transaction_001",
+      "categoryId": "spring",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "导致 Spring 声明式事务不生效的常见原因有哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "同类内部方法自调用绕过代理"
+        },
+        {
+          "key": "B",
+          "content": "方法不是 public 且代理方式不支持"
+        },
+        {
+          "key": "C",
+          "content": "异常被捕获后没有继续抛出或标记回滚"
+        },
+        {
+          "key": "D",
+          "content": "方法名太短"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "Spring 声明式事务依赖代理拦截。自调用、方法可见性、异常处理和事务管理器配置都可能让事务没有按预期生效。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "spring_transaction",
+        "aop_proxy"
+      ],
+      "sortOrder": 23,
+      "deprecated": false
+    },
+    {
+      "questionId": "spring_aop_proxy_001",
+      "categoryId": "spring",
+      "type": "TRUE_FALSE",
+      "stem": "Spring AOP 的常见实现依赖代理对象，因此同一个类内部自调用可能绕过切面。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "外部调用经过代理才能触发增强。同类内部 this.method() 调用没有经过代理，因此事务、缓存、日志切面等都可能失效。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "aop_proxy"
+      ],
+      "sortOrder": 24,
+      "deprecated": false
+    },
+    {
+      "questionId": "spring_bean_lifecycle_short_001",
+      "categoryId": "spring",
+      "type": "SHORT_ANSWER",
+      "stem": "简述一个 Spring Bean 从创建到可用的大致生命周期。",
+      "options": [],
+      "answer": [
+        "容器读取 BeanDefinition，实例化对象，填充依赖，执行 Aware 回调和 BeanPostProcessor 前置处理，再执行初始化方法，随后可能被后置处理包装成代理，最终放入容器供使用。"
+      ],
+      "explanation": "Bean 生命周期是理解 IoC、AOP、事务代理的基础。真实流程还涉及作用域、循环依赖、销毁回调等，但主线是实例化、依赖注入、初始化、后置处理和使用。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "ioc_di",
+        "aop_proxy"
+      ],
+      "sortOrder": 25,
+      "deprecated": false
+    },
+    {
+      "questionId": "spring_boot_auto_config_001",
+      "categoryId": "spring",
+      "type": "SINGLE_CHOICE",
+      "stem": "Spring Boot 自动配置的主要目的是什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "根据 classpath、配置属性和条件注解自动装配常用 Bean"
+        },
+        {
+          "key": "B",
+          "content": "禁止开发者自定义 Bean"
+        },
+        {
+          "key": "C",
+          "content": "自动优化所有 SQL"
+        },
+        {
+          "key": "D",
+          "content": "把所有接口变成同步调用"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "自动配置通过条件注解判断当前环境，提供合理默认 Bean；用户自定义 Bean 或配置通常可以覆盖默认行为。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "ioc_di"
+      ],
+      "sortOrder": 26,
+      "deprecated": false
+    },
+    {
+      "questionId": "mysql_index_structure_001",
+      "categoryId": "mysql",
+      "type": "SINGLE_CHOICE",
+      "stem": "InnoDB 常用索引结构主要是哪一种？",
+      "options": [
+        {
+          "key": "A",
+          "content": "B+ 树"
+        },
+        {
+          "key": "B",
+          "content": "二叉搜索树"
+        },
+        {
+          "key": "C",
+          "content": "跳表"
+        },
+        {
+          "key": "D",
+          "content": "数组线性扫描"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "InnoDB 索引通常使用 B+ 树，树高低、范围查询友好，叶子节点按键有序并通过链表连接。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "mysql_indexes"
+      ],
+      "sortOrder": 27,
+      "deprecated": false
+    },
+    {
+      "questionId": "mysql_index_failure_001",
+      "categoryId": "mysql",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "下列哪些情况可能导致 MySQL 索引效果变差或失效？",
+      "options": [
+        {
+          "key": "A",
+          "content": "对索引列使用函数计算"
+        },
+        {
+          "key": "B",
+          "content": "联合索引查询不满足最左前缀原则"
+        },
+        {
+          "key": "C",
+          "content": "隐式类型转换"
+        },
+        {
+          "key": "D",
+          "content": "使用覆盖索引"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "函数计算、最左前缀不匹配和隐式转换都可能让优化器无法有效利用索引；覆盖索引通常是优化手段。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "mysql_indexes"
+      ],
+      "sortOrder": 28,
+      "deprecated": false
+    },
+    {
+      "questionId": "mysql_rr_phantom_001",
+      "categoryId": "mysql",
+      "type": "TRUE_FALSE",
+      "stem": "InnoDB 的可重复读隔离级别结合 MVCC 和 Next-Key Lock，可以在很多场景下解决幻读问题。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "快照读依赖 MVCC 保持一致视图，当前读会使用记录锁、间隙锁或 Next-Key Lock 控制并发插入，因此 InnoDB RR 与标准 RR 行为有所不同。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "transactions_isolation",
+        "mvcc"
+      ],
+      "sortOrder": 29,
+      "deprecated": false
+    },
+    {
+      "questionId": "mysql_mvcc_short_001",
+      "categoryId": "mysql",
+      "type": "SHORT_ANSWER",
+      "stem": "简述 MVCC 解决了什么问题，以及大致依赖哪些机制。",
+      "options": [],
+      "answer": [
+        "MVCC 让读写在一定程度上互不阻塞，提升并发性能；InnoDB 主要依赖隐藏事务 ID、回滚指针、undo log 版本链和 ReadView 判断某个版本是否对当前事务可见。"
+      ],
+      "explanation": "MVCC 的核心是多版本可见性判断。快照读读取符合 ReadView 的历史版本，当前读仍会加锁，因此不能把 MVCC 理解成完全无锁。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "mvcc"
+      ],
+      "sortOrder": 30,
+      "deprecated": false
+    },
+    {
+      "questionId": "mysql_acid_001",
+      "categoryId": "mysql",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "数据库事务 ACID 包含哪些特性？",
+      "options": [
+        {
+          "key": "A",
+          "content": "原子性"
+        },
+        {
+          "key": "B",
+          "content": "一致性"
+        },
+        {
+          "key": "C",
+          "content": "隔离性"
+        },
+        {
+          "key": "D",
+          "content": "持久性"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "explanation": "ACID 分别是 Atomicity、Consistency、Isolation、Durability，是事务可靠性的基本描述。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "transactions_isolation"
+      ],
+      "sortOrder": 31,
+      "deprecated": false
+    },
+    {
+      "questionId": "redis_string_001",
+      "categoryId": "redis",
+      "type": "SINGLE_CHOICE",
+      "stem": "Redis 中适合实现计数器的常用数据类型是哪一个？",
+      "options": [
+        {
+          "key": "A",
+          "content": "String"
+        },
+        {
+          "key": "B",
+          "content": "List"
+        },
+        {
+          "key": "C",
+          "content": "Set"
+        },
+        {
+          "key": "D",
+          "content": "Stream"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "Redis String 支持 INCR、DECR 等原子自增操作，常用于计数器、限流计数和简单状态值。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "redis_data_structures"
+      ],
+      "sortOrder": 32,
+      "deprecated": false
+    },
+    {
+      "questionId": "redis_cache_problems_001",
+      "categoryId": "redis",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "应对缓存穿透的常见手段有哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "缓存空值并设置较短过期时间"
+        },
+        {
+          "key": "B",
+          "content": "使用布隆过滤器拦截不存在的 key"
+        },
+        {
+          "key": "C",
+          "content": "对所有请求都删除缓存"
+        },
+        {
+          "key": "D",
+          "content": "对非法参数提前校验"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "D"
+      ],
+      "explanation": "缓存穿透是查询不存在数据导致请求打到数据库。空值缓存、布隆过滤器和参数校验都能降低无效请求压力。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "cache_penetration"
+      ],
+      "sortOrder": 33,
+      "deprecated": false
+    },
+    {
+      "questionId": "redis_rdb_aof_001",
+      "categoryId": "redis",
+      "type": "TRUE_FALSE",
+      "stem": "Redis 开启 AOF 后就绝对不会丢失任何数据。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "AOF 的可靠性取决于 fsync 策略。常用 everysec 策略通常最多丢失约 1 秒数据；always 更安全但性能成本更高。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "redis_persistence"
+      ],
+      "sortOrder": 34,
+      "deprecated": false
+    },
+    {
+      "questionId": "redis_hot_key_short_001",
+      "categoryId": "redis",
+      "type": "SHORT_ANSWER",
+      "stem": "热点 key 导致 Redis 压力过高时，可以从哪些方向优化？",
+      "options": [],
+      "answer": [
+        "可以先确认热点来源，再考虑本地缓存、读写分离、拆分 key、增加副本、限流降级、异步更新或预热缓存；同时要关注一致性和失效策略。"
+      ],
+      "explanation": "热点 key 优化不是单纯扩容 Redis。要结合访问模式、数据大小、更新频率和一致性要求，选择本地缓存、拆分或限流等组合方案。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "redis_data_structures",
+        "cache_penetration"
+      ],
+      "sortOrder": 35,
+      "deprecated": false
+    },
+    {
+      "questionId": "network_tcp_udp_001",
+      "categoryId": "computer_networks",
+      "type": "SINGLE_CHOICE",
+      "stem": "TCP 相比 UDP 的主要特点是什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "面向连接并提供可靠传输"
+        },
+        {
+          "key": "B",
+          "content": "完全不需要维护连接状态"
+        },
+        {
+          "key": "C",
+          "content": "一定比 UDP 延迟低"
+        },
+        {
+          "key": "D",
+          "content": "只能用于局域网通信"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "TCP 通过连接、序号、确认、重传、流量控制和拥塞控制提供可靠字节流；UDP 更轻量但不保证可靠传输。",
+      "difficulty": 1,
+      "knowledgePointIds": [
+        "tcp_ip"
+      ],
+      "sortOrder": 36,
+      "deprecated": false
+    },
+    {
+      "questionId": "network_http_status_001",
+      "categoryId": "computer_networks",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "下列 HTTP 状态码含义正确的是哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "200 表示请求成功"
+        },
+        {
+          "key": "B",
+          "content": "301 表示永久重定向"
+        },
+        {
+          "key": "C",
+          "content": "404 表示服务端内部错误"
+        },
+        {
+          "key": "D",
+          "content": "500 表示服务端内部错误"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "D"
+      ],
+      "explanation": "404 表示资源未找到，500 表示服务端内部错误；200 和 301 分别表示成功和永久重定向。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "http_https"
+      ],
+      "sortOrder": 37,
+      "deprecated": false
+    },
+    {
+      "questionId": "network_tcp_handshake_001",
+      "categoryId": "computer_networks",
+      "type": "TRUE_FALSE",
+      "stem": "TCP 三次握手的一个目的，是让双方确认彼此的发送和接收能力。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "三次握手通过 SYN、SYN+ACK、ACK 让双方同步初始序列号，并确认双向通信能力，减少历史连接报文造成的错误连接。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "tcp_handshake"
+      ],
+      "sortOrder": 38,
+      "deprecated": false
+    },
+    {
+      "questionId": "network_https_short_001",
+      "categoryId": "computer_networks",
+      "type": "SHORT_ANSWER",
+      "stem": "简述 HTTPS 相比 HTTP 多解决了哪些问题。",
+      "options": [],
+      "answer": [
+        "HTTPS 在 HTTP 上增加 TLS，主要提供身份认证、传输加密和完整性校验，降低中间人攻击、明文窃听和报文篡改风险。"
+      ],
+      "explanation": "HTTPS 不是新的应用层语义，而是在传输前建立 TLS 安全通道。证书链用于认证服务端身份，对称密钥用于后续高效加密通信。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "http_https"
+      ],
+      "sortOrder": 39,
+      "deprecated": false
+    },
+    {
+      "questionId": "os_process_thread_001",
+      "categoryId": "operating_system",
+      "type": "SINGLE_CHOICE",
+      "stem": "进程和线程的关系，下列说法最准确的是哪一项？",
+      "options": [
+        {
+          "key": "A",
+          "content": "线程是资源分配的基本单位，进程是 CPU 调度的基本单位"
+        },
+        {
+          "key": "B",
+          "content": "进程通常是资源分配单位，线程通常是调度执行单位"
+        },
+        {
+          "key": "C",
+          "content": "同一进程内线程完全不共享任何资源"
+        },
+        {
+          "key": "D",
+          "content": "一个进程只能包含一个线程"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "进程拥有独立地址空间等资源，线程共享进程资源并作为调度执行单元。不同系统表述略有差异，但这是面试中的常用理解。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "process_thread"
+      ],
+      "sortOrder": 40,
+      "deprecated": false
+    },
+    {
+      "questionId": "os_virtual_memory_001",
+      "categoryId": "operating_system",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "虚拟内存带来的好处包括哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "为进程提供连续的虚拟地址空间"
+        },
+        {
+          "key": "B",
+          "content": "增强进程之间的内存隔离"
+        },
+        {
+          "key": "C",
+          "content": "支持按需加载和换页"
+        },
+        {
+          "key": "D",
+          "content": "让物理内存容量无限大"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "虚拟内存通过地址映射提供隔离、连续地址视图和按需调页能力，但不能让物理资源真正无限。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "memory_management"
+      ],
+      "sortOrder": 41,
+      "deprecated": false
+    },
+    {
+      "questionId": "os_io_multiplexing_001",
+      "categoryId": "operating_system",
+      "type": "TRUE_FALSE",
+      "stem": "I/O 多路复用可以让一个线程同时管理多个连接的 I/O 就绪事件。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "select、poll、epoll 这类机制关注文件描述符就绪事件，使少量线程管理大量连接成为可能，常见于高并发网络服务。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "io_model"
+      ],
+      "sortOrder": 42,
+      "deprecated": false
+    },
+    {
+      "questionId": "os_context_switch_short_001",
+      "categoryId": "operating_system",
+      "type": "SHORT_ANSWER",
+      "stem": "为什么线程上下文切换过多会影响系统性能？",
+      "options": [],
+      "answer": [
+        "上下文切换需要保存和恢复寄存器、栈、调度状态等信息，还可能导致 CPU 缓存和 TLB 命中率下降；切换过多会把时间耗在调度上，而不是业务计算上。"
+      ],
+      "explanation": "高并发不等于线程越多越好。线程数超过 CPU 和 I/O 模型承载范围后，调度、锁竞争和缓存失效会明显拖慢吞吐。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "process_thread"
+      ],
+      "sortOrder": 43,
+      "deprecated": false
+    },
+    {
+      "questionId": "pattern_singleton_001",
+      "categoryId": "design_patterns",
+      "type": "SINGLE_CHOICE",
+      "stem": "实现线程安全且延迟加载的单例，常见方案是哪一种？",
+      "options": [
+        {
+          "key": "A",
+          "content": "双重检查锁配合 volatile"
+        },
+        {
+          "key": "B",
+          "content": "每次调用都 new 一个对象"
+        },
+        {
+          "key": "C",
+          "content": "使用普通静态变量但不做同步"
+        },
+        {
+          "key": "D",
+          "content": "让构造器 public"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "双重检查锁通过 volatile 防止指令重排序导致未完全初始化对象被读取，并减少初始化后的同步开销；枚举单例也是常见安全方案。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "singleton",
+        "volatile_jmm"
+      ],
+      "sortOrder": 44,
+      "deprecated": false
+    },
+    {
+      "questionId": "pattern_factory_strategy_001",
+      "categoryId": "design_patterns",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "关于工厂模式和策略模式，下列说法正确的是哪些？",
+      "options": [
+        {
+          "key": "A",
+          "content": "工厂模式关注对象创建过程的封装"
+        },
+        {
+          "key": "B",
+          "content": "策略模式关注一组算法或行为的可替换"
+        },
+        {
+          "key": "C",
+          "content": "策略模式常用于消除大量 if-else 分支"
+        },
+        {
+          "key": "D",
+          "content": "工厂模式要求所有产品类必须只有一个实例"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "工厂负责创建，策略负责行为选择。单例才关注实例数量，工厂模式本身不要求产品唯一。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "factory",
+        "strategy"
+      ],
+      "sortOrder": 45,
+      "deprecated": false
+    },
+    {
+      "questionId": "pattern_strategy_short_001",
+      "categoryId": "design_patterns",
+      "type": "SHORT_ANSWER",
+      "stem": "在支付渠道较多的系统中，为什么策略模式通常比大量 if-else 更合适？",
+      "options": [],
+      "answer": [
+        "策略模式可以把不同支付渠道的校验、下单和回调处理封装为独立策略，通过注册表或工厂选择策略，新增渠道时减少对既有分支的修改，符合开闭原则。"
+      ],
+      "explanation": "大量 if-else 会让主流程越来越难维护，也容易在新增渠道时影响旧逻辑。策略模式把变化点隔离到独立类中，更利于测试和扩展。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "strategy",
+        "factory"
+      ],
+      "sortOrder": 46,
+      "deprecated": false
+    },
+    {
+      "questionId": "scenario_idempotency_001",
+      "categoryId": "project_scenarios",
+      "type": "SINGLE_CHOICE",
+      "stem": "防止用户重复提交订单，最关键的设计目标是什么？",
+      "options": [
+        {
+          "key": "A",
+          "content": "让接口具备幂等性"
+        },
+        {
+          "key": "B",
+          "content": "让接口响应越慢越好"
+        },
+        {
+          "key": "C",
+          "content": "完全不记录请求状态"
+        },
+        {
+          "key": "D",
+          "content": "只依赖前端按钮置灰"
+        }
+      ],
+      "answer": [
+        "A"
+      ],
+      "explanation": "前端防重复只能改善体验，服务端仍需通过唯一请求号、业务唯一索引、状态机或去重表保证重复请求不会产生重复业务结果。",
+      "difficulty": 2,
+      "knowledgePointIds": [
+        "idempotency"
+      ],
+      "sortOrder": 47,
+      "deprecated": false
+    },
+    {
+      "questionId": "scenario_distributed_lock_001",
+      "categoryId": "project_scenarios",
+      "type": "MULTIPLE_CHOICE",
+      "stem": "使用 Redis 实现分布式锁时，需要重点注意哪些问题？",
+      "options": [
+        {
+          "key": "A",
+          "content": "加锁时设置唯一 value，释放时校验 value"
+        },
+        {
+          "key": "B",
+          "content": "设置合理过期时间，避免死锁"
+        },
+        {
+          "key": "C",
+          "content": "释放锁必须保证原子性"
+        },
+        {
+          "key": "D",
+          "content": "所有业务都必须无限等待锁"
+        }
+      ],
+      "answer": [
+        "A",
+        "B",
+        "C"
+      ],
+      "explanation": "分布式锁要避免误删他人锁、死锁和非原子释放。业务还需要超时、失败降级和锁粒度设计，不能无限等待。",
+      "difficulty": 3,
+      "knowledgePointIds": [
+        "distributed_lock"
+      ],
+      "sortOrder": 48,
+      "deprecated": false
+    },
+    {
+      "questionId": "scenario_cache_consistency_001",
+      "categoryId": "project_scenarios",
+      "type": "TRUE_FALSE",
+      "stem": "缓存和数据库双写时，只要先更新缓存再更新数据库，就一定不会出现不一致。",
+      "options": [
+        {
+          "key": "A",
+          "content": "对"
+        },
+        {
+          "key": "B",
+          "content": "错"
+        }
+      ],
+      "answer": [
+        "B"
+      ],
+      "explanation": "双写一致性受并发、失败和重试影响。常见方案是更新数据库后删除缓存，结合延迟双删、消息重试或订阅 binlog 做最终一致。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "performance_tuning",
+        "cache_penetration"
+      ],
+      "sortOrder": 49,
+      "deprecated": false
+    },
+    {
+      "questionId": "scenario_slow_api_short_001",
+      "categoryId": "project_scenarios",
+      "type": "SHORT_ANSWER",
+      "stem": "一个接口突然变慢，你会按什么思路排查？",
+      "options": [],
+      "answer": [
+        "先确认影响范围和时间点，查看监控、日志、链路追踪和最近发布；再分层定位应用 CPU、线程池、锁等待、GC、数据库慢 SQL、缓存命中率、下游依赖和网络问题，最后根据瓶颈做限流、缓存、SQL 优化、异步化或扩容。"
+      ],
+      "explanation": "慢接口排查要先定界再下钻，避免凭感觉改代码。链路追踪和指标能快速区分是应用内部、数据库、缓存、下游服务还是网络导致。",
+      "difficulty": 4,
+      "knowledgePointIds": [
+        "performance_tuning"
+      ],
+      "sortOrder": 50,
+      "deprecated": false
     }
   ]
 }

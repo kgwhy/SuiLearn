@@ -6,10 +6,12 @@ import com.suilearn.core.common.SystemClock
 import com.suilearn.core.common.UuidIdGenerator
 import com.suilearn.core.model.AnswerRecord
 import com.suilearn.core.model.Category
+import com.suilearn.core.model.CategoryProgress
 import com.suilearn.core.model.FavoriteQuestion
 import com.suilearn.core.model.KnowledgePoint
 import com.suilearn.core.model.KnowledgePointDetail
 import com.suilearn.core.model.KnowledgePointProgress
+import com.suilearn.core.model.KnowledgePointProgressSummary
 import com.suilearn.core.model.MasteryLevel
 import com.suilearn.core.model.calculateMasteryLevel
 import com.suilearn.core.model.PracticeMode
@@ -19,6 +21,7 @@ import com.suilearn.core.model.Question
 import com.suilearn.core.model.QuestionPack
 import com.suilearn.core.model.QuestionPackCategory
 import com.suilearn.core.model.QuestionPackKnowledgePoint
+import com.suilearn.core.model.RecentLearningRecord
 import com.suilearn.core.model.SearchResult
 import com.suilearn.core.model.SearchResultType
 import com.suilearn.core.model.StatisticsSummary
@@ -153,6 +156,12 @@ class InMemoryWrongQuestionRepository(
 ) : WrongQuestionRepository {
     private val wrongQuestions = linkedMapOf<String, WrongQuestion>()
 
+    override suspend fun listAll(): List<WrongQuestion> =
+        wrongQuestions.values.sortedWith(
+            compareBy<WrongQuestion> { if (it.status == WrongQuestionStatus.ACTIVE) 0 else 1 }
+                .thenByDescending { it.lastWrongAt }
+        )
+
     override suspend fun listActive(): List<WrongQuestion> = wrongQuestions.values.filter { it.status == WrongQuestionStatus.ACTIVE }
 
     override suspend fun upsertWrong(questionId: String, at: Long) {
@@ -236,18 +245,33 @@ class InMemorySearchRepository(
         val keyword = query.trim()
         if (keyword.isBlank()) return emptyList()
 
+        val categoryNames = studyPackRepository.listCategories().associate { it.categoryId to it.name }
+        val knowledgePoints = studyPackRepository.listKnowledgePoints().associateBy { it.knowledgePointId }
         val questions = questionRepository.listQuestions().filter {
             it.stem.contains(keyword, ignoreCase = true) ||
                 it.explanation.contains(keyword, ignoreCase = true) ||
                 it.answer.any { answer -> answer.contains(keyword, ignoreCase = true) } ||
-                it.knowledgePointIds.any { it.contains(keyword, ignoreCase = true) }
+                it.options.any { option -> option.content.contains(keyword, ignoreCase = true) } ||
+                categoryNames[it.categoryId]?.contains(keyword, ignoreCase = true) == true ||
+                it.knowledgePointIds.any { id ->
+                    val point = knowledgePoints[id]
+                    point?.name?.contains(keyword, ignoreCase = true) == true ||
+                        point?.description?.contains(keyword, ignoreCase = true) == true
+                }
         }
-
-        val categoryNames = studyPackRepository.listCategories().associate { it.categoryId to it.name }
-        val knowledgePoints = studyPackRepository.listKnowledgePoints().associateBy { it.knowledgePointId }
 
         val questionResults = questions.map {
             val matchedKnowledgePointNames = it.knowledgePointIds.mapNotNull { id -> knowledgePoints[id]?.name }
+            val matchedFields = buildList {
+                if (it.stem.contains(keyword, ignoreCase = true)) add("stem")
+                if (it.explanation.contains(keyword, ignoreCase = true)) add("explanation")
+                if (it.answer.any { answer -> answer.contains(keyword, ignoreCase = true) }) add("answer")
+                if (it.options.any { option -> option.content.contains(keyword, ignoreCase = true) }) add("options")
+                if (categoryNames[it.categoryId]?.contains(keyword, ignoreCase = true) == true) add("category")
+                matchedKnowledgePointNames
+                    .filter { name -> name.contains(keyword, ignoreCase = true) }
+                    .forEach { name -> add("knowledgePoint:$name") }
+            }
             SearchResult(
                 id = it.questionId,
                 type = SearchResultType.QUESTION,
@@ -257,12 +281,16 @@ class InMemorySearchRepository(
                 difficulty = it.difficulty,
                 hasAnswered = answerRecordRepository.countByQuestion(it.questionId) > 0,
                 hasWrongRecord = wrongQuestionRepository.get(it.questionId)?.status == WrongQuestionStatus.ACTIVE,
-                matchedFields = listOf("stem", "explanation", "answer") + matchedKnowledgePointNames.map { name -> "knowledgePoint:$name" },
+                matchedFields = matchedFields.ifEmpty { listOf("content") },
             )
         }
 
         val knowledgePointResults = studyPackRepository.listKnowledgePoints()
-            .filter { it.name.contains(keyword, ignoreCase = true) || it.description.contains(keyword, ignoreCase = true) }
+            .filter {
+                it.name.contains(keyword, ignoreCase = true) ||
+                    it.description.contains(keyword, ignoreCase = true) ||
+                    categoryNames[it.categoryId]?.contains(keyword, ignoreCase = true) == true
+            }
             .map {
                 SearchResult(
                     id = it.knowledgePointId,
@@ -273,7 +301,11 @@ class InMemorySearchRepository(
                     difficulty = null,
                     hasAnswered = false,
                     hasWrongRecord = false,
-                    matchedFields = listOf("name", "description"),
+                    matchedFields = buildList {
+                        if (it.name.contains(keyword, ignoreCase = true)) add("name")
+                        if (it.description.contains(keyword, ignoreCase = true)) add("description")
+                        if (categoryNames[it.categoryId]?.contains(keyword, ignoreCase = true) == true) add("category")
+                    }.ifEmpty { listOf("knowledgePoint") },
                 )
             }
 
@@ -289,19 +321,93 @@ class InMemoryStatisticsRepository(
     private val practiceSessionRepository: PracticeSessionRepository,
 ) : StatisticsRepository {
     override suspend fun getSummary(): StatisticsSummary {
-        val answered = answerRecordRepository.listAll().size
-        val correct = answerRecordRepository.listAll().count { it.isCorrect }
-        val accuracy = if (answered == 0) 0.0 else correct.toDouble() / answered
+        val records = answerRecordRepository.listAll()
+        val answered = records.map { it.questionId }.distinct().size
+        val correct = records.count { it.isCorrect }
+        val accuracy = if (records.isEmpty()) 0.0 else correct.toDouble() / records.size
         val activeWrongCount = wrongQuestionRepository.listActive().size
+        val knowledgeProgress = getKnowledgePointProgress()
+        val topWeak = knowledgeProgress
+            .filter { it.activeWrongCount > 0 || it.masteryLevel == MasteryLevel.WEAK }
+            .sortedWith(compareByDescending<KnowledgePointProgressSummary> { it.activeWrongCount }.thenBy { it.accuracy })
+            .take(3)
 
         return StatisticsSummary(
             totalAnsweredQuestions = answered,
             totalAccuracy = accuracy,
             activeWrongQuestionCount = activeWrongCount,
-            topWeakKnowledgePoints = emptyList(),
+            topWeakKnowledgePoints = topWeak.map { it.knowledgePoint.knowledgePointId },
             latestPracticeAt = answerRecordRepository.latestAnsweredAt(),
             latestRecoverableSessionId = practiceSessionRepository.getLatestInProgress()?.sessionId,
+            categoryProgress = getCategoryProgress(),
+            knowledgePointProgress = knowledgeProgress,
+            topWeakKnowledgePointProgress = topWeak,
+            recentLearningRecords = getRecentLearningRecords(),
         )
+    }
+
+    override suspend fun getCategoryProgress(): List<CategoryProgress> {
+        val categories = studyPackRepository.listCategories()
+        val questions = questionRepository.listQuestions().filterNot { it.isDeprecated }
+        val records = answerRecordRepository.listAll()
+        val activeWrongIds = wrongQuestionRepository.listActive().map { it.questionId }.toSet()
+
+        return categories.map { category ->
+            val categoryQuestions = questions.filter { it.categoryId == category.categoryId }
+            val ids = categoryQuestions.map { it.questionId }.toSet()
+            val categoryRecords = records.filter { it.questionId in ids }
+            CategoryProgress(
+                category = category,
+                questionCount = categoryQuestions.size,
+                practicedCount = categoryRecords.map { it.questionId }.distinct().size,
+                accuracy = categoryRecords.accuracy(),
+                activeWrongCount = ids.count { it in activeWrongIds },
+            )
+        }
+    }
+
+    override suspend fun getKnowledgePointProgress(): List<KnowledgePointProgressSummary> {
+        val categories = studyPackRepository.listCategories().associate { it.categoryId to it.name }
+        val points = studyPackRepository.listKnowledgePoints()
+        val questions = questionRepository.listQuestions().filterNot { it.isDeprecated }
+        val records = answerRecordRepository.listAll()
+        val activeWrongIds = wrongQuestionRepository.listActive().map { it.questionId }.toSet()
+
+        return points.map { point ->
+            val relatedQuestions = questions.filter { it.knowledgePointIds.contains(point.knowledgePointId) }
+            val ids = relatedQuestions.map { it.questionId }.toSet()
+            val relatedRecords = records.filter { it.questionId in ids }
+            val activeWrongCount = ids.count { it in activeWrongIds }
+            KnowledgePointProgressSummary(
+                knowledgePoint = point,
+                categoryName = categories[point.categoryId].orEmpty(),
+                questionCount = relatedQuestions.size,
+                practicedCount = relatedRecords.map { it.questionId }.distinct().size,
+                accuracy = relatedRecords.accuracy(),
+                activeWrongCount = activeWrongCount,
+                masteryLevel = calculateMasteryLevel(
+                    objectiveQuestionCount = relatedQuestions.size,
+                    practicedQuestionCount = relatedRecords.map { it.questionId }.distinct().size,
+                    totalObjectiveAnswers = relatedRecords.size,
+                    totalObjectiveCorrect = relatedRecords.count { it.isCorrect },
+                    activeWrongCount = activeWrongCount,
+                ),
+            )
+        }
+    }
+
+    override suspend fun getRecentLearningRecords(limit: Int): List<RecentLearningRecord> {
+        val categories = studyPackRepository.listCategories().associate { it.categoryId to it.name }
+        return answerRecordRepository.listRecent(limit).mapNotNull { record ->
+            val question = questionRepository.getQuestion(record.questionId) ?: return@mapNotNull null
+            RecentLearningRecord(
+                questionId = question.questionId,
+                stem = question.stem,
+                categoryName = categories[question.categoryId].orEmpty(),
+                isCorrect = record.isCorrect,
+                answeredAt = record.answeredAt,
+            )
+        }
     }
 
     override suspend fun getKnowledgePointDetail(knowledgePointId: String): KnowledgePointDetail? {
@@ -332,3 +438,6 @@ class InMemoryStatisticsRepository(
         )
     }
 }
+
+private fun List<AnswerRecord>.accuracy(): Double =
+    if (isEmpty()) 0.0 else count { it.isCorrect }.toDouble() / size

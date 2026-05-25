@@ -44,6 +44,10 @@ data class StatisticsSummary(
     val topWeakKnowledgePoints: List<String>,
     val latestPracticeAt: Long?,
     val latestRecoverableSessionId: String?,
+    val categoryProgress: List<CategoryProgress> = emptyList(),
+    val knowledgePointProgress: List<KnowledgePointProgressSummary> = emptyList(),
+    val topWeakKnowledgePointProgress: List<KnowledgePointProgressSummary> = emptyList(),
+    val recentLearningRecords: List<RecentLearningRecord> = emptyList(),
 )
 
 data class KnowledgePointProgress(
@@ -52,4 +56,30 @@ data class KnowledgePointProgress(
     val correctCount: Int,
     val activeWrongCount: Int,
     val masteryLevel: MasteryLevel,
+)
+
+data class CategoryProgress(
+    val category: Category,
+    val questionCount: Int,
+    val practicedCount: Int,
+    val accuracy: Double,
+    val activeWrongCount: Int,
+)
+
+data class KnowledgePointProgressSummary(
+    val knowledgePoint: KnowledgePoint,
+    val categoryName: String,
+    val questionCount: Int,
+    val practicedCount: Int,
+    val accuracy: Double,
+    val activeWrongCount: Int,
+    val masteryLevel: MasteryLevel,
+)
+
+data class RecentLearningRecord(
+    val questionId: String,
+    val stem: String,
+    val categoryName: String,
+    val isCorrect: Boolean,
+    val answeredAt: Long,
 )

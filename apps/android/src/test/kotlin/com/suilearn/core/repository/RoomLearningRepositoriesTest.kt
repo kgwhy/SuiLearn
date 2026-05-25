@@ -124,6 +124,7 @@ class RoomLearningRepositoriesTest {
         assertNotNull(mastered)
         assertEquals(WrongQuestionStatus.MASTERED, mastered.status)
         assertEquals(2000, mastered.masteredAt)
+        assertEquals(listOf(WrongQuestionStatus.MASTERED), wrongQuestionRepository.listAll().map { it.status })
         assertEquals(0, wrongQuestionRepository.listActive().size)
 
         wrongQuestionRepository.upsertWrong(questionId, 3000)
@@ -133,6 +134,7 @@ class RoomLearningRepositoriesTest {
         assertEquals(WrongQuestionStatus.ACTIVE, activeAgain.status)
         assertEquals(2, activeAgain.wrongCount)
         assertEquals(null, activeAgain.masteredAt)
+        assertEquals(listOf(WrongQuestionStatus.ACTIVE), wrongQuestionRepository.listAll().map { it.status })
         assertEquals(1, wrongQuestionRepository.listActive().size)
     }
 

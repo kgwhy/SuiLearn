@@ -48,6 +48,9 @@ class RoomAnswerRecordRepository(
 class RoomWrongQuestionRepository(
     private val learningDao: LearningDao,
 ) : WrongQuestionRepository {
+    override suspend fun listAll(): List<WrongQuestion> =
+        learningDao.listWrongQuestions().map { it.toDomain() }
+
     override suspend fun listActive(): List<WrongQuestion> =
         learningDao.listActiveWrongQuestions().map { it.toDomain() }
 

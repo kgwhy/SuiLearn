@@ -5,6 +5,9 @@ import com.suilearn.core.model.AnswerRecord
 import com.suilearn.core.model.FavoriteQuestion
 import com.suilearn.core.model.KnowledgePoint
 import com.suilearn.core.model.KnowledgePointDetail
+import com.suilearn.core.model.CategoryProgress
+import com.suilearn.core.model.KnowledgePointProgressSummary
+import com.suilearn.core.model.RecentLearningRecord
 import com.suilearn.core.model.PracticeMode
 import com.suilearn.core.model.PracticeQuestionState
 import com.suilearn.core.model.PracticeSubmission
@@ -62,6 +65,7 @@ interface PracticeSessionRepository {
 }
 
 interface WrongQuestionRepository {
+    suspend fun listAll(): List<WrongQuestion>
     suspend fun listActive(): List<WrongQuestion>
     suspend fun upsertWrong(questionId: String, at: Long)
     suspend fun markMastered(questionId: String, at: Long)
@@ -82,6 +86,9 @@ interface SearchRepository {
 
 interface StatisticsRepository {
     suspend fun getSummary(): StatisticsSummary
+    suspend fun getCategoryProgress(): List<CategoryProgress>
+    suspend fun getKnowledgePointProgress(): List<KnowledgePointProgressSummary>
+    suspend fun getRecentLearningRecords(limit: Int = 10): List<RecentLearningRecord>
     suspend fun getKnowledgePointDetail(knowledgePointId: String): KnowledgePointDetail?
 }
 

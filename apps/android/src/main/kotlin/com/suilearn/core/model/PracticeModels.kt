@@ -46,6 +46,7 @@ data class PracticeQuestionState(
     val question: Question,
     val index: Int,
     val total: Int,
+    val isFavorite: Boolean = false,
     val selectedAnswers: Set<String> = emptySet(),
     val shortAnswerText: String = "",
     val submitted: Boolean = false,

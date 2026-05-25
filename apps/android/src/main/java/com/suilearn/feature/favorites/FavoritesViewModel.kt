@@ -2,6 +2,7 @@ package com.suilearn.feature.favorites
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.suilearn.core.usecase.ToggleFavoriteQuestionUseCase
 import com.suilearn.di.AppDependencies
 import com.suilearn.feature.common.buildQuestionSummaryUiModel
 import kotlinx.coroutines.Dispatchers
@@ -15,6 +16,8 @@ import kotlinx.coroutines.withContext
 class FavoritesViewModel(
     private val dependencies: AppDependencies,
 ) : ViewModel() {
+    private val toggleFavoriteQuestionUseCase: ToggleFavoriteQuestionUseCase = dependencies.toggleFavoriteQuestionUseCase
+
     private val _uiState = MutableStateFlow(FavoritesUiState())
     val uiState: StateFlow<FavoritesUiState> = _uiState.asStateFlow()
 
@@ -28,6 +31,7 @@ class FavoritesViewModel(
     fun onEvent(event: FavoritesEvent) {
         when (event) {
             FavoritesEvent.Refresh -> refresh()
+            is FavoritesEvent.ToggleFavorite -> toggleFavorite(event.questionId)
         }
     }
 
@@ -48,6 +52,16 @@ class FavoritesViewModel(
                 }
             }
             _uiState.update { it.copy(favorites = favorites) }
+        }
+    }
+
+    private fun toggleFavorite(questionId: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                toggleFavoriteQuestionUseCase.execute(questionId)
+            }
+            refresh()
+            dependencies.notifyDataChanged()
         }
     }
 }

@@ -21,6 +21,18 @@ interface StudyPackDao {
     @Query("SELECT * FROM knowledge_points ORDER BY sort_order")
     suspend fun listKnowledgePoints(): List<KnowledgePointEntity>
 
+    @Query(
+        """
+        SELECT DISTINCT kp.* FROM knowledge_points kp
+        JOIN categories c ON c.category_id = kp.category_id
+        WHERE kp.name LIKE :pattern ESCAPE '\'
+            OR kp.description LIKE :pattern ESCAPE '\'
+            OR c.name LIKE :pattern ESCAPE '\'
+        ORDER BY kp.sort_order
+        """
+    )
+    suspend fun searchKnowledgePoints(pattern: String): List<KnowledgePointEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertStudyPack(entity: StudyPackEntity)
 
@@ -54,6 +66,28 @@ interface QuestionDao {
 
     @Query("SELECT * FROM questions WHERE question_id = :questionId")
     suspend fun findQuestion(questionId: String): QuestionEntity?
+
+    @Query(
+        """
+        SELECT DISTINCT q.* FROM questions q
+        LEFT JOIN categories c ON c.category_id = q.category_id
+        LEFT JOIN question_options o ON o.question_id = q.question_id
+        LEFT JOIN question_knowledge_points qkp ON qkp.question_id = q.question_id
+        LEFT JOIN knowledge_points kp ON kp.knowledge_point_id = qkp.knowledge_point_id
+        WHERE q.is_deprecated = 0
+            AND (
+                q.stem LIKE :pattern ESCAPE '\'
+                OR q.explanation LIKE :pattern ESCAPE '\'
+                OR q.answer LIKE :pattern ESCAPE '\'
+                OR c.name LIKE :pattern ESCAPE '\'
+                OR o.content LIKE :pattern ESCAPE '\'
+                OR kp.name LIKE :pattern ESCAPE '\'
+                OR kp.description LIKE :pattern ESCAPE '\'
+            )
+        ORDER BY q.sort_order
+        """
+    )
+    suspend fun searchQuestions(pattern: String): List<QuestionEntity>
 
     @Query("SELECT * FROM question_options WHERE question_id = :questionId ORDER BY sort_order")
     suspend fun listOptions(questionId: String): List<QuestionOptionEntity>
@@ -99,6 +133,14 @@ interface LearningDao {
 
     @Query("SELECT * FROM wrong_questions WHERE status = 'ACTIVE' ORDER BY last_wrong_at DESC")
     suspend fun listActiveWrongQuestions(): List<WrongQuestionEntity>
+
+    @Query(
+        """
+        SELECT * FROM wrong_questions
+        ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, last_wrong_at DESC
+        """
+    )
+    suspend fun listWrongQuestions(): List<WrongQuestionEntity>
 
     @Query("SELECT * FROM wrong_questions WHERE question_id = :questionId")
     suspend fun findWrongQuestion(questionId: String): WrongQuestionEntity?

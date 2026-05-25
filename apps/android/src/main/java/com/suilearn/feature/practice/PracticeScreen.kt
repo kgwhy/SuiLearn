@@ -94,12 +94,15 @@ fun PracticeScreen(
             AppSectionCard(
                 title = "练习 ${practiceState.index + 1}/${practiceState.total}",
                 subtitle = practiceState.question.questionId,
-                action = "结束",
-                onActionClick = { showFinishDialog = true },
+                action = if (practiceState.isFavorite) "取消收藏" else "收藏",
+                onActionClick = { practiceViewModel.onEvent(PracticeEvent.ToggleFavorite) },
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(question.stem, fontWeight = FontWeight.SemiBold)
                     Text("题型：${question.type.label()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = { showFinishDialog = true }) {
+                        Text("结束练习")
+                    }
                     if (submitted) {
                         Text(
                             text = when (practiceState.isCorrect) {

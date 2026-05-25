@@ -41,9 +41,9 @@ class QuestionPackRoomImporterTest {
         importer.import(pack)
 
         assertEquals(1, database.studyPackDao().listStudyPacks().size)
-        assertEquals(2, database.studyPackDao().listCategories().size)
-        assertEquals(2, database.studyPackDao().listKnowledgePoints().size)
-        assertEquals(4, database.questionDao().listQuestions().size)
+        assertEquals(11, database.studyPackDao().listCategories().size)
+        assertTrue(database.studyPackDao().listKnowledgePoints().size >= 30)
+        assertEquals(50, database.questionDao().listQuestions().size)
         assertEquals(pack.questions.sumOf { it.options.size }, database.questionDao().listOptions().size)
         assertEquals(
             pack.questions.sumOf { it.knowledgePointIds.size },

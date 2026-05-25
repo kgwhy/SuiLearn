@@ -149,7 +149,7 @@ class AppDependencies(
     )
     val searchLearningContentUseCase = SearchLearningContentUseCase(
         if (database != null) {
-            RoomSearchRepository(questionRepository, studyPackRepository, answerRecordRepository, wrongQuestionRepository)
+            RoomSearchRepository(database.questionDao(), database.studyPackDao(), answerRecordRepository, wrongQuestionRepository)
         } else {
             InMemorySearchRepository(questionRepository, studyPackRepository, answerRecordRepository, wrongQuestionRepository)
         }
@@ -166,10 +166,21 @@ class AppDependencies(
 
     suspend fun ensureSeeded() {
         seedMutex.withLock {
-            if (settingsRepository.getCurrentPackId() != null && studyPackRepository.getCurrentPack() != null) {
+            val pack = QuestionPackJsonParser.parse(questionPackSource.loadQuestionPackJson())
+            val currentPack = studyPackRepository.getCurrentPack()
+            val currentPackId = settingsRepository.getCurrentPackId()
+            val currentQuestionCount = questionRepository.listQuestions().size
+            val isCurrentContent =
+                currentPackId == pack.packId &&
+                    currentPack?.packVersion == pack.packVersion &&
+                    currentPack.schemaVersion == pack.schemaVersion &&
+                    currentQuestionCount == pack.questions.size
+
+            if (isCurrentContent) {
                 return
             }
-            val pack = QuestionPackJsonParser.parse(questionPackSource.loadQuestionPackJson())
+
+            resetLearningDataUseCase.execute()
             val result = initializeQuestionPackUseCase.execute(pack)
             if (result is AppResult.Success) {
                 notifyDataChanged()

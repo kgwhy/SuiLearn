@@ -27,5 +27,7 @@ sealed interface PracticeEvent {
         val durationMs: Long = 0L,
     ) : PracticeEvent
 
+    object ToggleFavorite : PracticeEvent
+
     object NextQuestion : PracticeEvent
 }

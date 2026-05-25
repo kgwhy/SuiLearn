@@ -34,7 +34,7 @@ class CategoriesViewModel(
         viewModelScope.launch {
             val categories = withContext(Dispatchers.IO) {
                 dependencies.ensureSeeded()
-                dependencies.studyPackRepository.listCategories()
+                dependencies.statisticsRepository.getCategoryProgress()
             }
             _uiState.update { it.copy(categories = categories) }
         }

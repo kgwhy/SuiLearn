@@ -14,6 +14,7 @@ import com.suilearn.core.usecase.EvaluateShortAnswerUseCase
 import com.suilearn.core.usecase.ResumePracticeSessionUseCase
 import com.suilearn.core.usecase.StartPracticeFromQuestionUseCase
 import com.suilearn.core.usecase.SubmitAnswerUseCase
+import com.suilearn.core.usecase.ToggleFavoriteQuestionUseCase
 import com.suilearn.di.AppDependencies
 import com.suilearn.ui.model.dataOrNull
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,7 @@ class PracticeViewModel(
     private val submitAnswerUseCase: SubmitAnswerUseCase = dependencies.submitAnswerUseCase
     private val evaluateShortAnswerUseCase: EvaluateShortAnswerUseCase = dependencies.evaluateShortAnswerUseCase
     private val startPracticeFromQuestionUseCase: StartPracticeFromQuestionUseCase = dependencies.startPracticeFromQuestionUseCase
+    private val toggleFavoriteQuestionUseCase: ToggleFavoriteQuestionUseCase = dependencies.toggleFavoriteQuestionUseCase
 
     private val _uiState = MutableStateFlow(PracticeUiState())
     val uiState: StateFlow<PracticeUiState> = _uiState.asStateFlow()
@@ -46,6 +48,7 @@ class PracticeViewModel(
                 durationMs = event.durationMs,
             )
             is PracticeEvent.ReviewShortAnswer -> reviewShortAnswer(event.review, event.durationMs)
+            PracticeEvent.ToggleFavorite -> toggleFavorite()
             PracticeEvent.NextQuestion -> nextQuestion()
         }
     }
@@ -151,6 +154,7 @@ class PracticeViewModel(
                             practiceState = current.practiceState?.copy(
                                 submitted = true,
                                 isCorrect = result.data.isCorrect,
+                                isFavorite = result.data.isFavorite,
                                 showExplanation = true,
                                 loading = false,
                             ),
@@ -203,6 +207,7 @@ class PracticeViewModel(
                         current.copy(
                             practiceState = current.practiceState?.copy(
                                 isCorrect = result.data.review == ShortAnswerReview.PASSED,
+                                isFavorite = result.data.isFavorite,
                                 loading = false,
                             ),
                             message = null,
@@ -249,10 +254,27 @@ class PracticeViewModel(
                         question = nextQuestion,
                         index = nextIndex,
                         total = current.total,
+                        isFavorite = dependencies.favoriteRepository.isFavorite(nextQuestion.questionId),
                     )
                 }
             }
             _uiState.update { it.copy(practiceState = nextState, message = null) }
+            dependencies.notifyDataChanged()
+        }
+    }
+
+    private fun toggleFavorite() {
+        val practiceState = _uiState.value.practiceState ?: return
+        viewModelScope.launch {
+            val isFavorite = withContext(Dispatchers.IO) {
+                toggleFavoriteQuestionUseCase.execute(practiceState.question.questionId).dataOrNull()
+            } ?: return@launch
+            _uiState.update { current ->
+                current.copy(
+                    practiceState = current.practiceState?.copy(isFavorite = isFavorite),
+                    message = if (isFavorite) "已收藏" else "已取消收藏",
+                )
+            }
             dependencies.notifyDataChanged()
         }
     }
@@ -265,6 +287,7 @@ class PracticeViewModel(
             question = question,
             index = session.currentIndex,
             total = session.questionIds.size,
+            isFavorite = dependencies.favoriteRepository.isFavorite(question.questionId),
         )
     }
 
