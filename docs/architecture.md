@@ -1,14 +1,16 @@
-# 随心学 SuiLearn 第一版技术方案
+# 随心学 SuiLearn 技术方案
 
 ## 0. 文档信息
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v0.1 |
+| 文档版本 | v0.2 |
 | 维护角色 | 架构 Agent |
 | 依据文档 | `docs/product-requirements.md`、`docs/tech-selection.md` |
-| 适用阶段 | 第一版 Android 本地学习 App |
+| 适用阶段 | 第一版 Android 本地学习 App + 第二版 AI / 知识库 / RAG |
 | 目标读者 | Android Agent、Server Backend Agent、Web Frontend Agent、内容 Agent、测试 Agent |
+
+本文前半部分保留第一版 Android 本地方案，新增第二版架构设计用于承接 PRD v2。第一版能力必须继续离线可用；第二版通过 Java Spring Boot 服务端承载 AI、资料导入、语义搜索和 RAG，Web 前端作为第二版知识库工作台，Android 只消费必要的生成和确认能力。
 
 ## 1. 技术决策摘要
 
@@ -992,14 +994,23 @@ Server Backend Agent 第一版不实现服务端代码、不创建 Spring Boot �
 
 ### 16.5 Web Frontend Agent
 
-Web Frontend Agent 第一版不创建 Web 项目。第三版启动后，负责 React + TypeScript Web 前端。
+Web Frontend Agent 第一版不创建 Web 项目。第二版启动后，负责 React + TypeScript 知识库工作台；第三版再扩展完整 Web 学习端。
 
-第三版后负责：
+第二版负责：
 
 - React 页面、路由、组件和浏览器端状态。
 - 调用 Server Backend API。
-- Web 端刷题、搜索、错题复习、知识点学习等核心流程。
+- 知识库创建、列表、详情、重命名和删除。
+- 资料导入、资料详情、资料删除、导入状态展示。
+- AI 生成题、解释、复习建议和 RAG 问答结果的确认、保存、丢弃或删除。
+- 语义搜索、资料问答和引用片段查看。
+- 知识库详情中的题目列表和学习统计轻量查看。
 - Web 前端测试和接口契约消费层。
+
+第三版后新增负责：
+
+- Web 端刷题、搜索、错题复习、收藏、学习记录、统计和知识点学习等完整学习流程。
+- 将第二版知识库工作台沉淀的组件和 API 消费层扩展到完整学习端。
 
 不得实现：
 
@@ -1143,3 +1154,160 @@ Gradle module 演进边界：
 
 - 如果第一版题量从 50 道大幅扩展到数百题以上，搜索是否升级 FTS 需要重新评估。
 - 如果 Android 实现阶段出现明显模块膨胀，再重新评估 Gradle module 拆分。
+
+## 21. 第二版架构决策摘要
+
+第二版以服务端优先落地，不把 AI / RAG 逻辑塞回 Android。核心边界如下：
+
+| 范围 | 决策 |
+|---|---|
+| 服务端 | `services/api`，Java + Spring Boot REST API |
+| API 契约 | `contracts/openapi/suilearn-v2.yaml` 作为跨端单点真相 |
+| 数据库 | PostgreSQL，向量检索优先 pgvector |
+| 异步任务 | 资料解析、embedding、题目生成使用任务模型；MVP 可先同步返回待确认结果 |
+| 文档解析 | MVP 接收文本化内容和文件名/sourceType；Markdown / TXT 可直接解析，PDF 二进制解析由后续 Apache Tika 适配层接入 |
+| AI 调用 | OpenAI-compatible Provider 接口封装，业务层不直接依赖具体厂商 SDK |
+| Web 前端 | 第二版新增知识库工作台，承载资料导入、生成结果确认、问答和语义搜索 |
+| Android | 保留第一版本地闭环；第二版只接入生成入口、任务状态和确认结果消费 |
+
+第二版不引入账号、多用户、云同步和自动发布机制。服务端可以先按单用户本地部署或开发环境运行，所有 API 仍保留 `knowledgeBaseId`、`sourceId` 和追溯字段，避免后续扩展时重写核心模型。
+
+## 22. 第二版模块划分
+
+```text
+services/api
+├─ api              REST Controller、请求/响应 DTO
+├─ application      UseCase / Service，编排业务流程
+├─ domain           KnowledgeBase、Material、Chunk、GeneratedContent 等领域模型
+├─ infrastructure
+│  ├─ persistence   PostgreSQL / pgvector Repository
+│  ├─ document      Markdown、TXT、PDF 解析适配
+│  ├─ ai            OpenAI-compatible 调用适配
+│  └─ task          任务状态、重试、错误记录
+└─ config           CORS、AI Provider、存储、任务配置
+
+contracts
+├─ openapi          REST API 契约
+└─ schemas          题库、生成题和资料导入 JSON schema
+
+apps/web
+└─ 第二版知识库工作台，按 OpenAPI 消费后端
+
+apps/android
+└─ 第一版本地闭环 + 第二版远程能力入口
+```
+
+服务端领域层必须保持与第一版核心命名一致：`StudyPack`、`Category`、`KnowledgePoint`、`Question`、`AnswerRecord`、`WrongQuestion`、`FavoriteQuestion`。第二版新增模型不替代第一版模型，而是围绕知识库和 AI 内容沉淀扩展：
+
+- `KnowledgeBase`：知识库边界，隔离资料、问答、搜索和生成结果。
+- `LearningMaterial`：用户导入资料，记录类型、状态、来源和所属知识库。
+- `MaterialChunk`：资料切片，是 RAG 引用和语义搜索的最小单位。
+- `GeneratedContent`：AI 生成内容的统一待确认池。
+- `GeneratedQuestionDraft`：待确认题目草稿，保存后转换为正式 `Question`。
+- `SavedAiNote`：用户保存的解释、复习建议或问答内容。
+- `SourceRef`：生成来源，可指向知识点、错题、资料、资料片段或知识库。
+
+## 23. 第二版核心流程
+
+### 23.1 AI 生成题
+
+1. 客户端从知识点、错题、资料或知识库发起生成请求。
+2. 服务端创建 `GenerationTask`，记录来源、范围、题型偏好和 prompt 参数。
+3. AI Provider 返回题干、选项、答案、解析、分类、知识点和来源说明。
+4. 服务端执行结构校验和基本质量校验，生成携带 `categoryId` / `categoryName` / `knowledgePointIds` 的 `GeneratedQuestionDraft`。
+5. 草稿进入 `PENDING_REVIEW`，客户端展示确认页。
+6. 用户选择保存、编辑后保存、删除或丢弃。
+7. 保存后转换为保留同一分类与知识点字段的正式题目，后续可进入刷题、错题、收藏、搜索和统计。
+
+### 23.2 资料导入与知识点提取
+
+1. 用户在知识库中上传 Markdown、TXT 或 PDF 来源资料；MVP 契约接收文本化后的内容、文件名和 `sourceType`，不承诺已解析真实 PDF 二进制。
+2. 服务端保存 `LearningMaterial`，状态从 `UPLOADED` 进入 `PARSING`。
+3. Document Parser 输出纯文本与结构信息；PDF 二进制解析在 MVP 后通过适配层接入。
+4. Chunker 按标题、段落和长度切片，形成 `MaterialChunk`。
+5. Embedding Worker 写入向量索引。
+6. Knowledge Extractor 生成候选知识点，进入可编辑状态。
+7. 用户可以编辑或删除提取出的知识点。
+
+资料删除采用软删除优先：`LearningMaterial` 标记为 `DELETED` 后，不再参与 RAG、语义搜索和新生成任务；关联的 `MaterialChunk` 与 embedding 失效或异步清理。已经保存为正式题目、AI 笔记、解释或复习建议的内容默认保留，但必须保留 `SourceRef`、设置 `SourceRef.deleted = true`，并在详情中提示来源资料已删除；仍处于 `PENDING_REVIEW` 的生成内容默认标记为 `DELETED`，避免用户继续保存不可追溯草稿。
+
+### 23.3 RAG 问答
+
+1. 用户必须指定知识库或单份资料范围提问，禁止隐式全局问答。
+2. Query Service 做语义检索，返回候选资料片段。
+3. RAG Service 只基于候选片段组织回答。
+4. 如果证据不足，返回 `uncertain = true` 和“不确定 / 资料中未找到明确依据”提示。
+5. 回答必须携带引用片段，客户端可跳转到资料详情。
+
+### 23.4 语义搜索
+
+语义搜索统一返回多类型结果：
+
+- `QUESTION`
+- `KNOWLEDGE_POINT`
+- `MATERIAL_CHUNK`
+- `GENERATED_CONTENT`
+
+搜索必须显式限定范围，客户端至少传入 `knowledgeBaseId` 或 `materialId`，禁止隐式全局搜索。若同时传入二者，`materialId` 必须属于该 `knowledgeBaseId`，结果需要展示类型、标题或摘要、所属知识库、关联知识点和详情入口。
+
+## 24. 第二版 API 边界
+
+API 契约由 `contracts/openapi/suilearn-v2.yaml` 维护，第一批接口覆盖：
+
+- 知识库：创建、列表、详情、重命名、删除。
+- 资料：导入、列表、详情、删除、知识点提取。
+- AI 生成：生成题、相似题、复习建议、结果确认、编辑保存、丢弃。
+- RAG：知识库问答、单资料问答。
+- 语义搜索：题目、知识点、资料片段、已保存生成内容。
+- 知识库工作台轻量学习视图：知识库下题目列表、知识库学习统计。
+
+实现 Agent 不得绕过契约直接扩展端侧私有接口。新增接口先由架构 Agent 更新 OpenAPI，再由 Server Backend、Android 和 Web 分别消费。
+
+## 25. 第二版数据表草案
+
+服务端首批表：
+
+- `knowledge_bases`
+- `learning_materials`
+- `material_chunks`
+- `knowledge_points`
+- `questions`
+- `generated_contents`
+- `generation_tasks`
+- `ai_notes`
+- `source_refs`
+
+向量字段建议仅存在于 `material_chunks` 和后续需要语义检索的题目摘要表中。业务表不直接依赖向量库语义；语义检索失败时仍可通过关键词搜索和资料列表降级。
+
+AI 生成内容状态：
+
+```text
+PENDING_REVIEW
+SAVED
+DISCARDED
+DELETED
+```
+
+资料导入状态：
+
+```text
+UPLOADED
+PARSING
+CHUNKING
+INDEXING
+READY
+FAILED
+DELETED
+```
+
+## 26. 第二版质量门禁
+
+必须覆盖的测试：
+
+- 知识库边界：搜索、问答、生成结果不会串到其他知识库。
+- AI 内容可控：生成结果默认是 `PENDING_REVIEW`，不会自动进入正式题库。
+- 追溯字段：生成题、解释、建议至少保留一个 `SourceRef`。
+- 不确定性表达：资料不足时 RAG 返回 `uncertain = true`。
+- 第一版兼容：未配置 AI 服务时，Android 本地刷题、错题、收藏和统计不受影响。
+
+服务端 MVP 可先用内存 Repository 验证 API 和业务状态机，但进入真实集成前必须切换 PostgreSQL，并补充 repository / integration test。

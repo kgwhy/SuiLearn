@@ -1,5 +1,47 @@
 # Leader Agent
 
+## ⛔ 自执行规则（每次接收任务时读取并执行）
+
+### 质量门禁（派发任务前 + 接收子 Agent 结果后强制执行）
+
+**派发前**：
+1. 同步事实源：读取 AGENTS.md、development-workflow.md、目标角色文件、git status
+2. 生成任务卡：必须包含「可修改文件」「禁止修改文件」「完成定义」「验证命令」
+3. 文件锁：确认本次要锁定的文件没有被其他进行中任务占用
+
+**接收子 Agent 结果后**：
+1. 检查完成声明格式：必须包含 ✅/📝/🧪/📋/🔍 五个字段
+2. 若测试结果为「未运行」→ 退回，要求补跑
+3. 若文件核对显示越界 → 标记为 P0 阻塞，退回修复
+4. 若自我审查有 P0 问题 → 退回修复
+
+### 文件边界
+
+**允许修改**：
+- `docs/development-workflow.md`
+- `AGENTS.md`（仅 Leader/协作/调度相关段落）
+- `docs/index.md`
+
+**禁止修改**：
+- `apps/android/**`
+- `services/api/**`
+- `apps/web/**`
+- `contracts/**`
+- `docs/product-requirements.md`
+- `docs/tech-selection.md`
+
+### 完成声明格式
+
+每次调度周期结束（所有子任务回收后）：
+```
+✅ Leader 调度完成
+📋 任务卡: <任务名称>
+👥 子 Agent: Android=完成 / Backend=完成 / Review=1个P2
+🧪 汇总测试: <全部通过 / 跳过项及原因>
+🔍 门禁审查: 无阻塞问题 / [P1] xxx
+🚦 合并建议: 可合并 / 需修复后合并 / 阻塞
+```
+
 ## 负责
 
 - 作为多 Agent 协作的单一调度入口。

@@ -6,8 +6,8 @@ SuiLearn 当前按三阶段推进：
 
 ```text
 第一版：Android 本地学习 App
-第二版：Java 后端 AI / RAG 服务
-第三版：React Web 版本
+第二版：Java 后端 AI / RAG + React Web 知识库工作台
+第三版：完整 React Web 学习端扩展
 ```
 
 当前不考虑 iOS，不做双端跨平台，不做登录、账号、云同步。
@@ -17,8 +17,8 @@ SuiLearn 当前按三阶段推进：
 | 阶段 | 目标 | 技术选择 |
 |---|---|---|
 | 第一版 | Android 本地学习工具，覆盖 V0 + V1 + V2 | Kotlin + Jetpack Compose |
-| 第二版 | AI 生成题、RAG、文档解析、任务管理 | Java + Spring Boot |
-| 第三版 | Web 端刷题、搜索、知识点学习 | React + TypeScript |
+| 第二版 | AI 生成题、RAG、文档解析、任务管理、Web 知识库工作台 | Java + Spring Boot + React + TypeScript |
+| 第三版 | 完整 Web 学习端，覆盖刷题、搜索、错题复习和知识点学习 | React + TypeScript |
 
 ## 3. 第一版：Android 本地版
 
@@ -179,7 +179,7 @@ ID 规则：
 
 ### 3.8 跨阶段模型一致性
 
-第二版引入 Java 后端、第三版引入 React Web 后，三端会出现三套模型：
+第二版引入 Java 后端和 React Web 知识库工作台、第三版扩展完整 React Web 学习端后，三端会出现三套模型：
 
 - Android Kotlin model。
 - Java backend model。
@@ -189,7 +189,7 @@ ID 规则：
 
 优先策略：
 
-- 第二版后端提供 OpenAPI 文档。
+- 第二版后端提供 OpenAPI 文档，第二版 Web 知识库工作台优先按契约消费。
 - Android 和 Web 都以后端 API 契约为准。
 - 后端 DTO、Android 网络模型、React TypeScript type 需要围绕同一套 API 契约对齐。
 
@@ -203,11 +203,11 @@ ID 规则：
 - WrongQuestion。
 - FavoriteQuestion。
 
-## 4. 第二版：Java 后端 AI / RAG
+## 4. 第二版：Java 后端 AI / RAG + React Web 知识库工作台
 
 ### 4.1 目标
 
-第二版引入后端服务，承载 AI 和 RAG 能力。
+第二版引入后端服务，承载 AI 和 RAG 能力；同时引入 React Web 知识库工作台，用于资料导入、知识库管理、生成结果确认、RAG 问答和语义搜索。
 
 第二版覆盖：
 
@@ -226,6 +226,7 @@ ID 规则：
 | 文档解析 | Apache Tika，按需引入 |
 | AI 调用 | OpenAI API 或兼容 OpenAI 协议的模型服务 |
 | 向量检索 | pgvector 优先，复杂后再评估 Milvus 等 |
+| Web 知识库工作台 | React + TypeScript + Vite |
 | 测试 | JUnit + Spring Boot Test |
 
 ### 4.3 主要能力
@@ -242,6 +243,7 @@ ID 规则：
 - RAG 问答。
 - 生成结果保存前的人工确认。
 - 生成结果删除和修正。
+- Web 知识库工作台承载资料导入、生成结果确认、资料问答、语义搜索和知识库详情查看。
 
 ### 4.4 后端重点沉淀
 
@@ -270,13 +272,23 @@ Android 负责：
 - 展示任务状态。
 - 展示生成结果。
 - 让用户确认、保存、删除或修正生成内容。
-- 将确认后的内容保存到本地或同步到后端，具体策略第二版再定。
+- 消费后端已保存的生成结果；第二版不要求 Android 承担完整知识库工作台。
 
-## 5. 第三版：React Web
+### 4.6 与 Web 的关系
+
+第二版 Web Frontend 不是完整学习端，而是知识库工作台：
+
+- 知识库创建、列表、详情、重命名和删除。
+- 资料导入、资料详情、资料删除和处理状态展示。
+- AI 生成题、解释、复习建议和 RAG 问答结果的确认、保存、丢弃或删除。
+- 语义搜索和资料问答。
+- 知识库详情中的题目列表和学习统计只做轻量查看，完整 Web 刷题流程留到第三版。
+
+## 5. 第三版：完整 React Web 学习端扩展
 
 ### 5.1 目标
 
-第三版支持 Web 网站，让用户可以在浏览器中使用核心学习能力。
+第三版在第二版知识库工作台基础上，扩展完整 Web 学习端，让用户可以在浏览器中使用第一版 Android 已验证的核心学习闭环。
 
 第三版覆盖：
 
@@ -284,6 +296,7 @@ Android 负责：
 - Web 端搜索。
 - Web 端错题复习。
 - Web 端知识点学习。
+- Web 端学习记录、收藏和统计闭环。
 - 后续多学习包扩展。
 
 ### 5.2 技术选择
@@ -300,7 +313,7 @@ Android 负责：
 
 ### 5.3 选择理由
 
-React 是常见 Web 前端技术栈，适合作为后续 Web 版本。
+React 是常见 Web 前端技术栈，第二版先用于知识库工作台，第三版再扩展完整学习端。
 
 对后端求职来说，React 的意义不是深入前端，而是帮助理解：
 
@@ -309,7 +322,7 @@ React 是常见 Web 前端技术栈，适合作为后续 Web 版本。
 - Web 端状态流转。
 - 后端能力如何被真实用户界面消费。
 
-Web 端不在第一版启动，等 Java 后端 API 稳定后再做。
+Web 端不在第一版启动。第二版只做知识库工作台，等 Java 后端 API 和核心学习契约稳定后，第三版再扩展完整 Web 学习端。
 
 ## 6. 后端求职导向
 
@@ -352,7 +365,7 @@ JUnit
 Compose UI Test
 ```
 
-### 第二版后端
+### 第二版后端与 Web 知识库工作台
 
 ```text
 Java
@@ -365,9 +378,12 @@ OpenAI-compatible API
 pgvector
 JUnit
 Spring Boot Test
+React
+TypeScript
+Vite
 ```
 
-### 第三版 Web
+### 第三版完整 Web 学习端
 
 ```text
 React

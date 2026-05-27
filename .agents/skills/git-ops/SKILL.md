@@ -50,7 +50,16 @@ git add -- <path1> <path2>
 6. Commit with Conventional Commits:
 
 ```powershell
-git commit -m "type(scope): 中文提交说明"
+git commit -m "type(scope): 中文提交说明" `
+  -m "变更摘要：
+- 说明主要改动 1
+- 说明主要改动 2
+
+验证：
+- 说明已运行的验证命令或未运行原因
+
+风险与备注：
+- 说明兼容性、迁移、遗留风险或“无”"
 ```
 
 7. Pull after committing and before pushing:
@@ -76,10 +85,28 @@ Format:
 ```text
 <type>[optional scope][optional !]: <description>
 
-[optional body]
+<required body>
 
 [optional footer(s)]
 ```
+
+Default rule: do **not** create title-only commits. Every commit created by this skill should include a body unless the user explicitly asks for a title-only commit.
+
+The commit body must be concise but useful, and should include these sections in Chinese:
+
+```text
+变更摘要：
+- <说明用户可见或架构相关的主要改动>
+- <说明第二个关键改动；没有则省略>
+
+验证：
+- <已运行的测试、构建、检查命令及结果；或说明未运行原因>
+
+风险与备注：
+- <兼容性、迁移、未验证范围、遗留风险；没有则写“无”>
+```
+
+For very small commits, keep the same section headers but use one bullet per section. Do not pad with vague text.
 
 Choose the type by intent:
 

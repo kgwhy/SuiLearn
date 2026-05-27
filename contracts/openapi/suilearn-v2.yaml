@@ -1,0 +1,1011 @@
+openapi: 3.0.3
+info:
+  title: SuiLearn V2 API
+  version: 0.1.0
+  description: API contract for Java backend AI/RAG and the React Web knowledge base workbench.
+servers:
+  - url: http://localhost:8080
+paths:
+  /api/v2/knowledge-bases:
+    get:
+      summary: List knowledge bases
+      responses:
+        "200":
+          description: Knowledge base list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeBase"
+    post:
+      summary: Create a knowledge base
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKnowledgeBaseRequest"
+      responses:
+        "200":
+          description: Created knowledge base
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+  /api/v2/knowledge-bases/{knowledgeBaseId}:
+    get:
+      summary: Get knowledge base detail
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "200":
+          description: Knowledge base detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDetail"
+    patch:
+      summary: Rename a knowledge base
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameKnowledgeBaseRequest"
+      responses:
+        "200":
+          description: Updated knowledge base
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBase"
+    delete:
+      summary: Delete a knowledge base
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "204":
+          description: Deleted
+  /api/v2/knowledge-bases/{knowledgeBaseId}/questions:
+    get:
+      summary: List questions saved in a knowledge base
+      description: Lightweight workbench view for knowledge base detail. Full Web practice flow belongs to the next phase.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "200":
+          description: Question summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QuestionSummary"
+  /api/v2/knowledge-bases/{knowledgeBaseId}/statistics:
+    get:
+      summary: Get lightweight learning statistics for a knowledge base
+      description: Supports the second-version Web workbench detail page without introducing the full Web learning flow.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "200":
+          description: Knowledge base statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseStatistics"
+  /api/v2/knowledge-bases/{knowledgeBaseId}/materials:
+    get:
+      summary: List materials in a knowledge base
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "200":
+          description: Material list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LearningMaterial"
+    post:
+      summary: Import Markdown, TXT, or PDF material
+      description: >
+        Imports material into the knowledge base. MVP implementations accept normalized text content plus
+        title, fileName, and sourceType. multipart/form-data is reserved as the cross-client upload shape,
+        but the MVP must not claim that raw PDF binary parsing is available; PDF binary parsing is a later
+        document-parser adapter concern. When sourceType is PDF during MVP, content is the already textified
+        PDF content supplied by the client or another upstream extractor.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportMaterialRequest"
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/UploadMaterialFormData"
+      responses:
+        "200":
+          description: Imported material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearningMaterial"
+  /api/v2/materials/{materialId}:
+    get:
+      summary: Get material detail
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "200":
+          description: Material detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialDetail"
+    delete:
+      summary: Delete material
+      description: Soft deletes the material, removes it from future RAG/search/generation, invalidates chunks and embeddings, deletes pending generated content by default, and keeps already saved questions or AI notes with deleted-source SourceRef metadata.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+        - in: query
+          name: savedContentPolicy
+          schema:
+            $ref: "#/components/schemas/DeletedMaterialSavedContentPolicy"
+          description: Policy for questions or AI notes already saved from this material. Default is KEEP_SAVED_CONTENT.
+        - in: query
+          name: pendingContentPolicy
+          schema:
+            $ref: "#/components/schemas/DeletedMaterialPendingContentPolicy"
+          description: Policy for pending generated drafts sourced from this material. Default is DELETE_PENDING_GENERATED_CONTENT.
+      responses:
+        "200":
+          description: Material deletion result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialDeletionResult"
+  /api/v2/materials/{materialId}/extract-knowledge-points:
+    post:
+      summary: Extract editable knowledge points from material
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "200":
+          description: Extracted knowledge points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgePoint"
+  /api/v2/knowledge-bases/{knowledgeBaseId}/knowledge-points:
+    get:
+      summary: List extracted or generated knowledge points
+      parameters:
+        - $ref: "#/components/parameters/KnowledgeBaseId"
+      responses:
+        "200":
+          description: Knowledge point list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgePoint"
+  /api/v2/knowledge-points/{knowledgePointId}:
+    patch:
+      summary: Edit extracted knowledge point
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKnowledgePointRequest"
+      responses:
+        "200":
+          description: Updated knowledge point
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgePoint"
+    delete:
+      summary: Delete extracted knowledge point
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      responses:
+        "204":
+          description: Deleted
+  /api/v2/ai/generated-questions:
+    post:
+      summary: Generate question draft from source
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateQuestionRequest"
+      responses:
+        "200":
+          description: Pending review question draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedQuestionDraft"
+  /api/v2/ai/knowledge-point-explanations:
+    post:
+      summary: Generate a knowledge point explanation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateExplanationRequest"
+      responses:
+        "200":
+          description: Explanation draft that can be saved as an AI note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiNoteDraft"
+  /api/v2/ai/review-suggestions:
+    post:
+      summary: Generate review suggestions from answer history, weak knowledge points, or wrong questions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateReviewSuggestionRequest"
+      responses:
+        "200":
+          description: Review suggestion draft that can be saved as an AI note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiNoteDraft"
+  /api/v2/ai/notes:
+    post:
+      summary: Save an AI explanation, review suggestion, or RAG answer as a note
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveAiNoteRequest"
+      responses:
+        "200":
+          description: Saved AI note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedAiNote"
+  /api/v2/ai/generated-contents:
+    get:
+      summary: List generated contents
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: "#/components/schemas/GeneratedContentStatus"
+      responses:
+        "200":
+          description: Generated contents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeneratedQuestionDraft"
+  /api/v2/ai/generated-contents/{generatedContentId}:
+    patch:
+      summary: Save, edit, or discard generated content
+      parameters:
+        - $ref: "#/components/parameters/GeneratedContentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewGeneratedContentRequest"
+      responses:
+        "200":
+          description: Updated generated content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GeneratedQuestionDraft"
+    delete:
+      summary: Soft delete generated content
+      parameters:
+        - $ref: "#/components/parameters/GeneratedContentId"
+      responses:
+        "204":
+          description: Deleted
+  /api/v2/search:
+    get:
+      summary: Semantic search across questions, knowledge points, material chunks, and generated content
+      description: >
+        Search is always scoped. Clients must provide at least one of knowledgeBaseId or materialId.
+        The API does not perform implicit global search. If both are provided, materialId must belong to
+        knowledgeBaseId and the search is narrowed to that material.
+      parameters:
+        - in: query
+          name: q
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: knowledgeBaseId
+          schema:
+            type: string
+          description: Required unless materialId is provided. Limits search to one knowledge base.
+        - in: query
+          name: materialId
+          schema:
+            type: string
+          description: Required unless knowledgeBaseId is provided. Limits search to one material.
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SearchResult"
+  /api/v2/rag/ask:
+    post:
+      summary: Ask a question within a knowledge base or material scope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskQuestionRequest"
+      responses:
+        "200":
+          description: RAG answer with citations and uncertainty flag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagAnswer"
+components:
+  parameters:
+    KnowledgeBaseId:
+      in: path
+      name: knowledgeBaseId
+      required: true
+      schema:
+        type: string
+    MaterialId:
+      in: path
+      name: materialId
+      required: true
+      schema:
+        type: string
+    GeneratedContentId:
+      in: path
+      name: generatedContentId
+      required: true
+      schema:
+        type: string
+    KnowledgePointId:
+      in: path
+      name: knowledgePointId
+      required: true
+      schema:
+        type: string
+  schemas:
+    CreateKnowledgeBaseRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    RenameKnowledgeBaseRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    KnowledgeBase:
+      type: object
+      required: [id, name, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KnowledgeBaseDetail:
+      allOf:
+        - $ref: "#/components/schemas/KnowledgeBase"
+        - type: object
+          properties:
+            materialCount:
+              type: integer
+            knowledgePointCount:
+              type: integer
+            questionCount:
+              type: integer
+            generatedContentCount:
+              type: integer
+            aiNoteCount:
+              type: integer
+    QuestionSummary:
+      type: object
+      required: [id, knowledgeBaseId, questionType, stem, categoryId, categoryName, knowledgePointIds, createdAt, sourceRefs]
+      description: Saved formal question summary. Saved AI-generated questions must retain formal category and knowledge point attribution from the reviewed draft.
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        questionType:
+          $ref: "#/components/schemas/QuestionType"
+        stem:
+          type: string
+        categoryId:
+          type: string
+        categoryName:
+          type: string
+        difficulty:
+          type: integer
+          minimum: 1
+          maximum: 5
+        knowledgePointIds:
+          type: array
+          items:
+            type: string
+        answeredCount:
+          type: integer
+        correctRate:
+          type: number
+          format: double
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        createdAt:
+          type: string
+          format: date-time
+        savedAt:
+          type: string
+          format: date-time
+    KnowledgeBaseStatistics:
+      type: object
+      required: [knowledgeBaseId, questionCount, answeredQuestionCount, answerCount, wrongQuestionCount]
+      properties:
+        knowledgeBaseId:
+          type: string
+        questionCount:
+          type: integer
+        answeredQuestionCount:
+          type: integer
+        answerCount:
+          type: integer
+        correctRate:
+          type: number
+          format: double
+        wrongQuestionCount:
+          type: integer
+        weakKnowledgePointIds:
+          type: array
+          items:
+            type: string
+    ImportMaterialRequest:
+      type: object
+      required: [title, sourceType, content]
+      description: >
+        JSON import shape for MVP. content is normalized plain text or Markdown content, even when
+        sourceType is PDF. Raw PDF binary parsing is intentionally not promised by this contract version.
+      properties:
+        title:
+          type: string
+        fileName:
+          type: string
+          description: Original client-side file name when the material came from a file.
+        sourceType:
+          $ref: "#/components/schemas/MaterialSourceType"
+        content:
+          type: string
+          description: Textified material content used for chunking, embedding, search, and RAG in the MVP.
+    UploadMaterialFormData:
+      type: object
+      required: [title, sourceType, content]
+      description: >
+        multipart/form-data shape kept for Web/Android upload compatibility. The MVP server consumes
+        title, sourceType, fileName, and textified content. The optional file part may be sent for future
+        compatibility, but raw PDF binary parsing is not part of the MVP behavior until a parser adapter
+        is wired in.
+      properties:
+        title:
+          type: string
+        fileName:
+          type: string
+          description: Original file name to display and keep for traceability.
+        sourceType:
+          $ref: "#/components/schemas/MaterialSourceType"
+        content:
+          type: string
+          description: Textified Markdown, TXT, or PDF content consumed by the MVP.
+        file:
+          type: string
+          format: binary
+          description: Optional original file part retained for client compatibility; MVP behavior must not depend on parsing PDF binary content.
+    LearningMaterial:
+      type: object
+      required: [id, knowledgeBaseId, title, sourceType, status, createdAt]
+      description: Material list item. It intentionally excludes original content; call material detail for content or chunk data.
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        title:
+          type: string
+        sourceType:
+          $ref: "#/components/schemas/MaterialSourceType"
+        status:
+          $ref: "#/components/schemas/MaterialStatus"
+        createdAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+    MaterialDetail:
+      allOf:
+        - $ref: "#/components/schemas/LearningMaterial"
+        - type: object
+          description: Material detail may include the normalized source content used by the MVP and derived chunks.
+          properties:
+            content:
+              type: string
+              description: Full normalized text content when the caller is allowed to inspect the material body.
+            contentPreview:
+              type: string
+              description: Short preview for clients that do not need or cannot fetch full content.
+            chunks:
+              type: array
+              items:
+                $ref: "#/components/schemas/MaterialChunk"
+            extractedKnowledgePoints:
+              type: array
+              items:
+                $ref: "#/components/schemas/KnowledgePoint"
+    MaterialChunk:
+      type: object
+      required: [id, materialId, content, ordinal]
+      properties:
+        id:
+          type: string
+        materialId:
+          type: string
+        content:
+          type: string
+        ordinal:
+          type: integer
+        sourceRef:
+          $ref: "#/components/schemas/SourceRef"
+    MaterialDeletionResult:
+      type: object
+      required: [materialId, status, savedContentPolicy, pendingContentPolicy, invalidatedChunkCount, deletedPendingGeneratedContentCount]
+      description: >
+        Result of soft-deleting a material. Deleted materials are excluded from future search, RAG, and
+        generation. Pending generated drafts sourced from the material are deleted by default. Already
+        saved questions and AI notes are kept by default, with their SourceRef.deleted flag set to true.
+      properties:
+        materialId:
+          type: string
+        status:
+          $ref: "#/components/schemas/MaterialStatus"
+        savedContentPolicy:
+          $ref: "#/components/schemas/DeletedMaterialSavedContentPolicy"
+        pendingContentPolicy:
+          $ref: "#/components/schemas/DeletedMaterialPendingContentPolicy"
+        invalidatedChunkCount:
+          type: integer
+        deletedPendingGeneratedContentCount:
+          type: integer
+        retainedSavedQuestionCount:
+          type: integer
+        retainedAiNoteCount:
+          type: integer
+        deletedAt:
+          type: string
+          format: date-time
+    KnowledgePoint:
+      type: object
+      required: [id, knowledgeBaseId, name, description]
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        sourceMaterialId:
+          type: string
+          deprecated: true
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRef"
+    UpdateKnowledgePointRequest:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    GenerateQuestionRequest:
+      type: object
+      required: [knowledgeBaseId, sourceRefs]
+      properties:
+        knowledgeBaseId:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+          deprecated: true
+        sourceId:
+          type: string
+          deprecated: true
+        questionType:
+          $ref: "#/components/schemas/QuestionType"
+        categoryId:
+          type: string
+          description: Optional category hint. The returned draft must still include its final category fields.
+        knowledgePointIds:
+          type: array
+          description: Optional knowledge point hints. The returned draft must still include final knowledge point fields.
+          items:
+            type: string
+        prompt:
+          type: string
+    GenerateExplanationRequest:
+      type: object
+      required: [knowledgeBaseId, knowledgePointId, sourceRefs]
+      properties:
+        knowledgeBaseId:
+          type: string
+        knowledgePointId:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        prompt:
+          type: string
+    GenerateReviewSuggestionRequest:
+      type: object
+      required: [knowledgeBaseId, sourceRefs]
+      properties:
+        knowledgeBaseId:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        weakKnowledgePointIds:
+          type: array
+          items:
+            type: string
+        wrongQuestionIds:
+          type: array
+          items:
+            type: string
+        prompt:
+          type: string
+    ReviewGeneratedContentRequest:
+      type: object
+      required: [status]
+      description: >
+        Review action for generated content. When saving a generated question, clients may edit the
+        formal classification fields; the saved question must retain categoryId/categoryName and
+        knowledgePointIds.
+      properties:
+        status:
+          $ref: "#/components/schemas/GeneratedContentStatus"
+        stem:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        answer:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+        categoryId:
+          type: string
+        categoryName:
+          type: string
+        knowledgePointIds:
+          type: array
+          items:
+            type: string
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRef"
+    GeneratedQuestionDraft:
+      type: object
+      required: [id, knowledgeBaseId, status, sourceRefs, questionType, stem, answer, explanation, categoryId, categoryName, knowledgePointIds]
+      description: >
+        Pending or reviewed AI-generated question. Drafts must carry the same formal classification
+        fields that saved questions use, so review and save flows do not lose category or knowledge point
+        attribution. If the source material is later deleted, pending drafts are DELETED by default unless
+        pendingContentPolicy explicitly keeps them with deleted SourceRef metadata.
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        status:
+          $ref: "#/components/schemas/GeneratedContentStatus"
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        sourceType:
+          $ref: "#/components/schemas/SourceType"
+          deprecated: true
+        sourceId:
+          type: string
+          deprecated: true
+        questionType:
+          $ref: "#/components/schemas/QuestionType"
+        stem:
+          type: string
+        categoryId:
+          type: string
+        categoryName:
+          type: string
+        knowledgePointIds:
+          type: array
+          items:
+            type: string
+        options:
+          type: array
+          items:
+            type: string
+        answer:
+          type: array
+          items:
+            type: string
+        explanation:
+          type: string
+        savedQuestionId:
+          type: string
+          description: Present after the generated question is saved as a formal question.
+        savedAt:
+          type: string
+          format: date-time
+          description: Present after status becomes SAVED.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AiNoteDraft:
+      type: object
+      required: [id, knowledgeBaseId, type, title, content, sourceRefs, createdAt]
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        type:
+          $ref: "#/components/schemas/AiNoteType"
+        title:
+          type: string
+        content:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        createdAt:
+          type: string
+          format: date-time
+    SaveAiNoteRequest:
+      type: object
+      required: [knowledgeBaseId, type, title, content, sourceRefs]
+      properties:
+        draftId:
+          type: string
+        knowledgeBaseId:
+          type: string
+        type:
+          $ref: "#/components/schemas/AiNoteType"
+        title:
+          type: string
+        content:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+    SavedAiNote:
+      type: object
+      required: [id, knowledgeBaseId, type, title, content, sourceRefs, savedAt]
+      properties:
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        type:
+          $ref: "#/components/schemas/AiNoteType"
+        title:
+          type: string
+        content:
+          type: string
+        sourceRefs:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        savedAt:
+          type: string
+          format: date-time
+    SearchResult:
+      type: object
+      required: [id, type, title, summary]
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/SearchResultType"
+        title:
+          type: string
+        summary:
+          type: string
+        knowledgeBaseId:
+          type: string
+        knowledgePointIds:
+          type: array
+          items:
+            type: string
+        sourceRefs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRef"
+    AskQuestionRequest:
+      type: object
+      required: [question]
+      anyOf:
+        - required: [knowledgeBaseId]
+        - required: [materialId]
+      description: >
+        RAG asks are always scoped. Provide at least one of knowledgeBaseId or materialId; the API does
+        not perform implicit global question answering. If both are provided, materialId must belong to
+        knowledgeBaseId and retrieval is narrowed to that material.
+      properties:
+        knowledgeBaseId:
+          type: string
+          description: Required unless materialId is provided.
+        materialId:
+          type: string
+          description: Required unless knowledgeBaseId is provided.
+        question:
+          type: string
+    RagAnswer:
+      type: object
+      required: [answer, uncertain, citations]
+      properties:
+        answer:
+          type: string
+        uncertain:
+          type: boolean
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/SourceRef"
+        evidenceChunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/MaterialChunk"
+        savedAiNoteId:
+          type: string
+    MaterialSourceType:
+      type: string
+      enum: [MARKDOWN, TXT, PDF]
+    MaterialStatus:
+      type: string
+      enum: [UPLOADED, PARSING, CHUNKING, INDEXING, READY, FAILED, DELETED]
+    DeletedMaterialSavedContentPolicy:
+      type: string
+      enum: [KEEP_SAVED_CONTENT, DELETE_SAVED_CONTENT]
+      default: KEEP_SAVED_CONTENT
+      description: >
+        KEEP_SAVED_CONTENT retains already saved questions and AI notes, marking their material SourceRef
+        objects as deleted. DELETE_SAVED_CONTENT removes saved content derived solely from the deleted
+        material; mixed-source content should be retained with only the deleted source marked.
+    DeletedMaterialPendingContentPolicy:
+      type: string
+      enum: [DELETE_PENDING_GENERATED_CONTENT, KEEP_PENDING_GENERATED_CONTENT]
+      default: DELETE_PENDING_GENERATED_CONTENT
+      description: >
+        DELETE_PENDING_GENERATED_CONTENT marks pending generated drafts sourced from the deleted material
+        as DELETED. KEEP_PENDING_GENERATED_CONTENT keeps drafts reviewable, but their material SourceRef
+        objects must have deleted=true.
+    GeneratedContentStatus:
+      type: string
+      enum: [PENDING_REVIEW, SAVED, DISCARDED, DELETED]
+      description: >
+        PENDING_REVIEW drafts await user confirmation. SAVED drafts have been converted to formal saved
+        content. DISCARDED is an explicit user rejection. DELETED is a soft-deleted generated item,
+        including pending drafts removed because their source material was deleted.
+    AiNoteType:
+      type: string
+      enum: [KNOWLEDGE_POINT_EXPLANATION, REVIEW_SUGGESTION, RAG_ANSWER, MANUAL_NOTE]
+    SourceType:
+      type: string
+      enum: [KNOWLEDGE_POINT, WRONG_QUESTION, MATERIAL, MATERIAL_CHUNK, KNOWLEDGE_BASE, ANSWER_HISTORY]
+    SourceRef:
+      type: object
+      required: [type, id]
+      description: >
+        Traceability pointer for generated and saved content. If the referenced material or chunk is
+        soft-deleted after content is saved, keep the SourceRef for auditability and set deleted=true.
+      properties:
+        type:
+          $ref: "#/components/schemas/SourceType"
+        id:
+          type: string
+        knowledgeBaseId:
+          type: string
+        title:
+          type: string
+        materialId:
+          type: string
+        chunkId:
+          type: string
+        deleted:
+          type: boolean
+          description: True when the referenced source, such as a material or material chunk, has been soft deleted and must no longer be used for new search, RAG, or generation.
+        excerpt:
+          type: string
+    QuestionType:
+      type: string
+      enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER]
+    SearchResultType:
+      type: string
+      enum: [QUESTION, KNOWLEDGE_POINT, MATERIAL_CHUNK, GENERATED_CONTENT]

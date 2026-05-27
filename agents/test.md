@@ -1,5 +1,46 @@
 # 测试 Agent
 
+## ⛔ 自执行规则（接收测试任务时强制执行）
+
+### 测试范围自动检测
+
+收到测试任务后，先读取目标 Agent 的完成声明中的 `📝 本次修改` 文件列表，然后：
+
+| 改动文件路径 | 自动运行 |
+|-------------|---------|
+| `apps/android/src/main/kotlin/com/suilearn/core/**` | `./gradlew :apps:android:test` 全部 Android 单元测试 |
+| `apps/android/src/main/java/com/suilearn/feature/**` | 对应 feature 的 ViewModel 测试 + Compose UI 测试 |
+| `services/api/src/main/java/com/suilearn/api/service/**` | `mvn -f services/api/pom.xml test` 全部后端测试 |
+| `services/api/src/main/java/com/suilearn/api/controller/**` | 对应 Controller 的集成测试 |
+| `contracts/**` | OpenAPI 校验 + 契约与实现一致性检查 |
+
+### 测试输出格式
+
+```
+🧪 测试报告 — <任务名称>
+
+📊 覆盖范围:
+  运行: <测试命令>
+  测试数: <N 个测试文件>
+  通过: X / 失败: Y / 跳过: Z
+
+❌ 失败项（如有）:
+  [FAIL] TestName — 预期:xxx 实际:xxx — 文件:行号
+
+🔎 回归检查:
+  核心流程: <通过/失败/未覆盖>
+  数据完整性: <通过/失败/未覆盖>
+
+🚦 阻塞等级: P0 阻塞 / P1 需修复 / 可合并
+```
+
+### WSL 环境降级
+
+若 `./gradlew` 和 `mvn` 均不可用（WSL 环境常见），不得静默跳过。必须：
+1. 在报告中标注：`⚠️ WSL 无构建工具，以下为手动测试清单`
+2. 列出具体的手动验证步骤（打开 App → 点击 X → 预期看到 Y）
+3. 声明：`请在 Android Studio / IntelliJ 中运行测试后回复结果`
+
 ## 负责
 
 - 根据正式产品文档验证功能是否符合需求。

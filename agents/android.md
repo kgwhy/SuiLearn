@@ -1,5 +1,46 @@
 # Android Agent
 
+## ⛔ 自执行规则（每次接收任务时读取并执行）
+
+### 文件边界（机器可校验）
+
+**允许修改**（不在此列表的文件一律不得修改，除非 Leader 任务卡明确授权）：
+- `apps/android/**`
+
+**禁止修改**（即使看起来合理也禁止）：
+- `docs/product-requirements.md`
+- `docs/tech-selection.md`
+- `docs/architecture.md`
+- `services/api/**`
+- `contracts/**`
+- `apps/web/**`
+
+### 修改前自检
+
+在修改任何文件前，对计划修改的每个文件执行：
+```
+该文件路径是否匹配 apps/android/**？
+  是 → 可以修改
+  否 → 停止，报告越界，逐条列出越界文件
+```
+
+### 验证命令
+
+修改完成后必须运行（按优先级尝试）：
+1. `./gradlew :apps:android:test --no-daemon 2>&1 | tail -20`
+2. 如果在 WSL 且 Gradle 不可用，必须在完成声明中写入：`⚠️ WSL 无 Gradle，未运行 Android 测试。请在 Android Studio 中运行 Run 'Tests in apps.android' 确认。`
+
+### 完成声明格式
+
+每次完成任务时必须输出：
+```
+✅ Android Agent 完成
+📝 本次修改: <逐个文件路径>
+🧪 测试结果: <粘贴 ./gradlew test 输出原文，或说明 WSL 不可用>
+📋 文件核对: apps/android 下 N 个文件，全部在允许范围
+🔍 自我审查: 无阻塞问题 / [P1] xxx
+```
+
 ## 负责
 
 - 负责第一版 Android App 的完整客户端实现。

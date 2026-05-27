@@ -1,0 +1,1023 @@
+package com.suilearn.api.service;
+
+import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
+import com.suilearn.api.dto.GenerateExplanationRequest;
+import com.suilearn.api.dto.GenerateQuestionRequest;
+import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
+import com.suilearn.api.dto.ImportMaterialRequest;
+import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
+import com.suilearn.api.dto.ReviewGeneratedContentRequest;
+import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.dto.UpdateKnowledgePointRequest;
+import com.suilearn.api.model.AiNoteDraft;
+import com.suilearn.api.model.AiNoteType;
+import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
+import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
+import com.suilearn.api.model.GeneratedContentStatus;
+import com.suilearn.api.model.GeneratedQuestionDraft;
+import com.suilearn.api.model.KnowledgeBase;
+import com.suilearn.api.model.KnowledgeBaseDetail;
+import com.suilearn.api.model.KnowledgeBaseStatistics;
+import com.suilearn.api.model.KnowledgePoint;
+import com.suilearn.api.model.LearningMaterial;
+import com.suilearn.api.model.MaterialChunk;
+import com.suilearn.api.model.MaterialDeletionResult;
+import com.suilearn.api.model.MaterialDetail;
+import com.suilearn.api.model.MaterialStatus;
+import com.suilearn.api.model.QuestionSummary;
+import com.suilearn.api.model.QuestionType;
+import com.suilearn.api.model.RagAnswer;
+import com.suilearn.api.model.SearchResult;
+import com.suilearn.api.model.SearchResultType;
+import com.suilearn.api.model.SavedAiNote;
+import com.suilearn.api.model.SourceRef;
+import com.suilearn.api.model.SourceType;
+import java.time.Clock;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.stereotype.Service;
+
+@Service
+public class SuiLearnV2Service {
+    private final Clock clock;
+    private final Map<String, KnowledgeBase> knowledgeBases = new ConcurrentHashMap<>();
+    private final Map<String, LearningMaterial> materials = new ConcurrentHashMap<>();
+    private final Map<String, List<MaterialChunk>> chunksByMaterial = new ConcurrentHashMap<>();
+    private final Map<String, KnowledgePoint> knowledgePoints = new ConcurrentHashMap<>();
+    private final Map<String, GeneratedQuestionDraft> generatedContents = new ConcurrentHashMap<>();
+    private final Map<String, QuestionSummary> savedQuestions = new ConcurrentHashMap<>();
+    private final Map<String, AiNoteDraft> aiNoteDrafts = new ConcurrentHashMap<>();
+    private final Map<String, SavedAiNote> aiNotes = new ConcurrentHashMap<>();
+
+    public SuiLearnV2Service(Clock clock) {
+        this.clock = clock;
+    }
+
+    public List<KnowledgeBase> listKnowledgeBases() {
+        return knowledgeBases.values().stream()
+            .sorted(Comparator.comparing(KnowledgeBase::createdAt))
+            .toList();
+    }
+
+    public KnowledgeBase createKnowledgeBase(CreateKnowledgeBaseRequest request) {
+        var now = clock.instant();
+        var knowledgeBase = new KnowledgeBase(newId("kb"), request.name(), request.description(), now, now);
+        knowledgeBases.put(knowledgeBase.id(), knowledgeBase);
+        return knowledgeBase;
+    }
+
+    public KnowledgeBaseDetail getKnowledgeBaseDetail(String knowledgeBaseId) {
+        var knowledgeBase = requireKnowledgeBase(knowledgeBaseId);
+        return new KnowledgeBaseDetail(
+            knowledgeBase.id(),
+            knowledgeBase.name(),
+            knowledgeBase.description(),
+            knowledgeBase.createdAt(),
+            knowledgeBase.updatedAt(),
+            countMaterials(knowledgeBaseId),
+            countKnowledgePoints(knowledgeBaseId),
+            countSavedQuestions(knowledgeBaseId),
+            countGeneratedContents(knowledgeBaseId),
+            countAiNotes(knowledgeBaseId)
+        );
+    }
+
+    public KnowledgeBase renameKnowledgeBase(String knowledgeBaseId, RenameKnowledgeBaseRequest request) {
+        var existing = requireKnowledgeBase(knowledgeBaseId);
+        var updated = new KnowledgeBase(
+            existing.id(),
+            request.name(),
+            request.description(),
+            existing.createdAt(),
+            clock.instant()
+        );
+        knowledgeBases.put(updated.id(), updated);
+        return updated;
+    }
+
+    public void deleteKnowledgeBase(String knowledgeBaseId) {
+        requireKnowledgeBase(knowledgeBaseId);
+        knowledgeBases.remove(knowledgeBaseId);
+        materials.values().removeIf(material -> material.knowledgeBaseId().equals(knowledgeBaseId));
+        knowledgePoints.values().removeIf(point -> point.knowledgeBaseId().equals(knowledgeBaseId));
+        generatedContents.values().removeIf(content -> content.knowledgeBaseId().equals(knowledgeBaseId));
+        savedQuestions.values().removeIf(question -> question.knowledgeBaseId().equals(knowledgeBaseId));
+        aiNoteDrafts.values().removeIf(note -> note.knowledgeBaseId().equals(knowledgeBaseId));
+        aiNotes.values().removeIf(note -> note.knowledgeBaseId().equals(knowledgeBaseId));
+    }
+
+    public List<LearningMaterial> listMaterials(String knowledgeBaseId) {
+        requireKnowledgeBase(knowledgeBaseId);
+        return materials.values().stream()
+            .filter(material -> material.knowledgeBaseId().equals(knowledgeBaseId))
+            .sorted(Comparator.comparing(LearningMaterial::createdAt))
+            .toList();
+    }
+
+    public LearningMaterial importMaterial(String knowledgeBaseId, ImportMaterialRequest request) {
+        requireKnowledgeBase(knowledgeBaseId);
+        var material = new LearningMaterial(
+            newId("mat"),
+            knowledgeBaseId,
+            request.title(),
+            request.sourceType(),
+            MaterialStatus.READY,
+            request.content(),
+            clock.instant(),
+            null
+        );
+        materials.put(material.id(), material);
+        chunksByMaterial.put(material.id(), chunkMaterial(material));
+        return material;
+    }
+
+    public MaterialDetail getMaterialDetail(String materialId) {
+        var material = requireMaterial(materialId);
+        return new MaterialDetail(
+            material.id(),
+            material.knowledgeBaseId(),
+            material.title(),
+            material.sourceType(),
+            material.status(),
+            material.content(),
+            truncate(material.content()),
+            material.createdAt(),
+            material.deletedAt(),
+            chunksByMaterial.getOrDefault(material.id(), List.of()),
+            knowledgePoints.values().stream()
+                .filter(point -> material.id().equals(point.sourceMaterialId()))
+                .sorted(Comparator.comparing(KnowledgePoint::name))
+                .toList()
+        );
+    }
+
+    public MaterialDeletionResult deleteMaterial(
+        String materialId,
+        DeletedMaterialSavedContentPolicy savedContentPolicy,
+        DeletedMaterialPendingContentPolicy pendingContentPolicy
+    ) {
+        var material = requireMaterial(materialId);
+        var effectiveSavedPolicy = savedContentPolicy == null
+            ? DeletedMaterialSavedContentPolicy.KEEP_SAVED_CONTENT
+            : savedContentPolicy;
+        var effectivePendingPolicy = pendingContentPolicy == null
+            ? DeletedMaterialPendingContentPolicy.DELETE_PENDING_GENERATED_CONTENT
+            : pendingContentPolicy;
+        var deletedAt = clock.instant();
+        var updatedMaterial = new LearningMaterial(
+            material.id(),
+            material.knowledgeBaseId(),
+            material.title(),
+            material.sourceType(),
+            MaterialStatus.DELETED,
+            material.content(),
+            material.createdAt(),
+            deletedAt
+        );
+        materials.put(materialId, updatedMaterial);
+
+        var invalidatedChunkCount = chunksByMaterial.getOrDefault(materialId, List.of()).size();
+        var deletedPendingCount = 0;
+        for (var content : List.copyOf(generatedContents.values())) {
+            if (!referencesMaterial(content.sourceRefs(), materialId)) {
+                continue;
+            }
+            if (content.status() == GeneratedContentStatus.PENDING_REVIEW
+                && effectivePendingPolicy == DeletedMaterialPendingContentPolicy.DELETE_PENDING_GENERATED_CONTENT) {
+                generatedContents.put(content.id(), updateGeneratedStatus(content, GeneratedContentStatus.DELETED));
+                deletedPendingCount++;
+            } else {
+                generatedContents.put(content.id(), withSourceRefs(content, markSourceDeleted(content.sourceRefs(), materialId)));
+            }
+        }
+
+        var retainedSavedQuestionCount = 0;
+        for (var question : List.copyOf(savedQuestions.values())) {
+            if (!referencesMaterial(question.sourceRefs(), materialId)) {
+                continue;
+            }
+            if (effectiveSavedPolicy == DeletedMaterialSavedContentPolicy.DELETE_SAVED_CONTENT) {
+                savedQuestions.remove(question.id());
+            } else {
+                savedQuestions.put(question.id(), withSourceRefs(question, markSourceDeleted(question.sourceRefs(), materialId)));
+                retainedSavedQuestionCount++;
+            }
+        }
+
+        var retainedAiNoteCount = 0;
+        for (var note : List.copyOf(aiNotes.values())) {
+            if (!referencesMaterial(note.sourceRefs(), materialId)) {
+                continue;
+            }
+            if (effectiveSavedPolicy == DeletedMaterialSavedContentPolicy.DELETE_SAVED_CONTENT) {
+                aiNotes.remove(note.id());
+            } else {
+                aiNotes.put(note.id(), withSourceRefs(note, markSourceDeleted(note.sourceRefs(), materialId)));
+                retainedAiNoteCount++;
+            }
+        }
+
+        return new MaterialDeletionResult(
+            materialId,
+            MaterialStatus.DELETED,
+            effectiveSavedPolicy,
+            effectivePendingPolicy,
+            invalidatedChunkCount,
+            deletedPendingCount,
+            retainedSavedQuestionCount,
+            retainedAiNoteCount,
+            deletedAt
+        );
+    }
+
+    public List<KnowledgePoint> extractKnowledgePoints(String materialId) {
+        var material = requireMaterial(materialId);
+        var candidates = extractCandidateTerms(material.content());
+        var extracted = candidates.stream()
+            .map(term -> new KnowledgePoint(
+                newId("kp"),
+                material.knowledgeBaseId(),
+                term,
+                "从资料《" + material.title() + "》中提取的候选知识点。",
+                material.id(),
+                List.of(materialSourceRef(material))
+            ))
+            .toList();
+        extracted.forEach(point -> knowledgePoints.put(point.id(), point));
+        return extracted;
+    }
+
+    public List<KnowledgePoint> listKnowledgePoints(String knowledgeBaseId) {
+        requireKnowledgeBase(knowledgeBaseId);
+        return knowledgePoints.values().stream()
+            .filter(point -> point.knowledgeBaseId().equals(knowledgeBaseId))
+            .sorted(Comparator.comparing(KnowledgePoint::name))
+            .toList();
+    }
+
+    public KnowledgePoint updateKnowledgePoint(String knowledgePointId, UpdateKnowledgePointRequest request) {
+        var existing = requireKnowledgePoint(knowledgePointId);
+        var updated = new KnowledgePoint(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            request.name(),
+            request.description(),
+            existing.sourceMaterialId(),
+            existing.sourceRefs()
+        );
+        knowledgePoints.put(updated.id(), updated);
+        return updated;
+    }
+
+    public void deleteKnowledgePoint(String knowledgePointId) {
+        requireKnowledgePoint(knowledgePointId);
+        knowledgePoints.remove(knowledgePointId);
+    }
+
+    public GeneratedQuestionDraft generateQuestion(GenerateQuestionRequest request) {
+        requireKnowledgeBase(request.knowledgeBaseId());
+        var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
+        ensureSourcesUsableForGeneration(sourceRefs);
+        var now = clock.instant();
+        var type = request.questionType() == null ? QuestionType.SINGLE_CHOICE : request.questionType();
+        var draftKnowledgePointIds = requestedKnowledgePointIds(request.knowledgePointIds(), sourceRefs);
+        var categoryId = valueOrDefault(request.categoryId(), defaultCategoryId(draftKnowledgePointIds));
+        var categoryName = valueOrDefault(request.categoryName(), defaultCategoryName(categoryId));
+        var topic = sourceRefs.stream()
+            .map(ref -> valueOrDefault(ref.title(), resolveSourceTitle(ref.id())))
+            .findFirst()
+            .orElse("当前来源");
+        var draft = new GeneratedQuestionDraft(
+            newId("gen"),
+            request.knowledgeBaseId(),
+            GeneratedContentStatus.PENDING_REVIEW,
+            sourceRefs,
+            request.sourceType() == null ? sourceRefs.get(0).type() : request.sourceType(),
+            request.sourceId() == null ? sourceRefs.get(0).id() : request.sourceId(),
+            type,
+            categoryId,
+            categoryName,
+            draftKnowledgePointIds,
+            "关于 " + topic + "，下列说法哪一项更准确？",
+            List.of("A. 需要结合上下文判断", "B. 与资料内容完全无关", "C. 可以忽略来源依据", "D. 不需要用户确认"),
+            List.of("A"),
+            "这是开发期占位生成结果。正式实现会通过 AI Provider 生成，并在保存前由用户确认或编辑。",
+            null,
+            null,
+            now,
+            now
+        );
+        generatedContents.put(draft.id(), draft);
+        return draft;
+    }
+
+    public List<GeneratedQuestionDraft> listGeneratedContents(GeneratedContentStatus status) {
+        return generatedContents.values().stream()
+            .filter(content -> status == null || content.status() == status)
+            .sorted(Comparator.comparing(GeneratedQuestionDraft::createdAt).reversed())
+            .toList();
+    }
+
+    public List<QuestionSummary> listQuestions(String knowledgeBaseId) {
+        requireKnowledgeBase(knowledgeBaseId);
+        return savedQuestions.values().stream()
+            .filter(question -> question.knowledgeBaseId().equals(knowledgeBaseId))
+            .sorted(Comparator.comparing(QuestionSummary::createdAt).reversed())
+            .toList();
+    }
+
+    public KnowledgeBaseStatistics getStatistics(String knowledgeBaseId) {
+        requireKnowledgeBase(knowledgeBaseId);
+        var questionCount = countSavedQuestions(knowledgeBaseId);
+        return new KnowledgeBaseStatistics(
+            knowledgeBaseId,
+            questionCount,
+            0,
+            0,
+            null,
+            0,
+            knowledgePoints.values().stream()
+                .filter(point -> point.knowledgeBaseId().equals(knowledgeBaseId))
+                .map(KnowledgePoint::id)
+                .limit(3)
+                .toList()
+        );
+    }
+
+    public AiNoteDraft generateExplanation(GenerateExplanationRequest request) {
+        requireKnowledgeBase(request.knowledgeBaseId());
+        var point = requireKnowledgePoint(request.knowledgePointId());
+        if (!point.knowledgeBaseId().equals(request.knowledgeBaseId())) {
+            throw new IllegalArgumentException("Knowledge point is outside knowledge base: " + request.knowledgePointId());
+        }
+        var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
+        ensureSourcesUsableForGeneration(sourceRefs);
+        var draft = new AiNoteDraft(
+            newId("note_draft"),
+            request.knowledgeBaseId(),
+            AiNoteType.KNOWLEDGE_POINT_EXPLANATION,
+            point.name() + " 解释",
+            "关于“" + point.name() + "”：请结合来源材料复核。"
+                + "MVP 当前返回可保存的占位解释，不调用外部 AI。",
+            sourceRefs,
+            clock.instant()
+        );
+        aiNoteDrafts.put(draft.id(), draft);
+        return draft;
+    }
+
+    public AiNoteDraft generateReviewSuggestion(GenerateReviewSuggestionRequest request) {
+        requireKnowledgeBase(request.knowledgeBaseId());
+        var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
+        ensureSourcesUsableForGeneration(sourceRefs);
+        var weakPoints = request.weakKnowledgePointIds() == null ? List.<String>of() : request.weakKnowledgePointIds();
+        var title = weakPoints.isEmpty() ? "复习建议" : "薄弱知识点复习建议";
+        var draft = new AiNoteDraft(
+            newId("note_draft"),
+            request.knowledgeBaseId(),
+            AiNoteType.REVIEW_SUGGESTION,
+            title,
+            "建议先重刷来源相关题目，再查看知识点说明，并生成 1 组相似题进行巩固。",
+            sourceRefs,
+            clock.instant()
+        );
+        aiNoteDrafts.put(draft.id(), draft);
+        return draft;
+    }
+
+    public SavedAiNote saveAiNote(SaveAiNoteRequest request) {
+        requireKnowledgeBase(request.knowledgeBaseId());
+        var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
+        ensureSourcesUsableForGeneration(sourceRefs);
+        var note = new SavedAiNote(
+            newId("note"),
+            request.knowledgeBaseId(),
+            request.type(),
+            request.title(),
+            request.content(),
+            sourceRefs,
+            clock.instant()
+        );
+        aiNotes.put(note.id(), note);
+        return note;
+    }
+
+    public GeneratedQuestionDraft reviewGeneratedContent(String generatedContentId, ReviewGeneratedContentRequest request) {
+        var existing = requireGeneratedContent(generatedContentId);
+        if (request.status() == GeneratedContentStatus.SAVED
+            && (existing.status() == GeneratedContentStatus.DELETED || existing.status() == GeneratedContentStatus.DISCARDED)) {
+            throw new IllegalArgumentException("Deleted or discarded generated content cannot be saved: " + generatedContentId);
+        }
+        var sourceRefs = request.sourceRefs() == null || request.sourceRefs().isEmpty()
+            ? existing.sourceRefs()
+            : normalizeSourceRefs(existing.knowledgeBaseId(), request.sourceRefs());
+        var savedQuestionId = existing.savedQuestionId();
+        var savedAt = existing.savedAt();
+        if (request.status() == GeneratedContentStatus.SAVED && savedQuestionId == null) {
+            ensureSourcesUsableForGeneration(sourceRefs);
+            savedQuestionId = newId("q");
+            savedAt = clock.instant();
+        } else if (request.status() == GeneratedContentStatus.SAVED) {
+            ensureSourcesUsableForGeneration(sourceRefs);
+        }
+        var reviewKnowledgePointIds = request.knowledgePointIds() == null || request.knowledgePointIds().isEmpty()
+            ? existing.knowledgePointIds()
+            : request.knowledgePointIds().stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        var categoryId = valueOrDefault(request.categoryId(), existing.categoryId());
+        var categoryName = valueOrDefault(request.categoryName(), existing.categoryName());
+        var updated = new GeneratedQuestionDraft(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            request.status(),
+            sourceRefs,
+            existing.sourceType(),
+            existing.sourceId(),
+            existing.questionType(),
+            categoryId,
+            categoryName,
+            reviewKnowledgePointIds,
+            valueOrDefault(request.stem(), existing.stem()),
+            request.options() == null || request.options().isEmpty() ? existing.options() : request.options(),
+            request.answer() == null || request.answer().isEmpty() ? existing.answer() : request.answer(),
+            valueOrDefault(request.explanation(), existing.explanation()),
+            savedQuestionId,
+            savedAt,
+            existing.createdAt(),
+            clock.instant()
+        );
+        generatedContents.put(updated.id(), updated);
+        if (updated.status() == GeneratedContentStatus.SAVED) {
+            savedQuestions.put(updated.savedQuestionId(), toQuestionSummary(updated));
+        }
+        return updated;
+    }
+
+    public void deleteGeneratedContent(String generatedContentId) {
+        var existing = requireGeneratedContent(generatedContentId);
+        var deleted = new GeneratedQuestionDraft(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            GeneratedContentStatus.DELETED,
+            existing.sourceRefs(),
+            existing.sourceType(),
+            existing.sourceId(),
+            existing.questionType(),
+            existing.categoryId(),
+            existing.categoryName(),
+            existing.knowledgePointIds(),
+            existing.stem(),
+            existing.options(),
+            existing.answer(),
+            existing.explanation(),
+            existing.savedQuestionId(),
+            existing.savedAt(),
+            existing.createdAt(),
+            clock.instant()
+        );
+        generatedContents.put(deleted.id(), deleted);
+    }
+
+    public List<SearchResult> search(String query, String knowledgeBaseId, String materialId) {
+        var scope = requireSearchScope(knowledgeBaseId, materialId);
+        var normalizedQuery = normalize(query);
+        if (normalizedQuery.isBlank()) {
+            return List.of();
+        }
+        var results = new ArrayList<SearchResult>();
+        knowledgePoints.values().stream()
+            .filter(point -> matchesScope(point.knowledgeBaseId(), scope.knowledgeBaseId()))
+            .filter(point -> !isMaterialDeleted(point.sourceMaterialId()))
+            .filter(point -> scope.materialId() == null || scope.materialId().equals(point.sourceMaterialId())
+                || referencesMaterial(point.sourceRefs(), scope.materialId()))
+            .filter(point -> contains(point.name(), normalizedQuery) || contains(point.description(), normalizedQuery))
+            .forEach(point -> results.add(new SearchResult(
+                point.id(),
+                SearchResultType.KNOWLEDGE_POINT,
+                point.name(),
+                point.description(),
+                point.knowledgeBaseId(),
+                List.of(point.id()),
+                point.sourceRefs()
+            )));
+        chunksByMaterial.values().stream()
+            .flatMap(List::stream)
+            .filter(chunk -> {
+                var material = materials.get(chunk.materialId());
+                return material != null
+                    && material.status() != MaterialStatus.DELETED
+                    && matchesScope(material.knowledgeBaseId(), scope.knowledgeBaseId())
+                    && (scope.materialId() == null || scope.materialId().equals(material.id()));
+            })
+            .filter(chunk -> contains(chunk.content(), normalizedQuery))
+            .forEach(chunk -> {
+                var material = materials.get(chunk.materialId());
+                results.add(new SearchResult(
+                    chunk.id(),
+                    SearchResultType.MATERIAL_CHUNK,
+                    material.title(),
+                    truncate(chunk.content()),
+                    material.knowledgeBaseId(),
+                    List.of(),
+                    List.of(chunk.sourceRef())
+                ));
+            });
+        savedQuestions.values().stream()
+            .filter(question -> matchesScope(question.knowledgeBaseId(), scope.knowledgeBaseId()))
+            .filter(question -> scope.materialId() == null || referencesMaterial(question.sourceRefs(), scope.materialId()))
+            .filter(question -> contains(question.stem(), normalizedQuery))
+            .forEach(question -> results.add(new SearchResult(
+                question.id(),
+                SearchResultType.QUESTION,
+                question.stem(),
+                question.stem(),
+                question.knowledgeBaseId(),
+                question.knowledgePointIds(),
+                question.sourceRefs()
+            )));
+        generatedContents.values().stream()
+            .filter(content -> matchesScope(content.knowledgeBaseId(), scope.knowledgeBaseId()))
+            .filter(content -> scope.materialId() == null || referencesMaterial(content.sourceRefs(), scope.materialId()))
+            .filter(content -> content.status() == GeneratedContentStatus.SAVED)
+            .filter(content -> contains(content.stem(), normalizedQuery) || contains(content.explanation(), normalizedQuery))
+            .forEach(content -> results.add(new SearchResult(
+                content.id(),
+                SearchResultType.GENERATED_CONTENT,
+                content.stem(),
+                content.explanation(),
+                content.knowledgeBaseId(),
+                List.of(),
+                content.sourceRefs()
+            )));
+        return results;
+    }
+
+    public RagAnswer ask(String question, String knowledgeBaseId, String materialId) {
+        if (isBlank(knowledgeBaseId) && isBlank(materialId)) {
+            throw new IllegalArgumentException("At least one scope is required: knowledgeBaseId or materialId");
+        }
+        var scopedKnowledgeBaseId = knowledgeBaseId;
+        if (materialId != null && !materialId.isBlank()) {
+            var material = requireMaterial(materialId);
+            if (material.status() == MaterialStatus.DELETED) {
+                return new RagAnswer("不确定：资料已删除，无法作为回答依据。", true, List.of(), List.of(), null);
+            }
+            if (scopedKnowledgeBaseId != null
+                && !scopedKnowledgeBaseId.isBlank()
+                && !material.knowledgeBaseId().equals(scopedKnowledgeBaseId)) {
+                throw new IllegalArgumentException("Material is outside knowledge base: " + materialId);
+            }
+            scopedKnowledgeBaseId = material.knowledgeBaseId();
+        } else if (scopedKnowledgeBaseId != null && !scopedKnowledgeBaseId.isBlank()) {
+            requireKnowledgeBase(scopedKnowledgeBaseId);
+        }
+        var normalizedQuestion = normalize(question);
+        var finalKnowledgeBaseId = scopedKnowledgeBaseId;
+        var citations = chunksByMaterial.values().stream()
+            .flatMap(List::stream)
+            .filter(chunk -> materialId == null || chunk.materialId().equals(materialId))
+            .filter(chunk -> {
+                var material = materials.get(chunk.materialId());
+                return material != null
+                    && material.status() != MaterialStatus.DELETED
+                    && matchesScope(material.knowledgeBaseId(), finalKnowledgeBaseId);
+            })
+            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuestion))
+            .limit(3)
+            .toList();
+        if (citations.isEmpty()) {
+            return new RagAnswer("不确定：资料中未找到明确依据。", true, List.of(), List.of(), null);
+        }
+        return new RagAnswer(
+            "根据已导入资料，建议优先查看引用片段并结合原文复核。",
+            false,
+            citations.stream().map(MaterialChunk::sourceRef).toList(),
+            citations,
+            null
+        );
+    }
+
+    private SearchScope requireSearchScope(String knowledgeBaseId, String materialId) {
+        if (isBlank(knowledgeBaseId) && isBlank(materialId)) {
+            throw new IllegalArgumentException("At least one scope is required: knowledgeBaseId or materialId");
+        }
+        if (!isBlank(materialId)) {
+            var material = requireMaterial(materialId);
+            if (!isBlank(knowledgeBaseId) && !material.knowledgeBaseId().equals(knowledgeBaseId)) {
+                throw new IllegalArgumentException("Material is outside knowledge base: " + materialId);
+            }
+            return new SearchScope(material.knowledgeBaseId(), material.id());
+        }
+        requireKnowledgeBase(knowledgeBaseId);
+        return new SearchScope(knowledgeBaseId, null);
+    }
+
+    private record SearchScope(String knowledgeBaseId, String materialId) {
+    }
+
+    private KnowledgeBase requireKnowledgeBase(String knowledgeBaseId) {
+        var knowledgeBase = knowledgeBases.get(knowledgeBaseId);
+        if (knowledgeBase == null) {
+            throw new IllegalArgumentException("Knowledge base not found: " + knowledgeBaseId);
+        }
+        return knowledgeBase;
+    }
+
+    private LearningMaterial requireMaterial(String materialId) {
+        var material = materials.get(materialId);
+        if (material == null) {
+            throw new IllegalArgumentException("Material not found: " + materialId);
+        }
+        return material;
+    }
+
+    private GeneratedQuestionDraft requireGeneratedContent(String generatedContentId) {
+        var content = generatedContents.get(generatedContentId);
+        if (content == null) {
+            throw new IllegalArgumentException("Generated content not found: " + generatedContentId);
+        }
+        return content;
+    }
+
+    private KnowledgePoint requireKnowledgePoint(String knowledgePointId) {
+        var point = knowledgePoints.get(knowledgePointId);
+        if (point == null) {
+            throw new IllegalArgumentException("Knowledge point not found: " + knowledgePointId);
+        }
+        return point;
+    }
+
+    private int countMaterials(String knowledgeBaseId) {
+        return (int) materials.values().stream()
+            .filter(material -> material.knowledgeBaseId().equals(knowledgeBaseId))
+            .count();
+    }
+
+    private int countKnowledgePoints(String knowledgeBaseId) {
+        return (int) knowledgePoints.values().stream()
+            .filter(point -> point.knowledgeBaseId().equals(knowledgeBaseId))
+            .count();
+    }
+
+    private int countGeneratedContents(String knowledgeBaseId) {
+        return (int) generatedContents.values().stream()
+            .filter(content -> content.knowledgeBaseId().equals(knowledgeBaseId))
+            .filter(content -> content.status() != GeneratedContentStatus.DELETED)
+            .count();
+    }
+
+    private int countSavedQuestions(String knowledgeBaseId) {
+        return (int) savedQuestions.values().stream()
+            .filter(question -> question.knowledgeBaseId().equals(knowledgeBaseId))
+            .count();
+    }
+
+    private int countAiNotes(String knowledgeBaseId) {
+        return (int) aiNotes.values().stream()
+            .filter(note -> note.knowledgeBaseId().equals(knowledgeBaseId))
+            .count();
+    }
+
+    private List<MaterialChunk> chunkMaterial(LearningMaterial material) {
+        var paragraphs = material.content().split("\\R\\s*\\R|\\R");
+        var chunks = new ArrayList<MaterialChunk>();
+        for (var paragraph : paragraphs) {
+            var content = paragraph.trim();
+            if (!content.isBlank()) {
+                chunks.add(newMaterialChunk(material, content, chunks.size()));
+            }
+        }
+        if (chunks.isEmpty()) {
+            chunks.add(newMaterialChunk(material, material.content(), 0));
+        }
+        return chunks;
+    }
+
+    private List<String> extractCandidateTerms(String content) {
+        return List.of(content.split("[,，。；;、\\s]+")).stream()
+            .map(String::trim)
+            .filter(term -> term.length() >= 2 && term.length() <= 32)
+            .distinct()
+            .limit(8)
+            .toList();
+    }
+
+    private String resolveSourceTitle(String sourceId) {
+        if (knowledgePoints.containsKey(sourceId)) {
+            return knowledgePoints.get(sourceId).name();
+        }
+        if (materials.containsKey(sourceId)) {
+            return materials.get(sourceId).title();
+        }
+        for (var chunks : chunksByMaterial.values()) {
+            for (var chunk : chunks) {
+                if (chunk.id().equals(sourceId)) {
+                    return chunk.content();
+                }
+            }
+        }
+        return sourceId;
+    }
+
+    private MaterialChunk newMaterialChunk(LearningMaterial material, String content, int ordinal) {
+        var id = newId("chunk");
+        return new MaterialChunk(id, material.id(), content, ordinal, chunkSourceRef(material, id, content));
+    }
+
+    private SourceRef materialSourceRef(LearningMaterial material) {
+        return new SourceRef(
+            SourceType.MATERIAL,
+            material.id(),
+            material.knowledgeBaseId(),
+            material.title(),
+            material.id(),
+            null,
+            material.status() == MaterialStatus.DELETED,
+            null
+        );
+    }
+
+    private SourceRef chunkSourceRef(LearningMaterial material, String chunkId, String content) {
+        return new SourceRef(
+            SourceType.MATERIAL_CHUNK,
+            chunkId,
+            material.knowledgeBaseId(),
+            material.title(),
+            material.id(),
+            chunkId,
+            material.status() == MaterialStatus.DELETED,
+            truncate(content)
+        );
+    }
+
+    private List<SourceRef> normalizeSourceRefs(String knowledgeBaseId, List<SourceRef> sourceRefs) {
+        if (sourceRefs == null || sourceRefs.isEmpty()) {
+            throw new IllegalArgumentException("At least one sourceRef is required");
+        }
+        return sourceRefs.stream()
+            .map(ref -> normalizeSourceRef(knowledgeBaseId, ref))
+            .toList();
+    }
+
+    private SourceRef normalizeSourceRef(String knowledgeBaseId, SourceRef ref) {
+        if (ref == null || ref.type() == null || ref.id() == null || ref.id().isBlank()) {
+            throw new IllegalArgumentException("Invalid sourceRef");
+        }
+        if (ref.type() == SourceType.KNOWLEDGE_BASE) {
+            requireKnowledgeBase(ref.id());
+            if (!ref.id().equals(knowledgeBaseId)) {
+                throw new IllegalArgumentException("SourceRef is outside knowledge base: " + ref.id());
+            }
+            var kb = requireKnowledgeBase(ref.id());
+            return new SourceRef(ref.type(), ref.id(), kb.id(), kb.name(), null, null, false, ref.excerpt());
+        }
+        if (ref.type() == SourceType.KNOWLEDGE_POINT) {
+            var point = requireKnowledgePoint(ref.id());
+            if (!point.knowledgeBaseId().equals(knowledgeBaseId)) {
+                throw new IllegalArgumentException("SourceRef is outside knowledge base: " + ref.id());
+            }
+            return new SourceRef(
+                ref.type(),
+                point.id(),
+                point.knowledgeBaseId(),
+                point.name(),
+                point.sourceMaterialId(),
+                null,
+                isMaterialDeleted(point.sourceMaterialId()),
+                ref.excerpt()
+            );
+        }
+        if (ref.type() == SourceType.MATERIAL) {
+            var material = requireMaterial(ref.id());
+            if (!material.knowledgeBaseId().equals(knowledgeBaseId)) {
+                throw new IllegalArgumentException("SourceRef is outside knowledge base: " + ref.id());
+            }
+            return materialSourceRef(material);
+        }
+        if (ref.type() == SourceType.MATERIAL_CHUNK) {
+            var chunk = requireChunk(ref.id());
+            var material = requireMaterial(chunk.materialId());
+            if (!material.knowledgeBaseId().equals(knowledgeBaseId)) {
+                throw new IllegalArgumentException("SourceRef is outside knowledge base: " + ref.id());
+            }
+            return chunkSourceRef(material, chunk.id(), chunk.content());
+        }
+        return new SourceRef(
+            ref.type(),
+            ref.id(),
+            valueOrDefault(ref.knowledgeBaseId(), knowledgeBaseId),
+            ref.title(),
+            ref.materialId(),
+            ref.chunkId(),
+            ref.deleted(),
+            ref.excerpt()
+        );
+    }
+
+    private void ensureSourcesUsableForGeneration(List<SourceRef> sourceRefs) {
+        for (var ref : sourceRefs) {
+            if (ref.deleted()) {
+                throw new IllegalArgumentException("SourceRef is deleted: " + ref.id());
+            }
+        }
+    }
+
+    private MaterialChunk requireChunk(String chunkId) {
+        return chunksByMaterial.values().stream()
+            .flatMap(List::stream)
+            .filter(chunk -> chunk.id().equals(chunkId))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Material chunk not found: " + chunkId));
+    }
+
+    private GeneratedQuestionDraft updateGeneratedStatus(GeneratedQuestionDraft existing, GeneratedContentStatus status) {
+        return new GeneratedQuestionDraft(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            status,
+            existing.sourceRefs(),
+            existing.sourceType(),
+            existing.sourceId(),
+            existing.questionType(),
+            existing.categoryId(),
+            existing.categoryName(),
+            existing.knowledgePointIds(),
+            existing.stem(),
+            existing.options(),
+            existing.answer(),
+            existing.explanation(),
+            existing.savedQuestionId(),
+            existing.savedAt(),
+            existing.createdAt(),
+            clock.instant()
+        );
+    }
+
+    private GeneratedQuestionDraft withSourceRefs(GeneratedQuestionDraft existing, List<SourceRef> sourceRefs) {
+        return new GeneratedQuestionDraft(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            existing.status(),
+            sourceRefs,
+            existing.sourceType(),
+            existing.sourceId(),
+            existing.questionType(),
+            existing.categoryId(),
+            existing.categoryName(),
+            existing.knowledgePointIds(),
+            existing.stem(),
+            existing.options(),
+            existing.answer(),
+            existing.explanation(),
+            existing.savedQuestionId(),
+            existing.savedAt(),
+            existing.createdAt(),
+            clock.instant()
+        );
+    }
+
+    private QuestionSummary withSourceRefs(QuestionSummary existing, List<SourceRef> sourceRefs) {
+        return new QuestionSummary(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            existing.questionType(),
+            existing.stem(),
+            existing.categoryId(),
+            existing.categoryName(),
+            existing.difficulty(),
+            existing.knowledgePointIds(),
+            existing.answeredCount(),
+            existing.correctRate(),
+            sourceRefs,
+            existing.createdAt(),
+            existing.savedAt()
+        );
+    }
+
+    private SavedAiNote withSourceRefs(SavedAiNote existing, List<SourceRef> sourceRefs) {
+        return new SavedAiNote(
+            existing.id(),
+            existing.knowledgeBaseId(),
+            existing.type(),
+            existing.title(),
+            existing.content(),
+            sourceRefs,
+            existing.savedAt()
+        );
+    }
+
+    private QuestionSummary toQuestionSummary(GeneratedQuestionDraft draft) {
+        return new QuestionSummary(
+            draft.savedQuestionId(),
+            draft.knowledgeBaseId(),
+            draft.questionType(),
+            draft.stem(),
+            draft.categoryId(),
+            draft.categoryName(),
+            null,
+            draft.knowledgePointIds(),
+            0,
+            0.0,
+            draft.sourceRefs(),
+            draft.createdAt(),
+            draft.savedAt()
+        );
+    }
+
+    private List<String> requestedKnowledgePointIds(List<String> requestedIds, List<SourceRef> sourceRefs) {
+        if (requestedIds != null && !requestedIds.isEmpty()) {
+            return requestedIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        }
+        return knowledgePointIds(sourceRefs);
+    }
+
+    private String defaultCategoryId(List<String> knowledgePointIds) {
+        return knowledgePointIds == null || knowledgePointIds.isEmpty() ? "uncategorized" : knowledgePointIds.get(0);
+    }
+
+    private String defaultCategoryName(String categoryId) {
+        var point = knowledgePoints.get(categoryId);
+        return point == null ? "Uncategorized" : point.name();
+    }
+
+    private List<String> knowledgePointIds(List<SourceRef> sourceRefs) {
+        return sourceRefs.stream()
+            .filter(ref -> ref.type() == SourceType.KNOWLEDGE_POINT)
+            .map(SourceRef::id)
+            .distinct()
+            .toList();
+    }
+
+    private boolean referencesMaterial(List<SourceRef> refs, String materialId) {
+        return refs != null && refs.stream().anyMatch(ref -> referencesMaterial(ref, materialId));
+    }
+
+    private boolean referencesMaterial(SourceRef ref, String materialId) {
+        return ref != null
+            && (materialId.equals(ref.materialId())
+                || (ref.type() == SourceType.MATERIAL && materialId.equals(ref.id())));
+    }
+
+    private boolean isMaterialDeleted(String materialId) {
+        if (materialId == null || materialId.isBlank()) {
+            return false;
+        }
+        var material = materials.get(materialId);
+        return material != null && material.status() == MaterialStatus.DELETED;
+    }
+
+    private List<SourceRef> markSourceDeleted(List<SourceRef> refs, String materialId) {
+        return refs.stream()
+            .map(ref -> referencesMaterial(ref, materialId)
+                ? new SourceRef(ref.type(), ref.id(), ref.knowledgeBaseId(), ref.title(), ref.materialId(), ref.chunkId(), true, ref.excerpt())
+                : ref)
+            .toList();
+    }
+
+    private String truncate(String value) {
+        if (value == null || value.length() <= 160) {
+            return value;
+        }
+        return value.substring(0, 160);
+    }
+
+    private boolean containsAnyKeyword(String content, String normalizedQuestion) {
+        for (var keyword : normalizedQuestion.split("\\s+")) {
+            if (!keyword.isBlank() && contains(content, keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean contains(String value, String normalizedQuery) {
+        return value != null && normalize(value).contains(normalizedQuery);
+    }
+
+    private boolean matchesScope(String valueKnowledgeBaseId, String requestedKnowledgeBaseId) {
+        return requestedKnowledgeBaseId == null || requestedKnowledgeBaseId.isBlank() || valueKnowledgeBaseId.equals(requestedKnowledgeBaseId);
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT).trim();
+    }
+
+    private String valueOrDefault(String value, String defaultValue) {
+        return value == null || value.isBlank() ? defaultValue : value;
+    }
+
+    private String newId(String prefix) {
+        return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+}

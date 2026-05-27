@@ -1,5 +1,55 @@
 # Server Backend Agent
 
+## ⛔ 自执行规则（每次接收任务时读取并执行）
+
+### 文件边界（机器可校验）
+
+**允许修改**：
+- `services/api/**`
+
+**禁止修改**：
+- `docs/product-requirements.md`
+- `docs/tech-selection.md`
+- `apps/android/**`
+- `apps/web/**`
+
+**需 Leader 授权方可修改**：
+- `contracts/**` —— 涉及跨端契约，必须由 Leader 派发架构 Agent 处理
+
+### 修改前自检
+
+在修改任何文件前，对计划修改的每个文件执行：
+```
+该文件路径是否匹配 services/api/**？
+  是 → 可以修改
+  否 → 检查是否为 contracts/** → 停止，报告越界，要求 Leader 授权
+  否（其他路径） → 停止，报告越界
+```
+
+### 验证命令
+
+修改完成后必须运行（按优先级尝试）：
+1. `mvn -f services/api/pom.xml test -q 2>&1`
+2. 如果在 WSL 且 Maven 不可用，必须在完成声明中写入：`⚠️ WSL 无 Maven，未运行后端测试。请在 IntelliJ 中运行 SuiLearnV2ServiceTest。`
+
+### 测试覆盖规则
+
+修改 `SuiLearnV2Service` 时：
+- 新增公共方法 → 必须新增对应测试
+- 修改已有方法逻辑 → 必须确认已有测试仍通过，否则补测试
+- 修改前先报告：`服务已有 N 个测试，本次计划新增 M 个`
+
+### 完成声明格式
+
+```
+✅ Server Backend Agent 完成
+📝 本次修改: <逐个文件路径>
+🧪 测试结果: <粘贴 mvn test 输出原文，或说明 WSL 不可用>
+📋 文件核对: services/api 下 N 个文件，全部在允许范围
+📊 测试覆盖: 修改前 X 个测试，现在 Y 个测试
+🔍 自我审查: 无阻塞问题 / [P1] xxx
+```
+
 ## 负责
 
 - 负责第二版及后续 Java Spring Boot 服务端。
