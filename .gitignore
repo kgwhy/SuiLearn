@@ -4,12 +4,15 @@
 .codegraph/
 .cursor/
 build/
+target/
 .claude/
 local.properties
 *.iml
+*.class
 
 node_modules/
 dist/
+*.tsbuildinfo
 .env
 .env.*
 
