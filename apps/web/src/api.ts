@@ -7,6 +7,7 @@ import type {
   KnowledgeBaseDetail,
   KnowledgeBaseStatistics,
   KnowledgePoint,
+  MaterialDeletionResult,
   MaterialDetail,
   MaterialMetadata,
   MaterialSourceType,
@@ -27,12 +28,43 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(body || `${response.status} ${response.statusText}`);
+    throw new Error(readableApiError(body, response));
   }
   if (response.status === 204) {
     return undefined as T;
   }
-  return response.json() as Promise<T>;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    throw new Error("接口未返回 JSON 数据，请确认后端服务和 VITE_API_BASE_URL 配置正确。");
+  }
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error("接口返回的 JSON 无法解析，请检查后端响应格式。");
+  }
+}
+
+function readableApiError(body: string, response: Response) {
+  if (!body.trim()) {
+    return `接口请求失败（${response.status}${response.statusText ? ` ${response.statusText}` : ""}），请稍后重试或检查后端服务。`;
+  }
+  try {
+    const parsed = JSON.parse(body) as {
+      message?: string;
+      error?: string;
+      detail?: string;
+      title?: string;
+      errors?: Record<string, string[] | string>;
+    };
+    const fieldErrors = parsed.errors
+      ? Object.entries(parsed.errors)
+          .map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(", ") : value}`)
+          .join("; ")
+      : "";
+    return parsed.message ?? parsed.detail ?? parsed.error ?? parsed.title ?? fieldErrors ?? body;
+  } catch {
+    return body.length > 280 ? `${body.slice(0, 280)}...` : body;
+  }
 }
 
 export const api = {
@@ -55,7 +87,8 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   getMaterial: (materialId: string) => request<MaterialDetail>(`/materials/${materialId}`),
-  deleteMaterial: (materialId: string) => request(`/materials/${materialId}`, { method: "DELETE" }),
+  deleteMaterial: (materialId: string) =>
+    request<MaterialDeletionResult>(`/materials/${materialId}`, { method: "DELETE" }),
   extractKnowledgePoints: (materialId: string) =>
     request<KnowledgePoint[]>(`/materials/${materialId}/extract-knowledge-points`, { method: "POST" }),
   listKnowledgePoints: (knowledgeBaseId: string) =>
@@ -67,7 +100,6 @@ export const api = {
     sourceRefs: SourceRef[];
     questionType: QuestionType;
     categoryId?: string;
-    categoryName?: string;
     knowledgePointIds?: string[];
     prompt?: string;
   }) =>

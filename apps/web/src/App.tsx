@@ -43,6 +43,7 @@ import type {
 type Section = "overview" | "materials" | "generate" | "search";
 type ToastTone = "info" | "success" | "error";
 type ContentFilter = GeneratedContentStatus | "ALL";
+type FieldErrors = Record<string, string>;
 
 const sourceTypes: MaterialSourceType[] = ["MARKDOWN", "TXT", "PDF"];
 const questionTypes: QuestionType[] = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"];
@@ -65,6 +66,9 @@ export function App() {
   const [ragAnswer, setRagAnswer] = useState<RagAnswer | null>(null);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
+  const [formErrors, setFormErrors] = useState<FieldErrors>({});
+  const [hasSearched, setHasSearched] = useState(false);
+  const [hasAsked, setHasAsked] = useState(false);
 
   const [kbForm, setKbForm] = useState({ name: "Java 面试", description: "Spring、JVM、集合与数据库资料" });
   const [kbManageForm, setKbManageForm] = useState({ name: "", description: "" });
@@ -140,6 +144,27 @@ export function App() {
     }
   }
 
+  function setError(nextErrors: FieldErrors) {
+    setFormErrors(nextErrors);
+    const firstError = Object.values(nextErrors)[0];
+    if (firstError) setToast({ tone: "error", message: firstError });
+  }
+
+  async function submitCreateKnowledgeBase() {
+    if (!kbForm.name.trim()) {
+      setError({ kbName: "请输入知识库名称后再创建。" });
+      return;
+    }
+    setFormErrors((current) => ({ ...current, kbName: "" }));
+    const created = await run(
+      () => api.createKnowledgeBase({ name: kbForm.name.trim(), description: kbForm.description.trim() || undefined }),
+      "知识库已创建"
+    );
+    if (!created) return;
+    setSelectedKnowledgeBaseId(created.id);
+    await loadKnowledgeBases(created.id);
+  }
+
   async function loadKnowledgeBases(preferredId?: string) {
     const bases = await run(() => api.listKnowledgeBases());
     if (!bases) return;
@@ -181,17 +206,23 @@ export function App() {
 
   async function createKnowledgeBase(event: FormEvent) {
     event.preventDefault();
-    const created = await run(() => api.createKnowledgeBase(kbForm), "知识库已创建");
-    if (!created) return;
-    setSelectedKnowledgeBaseId(created.id);
-    await loadKnowledgeBases(created.id);
+    await submitCreateKnowledgeBase();
   }
 
   async function updateKnowledgeBase(event: FormEvent) {
     event.preventDefault();
     if (!selectedKnowledgeBaseId) return;
+    if (!kbManageForm.name.trim()) {
+      setError({ kbManageName: "请输入当前知识库名称后再更新。" });
+      return;
+    }
+    setFormErrors((current) => ({ ...current, kbManageName: "" }));
     const updated = await run(
-      () => api.updateKnowledgeBase(selectedKnowledgeBaseId, kbManageForm),
+      () =>
+        api.updateKnowledgeBase(selectedKnowledgeBaseId, {
+          name: kbManageForm.name.trim(),
+          description: kbManageForm.description.trim() || undefined
+        }),
       "知识库已更新"
     );
     if (!updated) return;
@@ -224,9 +255,25 @@ export function App() {
 
   async function importMaterial(event: FormEvent) {
     event.preventDefault();
-    if (!selectedKnowledgeBaseId) return;
+    if (!selectedKnowledgeBaseId) {
+      setError({ material: "请先创建或选择一个知识库。" });
+      return;
+    }
+    const errors: FieldErrors = {};
+    if (!materialForm.title.trim()) errors.materialTitle = "请输入资料标题。";
+    if (!materialForm.content.trim()) errors.materialContent = "请粘贴资料正文，或选择可读取的文本文件。";
+    if (Object.keys(errors).length > 0) {
+      setError(errors);
+      return;
+    }
+    setFormErrors((current) => ({ ...current, material: "", materialTitle: "", materialContent: "" }));
     const material = await run(
-      () => api.importMaterial(selectedKnowledgeBaseId, materialForm),
+      () =>
+        api.importMaterial(selectedKnowledgeBaseId, {
+          ...materialForm,
+          title: materialForm.title.trim(),
+          content: materialForm.content.trim()
+        }),
       "资料已导入"
     );
     if (!material) return;
@@ -277,9 +324,17 @@ export function App() {
     event.preventDefault();
     const sourceRef = buildSourceRef();
     if (!selectedKnowledgeBaseId || !sourceRef) {
-      setToast({ tone: "error", message: "请选择生成来源" });
+      setError({ generationSource: "请先选择资料或知识点作为生成来源。" });
       return;
     }
+    const errors: FieldErrors = {};
+    if (!generationForm.categoryId.trim()) errors.categoryId = "请输入分类 ID。";
+    if (!generationForm.prompt.trim()) errors.prompt = "请输入生成要求。";
+    if (Object.keys(errors).length > 0) {
+      setError(errors);
+      return;
+    }
+    setFormErrors((current) => ({ ...current, generationSource: "", categoryId: "", prompt: "" }));
     const pointIds =
       generationForm.sourceKind === "knowledgePoint" ? [sourceRef.id] : knowledgePoints.slice(0, 2).map((item) => item.id);
     const draft = await run(
@@ -288,10 +343,9 @@ export function App() {
           knowledgeBaseId: selectedKnowledgeBaseId,
           sourceRefs: [sourceRef],
           questionType: generationForm.questionType,
-          categoryId: generationForm.categoryId,
-          categoryName: generationForm.categoryName,
+          categoryId: generationForm.categoryId.trim(),
           knowledgePointIds: pointIds,
-          prompt: generationForm.prompt
+          prompt: generationForm.prompt.trim()
         }),
       "题目草稿已生成"
     );
@@ -303,18 +357,38 @@ export function App() {
 
   async function reviewDraft(status: GeneratedContentStatus, draft: DraftEditState) {
     if (!selectedDraft) return;
+    if (status === "SAVED") {
+      const errors: FieldErrors = {};
+      if (!draft.stem.trim()) errors.draftStem = "题干不能为空。";
+      if (!draft.answer.length) errors.draftAnswer = "至少保留一个答案。";
+      if (!draft.explanation.trim()) errors.draftExplanation = "解析不能为空。";
+      if (!draft.categoryId.trim()) errors.draftCategoryId = "分类 ID 不能为空。";
+      if (!draft.categoryName.trim()) errors.draftCategoryName = "分类名称不能为空。";
+      if (Object.keys(errors).length > 0) {
+        setError(errors);
+        return;
+      }
+    }
+    setFormErrors((current) => ({
+      ...current,
+      draftStem: "",
+      draftAnswer: "",
+      draftExplanation: "",
+      draftCategoryId: "",
+      draftCategoryName: ""
+    }));
     await run(
       () =>
         api.reviewGeneratedContent(selectedDraft.id, {
           status,
-          stem: draft.stem,
+          stem: draft.stem.trim(),
           options: draft.options,
           answer: draft.answer,
-          explanation: draft.explanation,
-          categoryId: draft.categoryId,
-          categoryName: draft.categoryName,
+          explanation: draft.explanation.trim(),
+          categoryId: draft.categoryId.trim(),
+          categoryName: draft.categoryName.trim(),
           knowledgePointIds: draft.knowledgePointIds,
-          sourceRefs: selectedDraft.sourceRefs
+          sourceRefs: selectedDraft.sourceRefs ?? []
         }),
       status === "SAVED" ? "题目已保存" : "草稿已处理"
     );
@@ -334,14 +408,14 @@ export function App() {
   async function generateExplanation() {
     const point = knowledgePoints[0];
     if (!selectedKnowledgeBaseId || !point) {
-      setToast({ tone: "error", message: "需要先提取知识点" });
+      setError({ aiNote: "请先从资料中提取至少一个知识点。" });
       return;
     }
     const note = await run(() =>
       api.generateExplanation({
         knowledgeBaseId: selectedKnowledgeBaseId,
         knowledgePointId: point.id,
-        sourceRefs: point.sourceRefs,
+        sourceRefs: point.sourceRefs?.length ? point.sourceRefs : [sourceRefForKnowledgePoint(point)],
         prompt: "生成简短解释"
       })
     );
@@ -350,7 +424,10 @@ export function App() {
 
   async function generateReviewSuggestion() {
     const sourceRef = buildSourceRef();
-    if (!selectedKnowledgeBaseId || !sourceRef) return;
+    if (!selectedKnowledgeBaseId || !sourceRef) {
+      setError({ aiNote: "请先选择可用于生成建议的资料或知识点。" });
+      return;
+    }
     const note = await run(() =>
       api.generateReviewSuggestion({
         knowledgeBaseId: selectedKnowledgeBaseId,
@@ -382,15 +459,33 @@ export function App() {
 
   async function submitSearch(event: FormEvent) {
     event.preventDefault();
-    if (!selectedKnowledgeBaseId) return;
-    const results = await run(() => api.search({ q: searchForm.query, knowledgeBaseId: selectedKnowledgeBaseId }));
+    if (!selectedKnowledgeBaseId) {
+      setError({ search: "请先创建或选择一个知识库。" });
+      return;
+    }
+    if (!searchForm.query.trim()) {
+      setError({ searchQuery: "请输入搜索关键词或自然语言问题。" });
+      return;
+    }
+    setFormErrors((current) => ({ ...current, search: "", searchQuery: "" }));
+    setHasSearched(true);
+    const results = await run(() => api.search({ q: searchForm.query.trim(), knowledgeBaseId: selectedKnowledgeBaseId }));
     if (results) setSearchResults(results);
   }
 
   async function askQuestion(event: FormEvent) {
     event.preventDefault();
-    if (!selectedKnowledgeBaseId) return;
-    const answer = await run(() => api.ask({ question: searchForm.question, knowledgeBaseId: selectedKnowledgeBaseId }));
+    if (!selectedKnowledgeBaseId) {
+      setError({ ask: "请先创建或选择一个知识库。" });
+      return;
+    }
+    if (!searchForm.question.trim()) {
+      setError({ askQuestion: "请输入要向资料提问的问题。" });
+      return;
+    }
+    setFormErrors((current) => ({ ...current, ask: "", askQuestion: "" }));
+    setHasAsked(true);
+    const answer = await run(() => api.ask({ question: searchForm.question.trim(), knowledgeBaseId: selectedKnowledgeBaseId }));
     if (answer) setRagAnswer(answer);
   }
 
@@ -408,7 +503,12 @@ export function App() {
         <form className="create-form" onSubmit={createKnowledgeBase}>
           <label>
             知识库名称
-            <input value={kbForm.name} onChange={(event) => setKbForm({ ...kbForm, name: event.target.value })} />
+            <input
+              value={kbForm.name}
+              aria-invalid={Boolean(formErrors.kbName)}
+              onChange={(event) => setKbForm({ ...kbForm, name: event.target.value })}
+            />
+            <FormError message={formErrors.kbName} />
           </label>
           <label>
             说明
@@ -443,6 +543,7 @@ export function App() {
           updateKnowledgeBase={updateKnowledgeBase}
           deleteKnowledgeBase={deleteKnowledgeBase}
           disabled={!selectedKnowledgeBaseId || loading}
+          error={formErrors.kbManageName}
         />
       </aside>
 
@@ -471,7 +572,17 @@ export function App() {
           </div>
         )}
 
-        {section === "overview" && (
+        {!selectedKnowledgeBaseId && (
+          <EmptyState
+            icon={<Database size={22} />}
+            title={loading ? "正在加载知识库" : "还没有知识库"}
+            description={loading ? "正在连接二版 API，稍等片刻。" : "先创建一个知识库，再导入资料、生成题目或进行搜索问答。"}
+            actionLabel={loading ? undefined : "创建默认知识库"}
+            onAction={loading ? undefined : () => void submitCreateKnowledgeBase()}
+          />
+        )}
+
+        {selectedKnowledgeBaseId && section === "overview" && (
           <OverviewPanel
             detail={detail}
             statistics={statistics}
@@ -479,10 +590,13 @@ export function App() {
             knowledgePoints={knowledgePoints}
             questions={questions}
             drafts={drafts}
+            loading={loading}
+            goToMaterials={() => setSection("materials")}
+            goToGenerate={() => setSection("generate")}
           />
         )}
 
-        {section === "materials" && (
+        {selectedKnowledgeBaseId && section === "materials" && (
           <MaterialsPanel
             materialForm={materialForm}
             setMaterialForm={setMaterialForm}
@@ -494,10 +608,11 @@ export function App() {
             extractKnowledgePoints={extractKnowledgePoints}
             deleteMaterial={deleteMaterial}
             loading={loading}
+            errors={formErrors}
           />
         )}
 
-        {section === "generate" && (
+        {selectedKnowledgeBaseId && section === "generate" && (
           <GeneratePanel
             form={generationForm}
             setForm={setGenerationForm}
@@ -517,10 +632,12 @@ export function App() {
             aiNoteDraft={aiNoteDraft}
             saveAiNote={saveAiNote}
             loading={loading}
+            errors={formErrors}
+            goToMaterials={() => setSection("materials")}
           />
         )}
 
-        {section === "search" && (
+        {selectedKnowledgeBaseId && section === "search" && (
           <SearchPanel
             form={searchForm}
             setForm={setSearchForm}
@@ -531,6 +648,9 @@ export function App() {
             knowledgeBases={knowledgeBases}
             knowledgePoints={knowledgePoints}
             loading={loading}
+            errors={formErrors}
+            hasSearched={hasSearched}
+            hasAsked={hasAsked}
           />
         )}
       </main>
@@ -553,6 +673,7 @@ function KnowledgeBaseManager(props: {
   updateKnowledgeBase: (event: FormEvent) => Promise<void>;
   deleteKnowledgeBase: () => Promise<void>;
   disabled: boolean;
+  error?: string;
 }) {
   return (
     <form className="create-form" onSubmit={props.updateKnowledgeBase}>
@@ -566,7 +687,9 @@ function KnowledgeBaseManager(props: {
           value={props.form.name}
           onChange={(event) => props.setForm({ ...props.form, name: event.target.value })}
           disabled={props.disabled}
+          aria-invalid={Boolean(props.error)}
         />
+        <FormError message={props.error} />
       </label>
       <label>
         说明
@@ -594,7 +717,10 @@ function OverviewPanel({
   materials,
   knowledgePoints,
   questions,
-  drafts
+  drafts,
+  loading,
+  goToMaterials,
+  goToGenerate
 }: {
   detail: KnowledgeBaseDetail | null;
   statistics: KnowledgeBaseStatistics | null;
@@ -602,14 +728,23 @@ function OverviewPanel({
   knowledgePoints: KnowledgePoint[];
   questions: QuestionSummary[];
   drafts: GeneratedQuestionDraft[];
+  loading: boolean;
+  goToMaterials: () => void;
+  goToGenerate: () => void;
 }) {
   return (
     <section className="panel-grid">
       <div className="metrics">
-        <Metric label="资料" value={detail?.materialCount ?? 0} />
-        <Metric label="知识点" value={detail?.knowledgePointCount ?? 0} />
-        <Metric label="已保存题" value={statistics?.questionCount ?? detail?.questionCount ?? 0} />
-        <Metric label="待确认" value={drafts.length} />
+        {loading && !detail ? (
+          <LoadingMetrics />
+        ) : (
+          <>
+            <Metric label="资料" value={detail?.materialCount ?? 0} />
+            <Metric label="知识点" value={detail?.knowledgePointCount ?? 0} />
+            <Metric label="已保存题" value={statistics?.questionCount ?? detail?.questionCount ?? 0} />
+            <Metric label="待确认" value={drafts.length} />
+          </>
+        )}
       </div>
       <div className="panel wide">
         <div className="panel-heading">
@@ -617,13 +752,23 @@ function OverviewPanel({
           <FileText size={18} />
         </div>
         <div className="item-list">
+          {loading && materials.length === 0 && <LoadingRows count={3} />}
+          {!loading && materials.length === 0 && (
+            <EmptyState
+              compact
+              icon={<FileText size={20} />}
+              title="还没有资料"
+              description="导入 Markdown、TXT 或已转成文本的 PDF 内容后，才能提取知识点和生成题目。"
+              actionLabel="去导入资料"
+              onAction={goToMaterials}
+            />
+          )}
           {materials.slice(0, 5).map((item) => (
             <div className="row-item" key={item.id}>
               <span>{item.title}</span>
               <StatusPill label={item.status} />
             </div>
           ))}
-          {materials.length === 0 && <EmptyLine label="暂无资料" />}
         </div>
       </div>
       <div className="panel">
@@ -633,7 +778,16 @@ function OverviewPanel({
         </div>
         <div className="tag-cloud">
           {knowledgePoints.slice(0, 12).map((item) => <span key={item.id}>{item.name}</span>)}
-          {knowledgePoints.length === 0 && <EmptyLine label="暂无知识点" />}
+          {!loading && knowledgePoints.length === 0 && (
+            <EmptyState
+              compact
+              icon={<Sparkles size={20} />}
+              title="还没有知识点"
+              description="从资料列表中点击提取按钮，生成可编辑的知识点。"
+              actionLabel="查看资料"
+              onAction={goToMaterials}
+            />
+          )}
         </div>
       </div>
       <div className="panel">
@@ -643,7 +797,16 @@ function OverviewPanel({
         </div>
         <div className="item-list compact">
           {questions.slice(0, 4).map((item) => <div className="row-item" key={item.id}>{item.stem}</div>)}
-          {questions.length === 0 && <EmptyLine label="暂无题目" />}
+          {!loading && questions.length === 0 && (
+            <EmptyState
+              compact
+              icon={<BookOpen size={20} />}
+              title="还没有保存题目"
+              description="先生成草稿并确认保存，题目会在这里出现。"
+              actionLabel="去生成"
+              onAction={goToGenerate}
+            />
+          )}
         </div>
       </div>
     </section>
@@ -661,6 +824,7 @@ function MaterialsPanel(props: {
   extractKnowledgePoints: (id: string) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
   loading: boolean;
+  errors: FieldErrors;
 }) {
   const { materialForm, setMaterialForm } = props;
   return (
@@ -677,7 +841,12 @@ function MaterialsPanel(props: {
         {materialForm.fileName && <div className="file-hint"><Upload size={15} /> {materialForm.fileName}</div>}
         <label>
           标题
-          <input value={materialForm.title} onChange={(event) => setMaterialForm({ ...materialForm, title: event.target.value })} />
+          <input
+            value={materialForm.title}
+            aria-invalid={Boolean(props.errors.materialTitle)}
+            onChange={(event) => setMaterialForm({ ...materialForm, title: event.target.value })}
+          />
+          <FormError message={props.errors.materialTitle} />
         </label>
         <label>
           类型
@@ -692,12 +861,14 @@ function MaterialsPanel(props: {
           内容
           <textarea
             value={materialForm.content}
+            aria-invalid={Boolean(props.errors.materialContent)}
             onChange={(event) => setMaterialForm({ ...materialForm, content: event.target.value })}
             rows={8}
           />
+          <FormError message={props.errors.materialContent} />
         </label>
         <button className="primary-button" disabled={props.loading || !materialForm.title.trim() || !materialForm.content.trim()}>
-          <Save size={16} /> 导入
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 导入
         </button>
       </form>
 
@@ -707,6 +878,7 @@ function MaterialsPanel(props: {
           <Archive size={18} />
         </div>
         <div className="item-list">
+          {props.loading && props.materials.length === 0 && <LoadingRows count={3} />}
           {props.materials.map((item) => (
             <div className="row-item action-row" key={item.id}>
               <button type="button" onClick={() => void props.openMaterial(item.id)}>
@@ -724,14 +896,24 @@ function MaterialsPanel(props: {
               </div>
             </div>
           ))}
-          {props.materials.length === 0 && <EmptyLine label="暂无资料" />}
+          {!props.loading && props.materials.length === 0 && (
+            <EmptyState
+              compact
+              icon={<Upload size={20} />}
+              title="还没有资料"
+              description="在左侧粘贴资料正文，或选择本地 Markdown/TXT/PDF 文本内容后导入。"
+            />
+          )}
         </div>
         {props.materialDetail && (
           <div className="detail-box">
             <h4>{props.materialDetail.title}</h4>
-            <p>{props.materialDetail.contentPreview ?? props.materialDetail.content}</p>
+            <p>{props.materialDetail.contentPreview ?? props.materialDetail.content ?? "暂无可预览内容"}</p>
             <div className="tag-cloud">
-              {props.materialDetail.extractedKnowledgePoints.map((item) => <span key={item.id}>{item.name}</span>)}
+              {(props.materialDetail.extractedKnowledgePoints ?? []).map((item) => <span key={item.id}>{item.name}</span>)}
+              {(props.materialDetail.extractedKnowledgePoints ?? []).length === 0 && (
+                <EmptyLine label="这份资料还没有提取知识点" />
+              )}
             </div>
           </div>
         )}
@@ -766,6 +948,8 @@ function GeneratePanel(props: {
   aiNoteDraft: AiNoteDraft | null;
   saveAiNote: () => Promise<void>;
   loading: boolean;
+  errors: FieldErrors;
+  goToMaterials: () => void;
 }) {
   const form = props.form;
   const sources = form.sourceKind === "knowledgePoint" ? props.knowledgePoints : props.materials;
@@ -778,8 +962,8 @@ function GeneratePanel(props: {
     }
     setDraftEdit({
       stem: props.selectedDraft.stem,
-      optionsText: props.selectedDraft.options.join("\n"),
-      options: props.selectedDraft.options,
+      optionsText: (props.selectedDraft.options ?? []).join("\n"),
+      options: props.selectedDraft.options ?? [],
       answerText: props.selectedDraft.answer.join("\n"),
       answer: props.selectedDraft.answer,
       explanation: props.selectedDraft.explanation,
@@ -817,10 +1001,26 @@ function GeneratePanel(props: {
         </div>
         <label>
           来源
-          <select value={form.sourceId} onChange={(event) => props.setForm({ ...form, sourceId: event.target.value })}>
+          <select
+            value={form.sourceId}
+            disabled={sources.length === 0}
+            aria-invalid={Boolean(props.errors.generationSource)}
+            onChange={(event) => props.setForm({ ...form, sourceId: event.target.value })}
+          >
             {sources.map((item) => <option key={item.id} value={item.id}>{"name" in item ? item.name : item.title}</option>)}
           </select>
+          <FormError message={props.errors.generationSource} />
         </label>
+        {sources.length === 0 && (
+          <EmptyState
+            compact
+            icon={<FileText size={20} />}
+            title={form.sourceKind === "knowledgePoint" ? "还没有知识点来源" : "还没有资料来源"}
+            description={form.sourceKind === "knowledgePoint" ? "先在资料页导入资料并提取知识点。" : "先导入一份资料，再用它生成题目。"}
+            actionLabel="去资料页"
+            onAction={props.goToMaterials}
+          />
+        )}
         <label>
           题型
           <select value={form.questionType} onChange={(event) => props.setForm({ ...form, questionType: event.target.value as QuestionType })}>
@@ -830,7 +1030,12 @@ function GeneratePanel(props: {
         <div className="field-row">
           <label>
             分类 ID
-            <input value={form.categoryId} onChange={(event) => props.setForm({ ...form, categoryId: event.target.value })} />
+            <input
+              value={form.categoryId}
+              aria-invalid={Boolean(props.errors.categoryId)}
+              onChange={(event) => props.setForm({ ...form, categoryId: event.target.value })}
+            />
+            <FormError message={props.errors.categoryId} />
           </label>
           <label>
             分类名
@@ -839,10 +1044,16 @@ function GeneratePanel(props: {
         </div>
         <label>
           Prompt
-          <textarea rows={4} value={form.prompt} onChange={(event) => props.setForm({ ...form, prompt: event.target.value })} />
+          <textarea
+            rows={4}
+            value={form.prompt}
+            aria-invalid={Boolean(props.errors.prompt)}
+            onChange={(event) => props.setForm({ ...form, prompt: event.target.value })}
+          />
+          <FormError message={props.errors.prompt} />
         </label>
         <button className="primary-button" disabled={props.loading || !form.sourceId}>
-          <Sparkles size={16} /> 生成草稿
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Sparkles size={16} />} 生成草稿
         </button>
       </form>
 
@@ -871,13 +1082,27 @@ function GeneratePanel(props: {
                 <StatusPill label={draft.status} />
               </button>
             ))}
-            {props.drafts.length === 0 && <EmptyLine label="暂无待确认草稿" />}
+            {props.loading && props.drafts.length === 0 && <LoadingRows count={2} />}
+            {!props.loading && props.drafts.length === 0 && (
+              <EmptyState
+                compact
+                icon={<Sparkles size={20} />}
+                title="没有符合筛选的草稿"
+                description="生成题目后，待确认、已保存或已丢弃的内容会按状态出现在这里。"
+              />
+            )}
           </div>
           {props.selectedDraft && (
             <div className="draft-detail">
               <label>
                 题干
-                <textarea rows={3} value={draftEdit.stem} onChange={(event) => updateDraftEdit({ stem: event.target.value })} />
+                <textarea
+                  rows={3}
+                  value={draftEdit.stem}
+                  aria-invalid={Boolean(props.errors.draftStem)}
+                  onChange={(event) => updateDraftEdit({ stem: event.target.value })}
+                />
+                <FormError message={props.errors.draftStem} />
               </label>
               <label>
                 选项（每行一项）
@@ -885,20 +1110,42 @@ function GeneratePanel(props: {
               </label>
               <label>
                 答案（每行一项）
-                <textarea rows={2} value={draftEdit.answerText} onChange={(event) => updateDraftEdit({ answerText: event.target.value })} />
+                <textarea
+                  rows={2}
+                  value={draftEdit.answerText}
+                  aria-invalid={Boolean(props.errors.draftAnswer)}
+                  onChange={(event) => updateDraftEdit({ answerText: event.target.value })}
+                />
+                <FormError message={props.errors.draftAnswer} />
               </label>
               <label>
                 解析
-                <textarea rows={4} value={draftEdit.explanation} onChange={(event) => updateDraftEdit({ explanation: event.target.value })} />
+                <textarea
+                  rows={4}
+                  value={draftEdit.explanation}
+                  aria-invalid={Boolean(props.errors.draftExplanation)}
+                  onChange={(event) => updateDraftEdit({ explanation: event.target.value })}
+                />
+                <FormError message={props.errors.draftExplanation} />
               </label>
               <div className="field-row">
                 <label>
                   分类 ID
-                  <input value={draftEdit.categoryId} onChange={(event) => updateDraftEdit({ categoryId: event.target.value })} />
+                  <input
+                    value={draftEdit.categoryId}
+                    aria-invalid={Boolean(props.errors.draftCategoryId)}
+                    onChange={(event) => updateDraftEdit({ categoryId: event.target.value })}
+                  />
+                  <FormError message={props.errors.draftCategoryId} />
                 </label>
                 <label>
                   分类名
-                  <input value={draftEdit.categoryName} onChange={(event) => updateDraftEdit({ categoryName: event.target.value })} />
+                  <input
+                    value={draftEdit.categoryName}
+                    aria-invalid={Boolean(props.errors.draftCategoryName)}
+                    onChange={(event) => updateDraftEdit({ categoryName: event.target.value })}
+                  />
+                  <FormError message={props.errors.draftCategoryName} />
                 </label>
               </div>
               <label>
@@ -906,13 +1153,13 @@ function GeneratePanel(props: {
                 <textarea rows={2} value={draftEdit.knowledgePointIdsText} onChange={(event) => updateDraftEdit({ knowledgePointIdsText: event.target.value })} />
               </label>
               <div className="source-list">
-                {props.selectedDraft.sourceRefs.map((ref) => (
-                  <span key={`${ref.type}-${ref.id}`}>{ref.deleted ? "已删除来源" : ref.title}</span>
+                {(props.selectedDraft.sourceRefs ?? []).map((ref) => (
+                  <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
                 ))}
               </div>
               <div className="button-row">
                 <button className="primary-button" onClick={() => void props.reviewDraft("SAVED", draftEdit)}>
-                  <Save size={16} /> 保存
+                  {props.loading ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 保存
                 </button>
                 <button className="ghost-button" onClick={() => void props.reviewDraft("DISCARDED", draftEdit)}>
                   <X size={16} /> 丢弃
@@ -985,6 +1232,21 @@ function lines(value: string) {
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
 
+function sourceRefForKnowledgePoint(point: KnowledgePoint): SourceRef {
+  return {
+    type: "KNOWLEDGE_POINT",
+    id: point.id,
+    knowledgeBaseId: point.knowledgeBaseId,
+    title: point.name,
+    excerpt: point.description,
+    deleted: false
+  };
+}
+
+function sourceRefLabel(ref: SourceRef) {
+  return ref.deleted ? "来源已删除" : ref.title ?? ref.id;
+}
+
 function SearchPanel(props: {
   form: { query: string; question: string };
   setForm: (value: { query: string; question: string }) => void;
@@ -995,6 +1257,9 @@ function SearchPanel(props: {
   knowledgeBases: KnowledgeBase[];
   knowledgePoints: KnowledgePoint[];
   loading: boolean;
+  errors: FieldErrors;
+  hasSearched: boolean;
+  hasAsked: boolean;
 }) {
   const knowledgePointNames = new Map(props.knowledgePoints.map((item) => [item.id, item.name]));
   return (
@@ -1006,12 +1271,18 @@ function SearchPanel(props: {
         </div>
         <label>
           查询
-          <input value={props.form.query} onChange={(event) => props.setForm({ ...props.form, query: event.target.value })} />
+          <input
+            value={props.form.query}
+            aria-invalid={Boolean(props.errors.searchQuery)}
+            onChange={(event) => props.setForm({ ...props.form, query: event.target.value })}
+          />
+          <FormError message={props.errors.searchQuery ?? props.errors.search} />
         </label>
         <button className="primary-button" disabled={props.loading || !props.form.query.trim()}>
-          <Search size={16} /> 搜索
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Search size={16} />} 搜索
         </button>
         <div className="result-list">
+          {props.loading && props.searchResults.length === 0 && <LoadingRows count={3} />}
           {props.searchResults.map((item) => (
             <div className="result-item" key={`${item.type}-${item.id}`}>
               <StatusPill label={item.type} />
@@ -1019,16 +1290,23 @@ function SearchPanel(props: {
               <p>{item.summary}</p>
               <div className="result-meta">
                 <span>{props.knowledgeBases.find((base) => base.id === item.knowledgeBaseId)?.name ?? item.knowledgeBaseId ?? "当前知识库"}</span>
-                {item.knowledgePointIds.map((id) => (
+                {(item.knowledgePointIds ?? []).map((id) => (
                   <span key={id}>{knowledgePointNames.get(id) ?? id}</span>
                 ))}
-                {item.sourceRefs.slice(0, 2).map((ref) => (
-                  <span key={`${ref.type}-${ref.id}`}>{ref.deleted ? "来源已删除" : ref.title}</span>
+                {(item.sourceRefs ?? []).slice(0, 2).map((ref) => (
+                  <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
                 ))}
               </div>
             </div>
           ))}
-          {props.searchResults.length === 0 && <EmptyLine label="暂无搜索结果" />}
+          {!props.loading && props.searchResults.length === 0 && (
+            <EmptyState
+              compact
+              icon={<Search size={20} />}
+              title={props.hasSearched ? "没有匹配结果" : "还没有搜索"}
+              description={props.hasSearched ? "换一个更具体的知识点、资料关键词或自然语言问题再试。" : "输入关键词或自然语言问题，在当前知识库范围内查找资料片段、题目和知识点。"}
+            />
+          )}
         </div>
       </form>
 
@@ -1039,23 +1317,99 @@ function SearchPanel(props: {
         </div>
         <label>
           问题
-          <textarea rows={4} value={props.form.question} onChange={(event) => props.setForm({ ...props.form, question: event.target.value })} />
+          <textarea
+            rows={4}
+            value={props.form.question}
+            aria-invalid={Boolean(props.errors.askQuestion)}
+            onChange={(event) => props.setForm({ ...props.form, question: event.target.value })}
+          />
+          <FormError message={props.errors.askQuestion ?? props.errors.ask} />
         </label>
         <button className="primary-button" disabled={props.loading || !props.form.question.trim()}>
-          <Send size={16} /> 提问
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Send size={16} />} 提问
         </button>
         {props.ragAnswer && (
           <div className="answer-box">
             <StatusPill label={props.ragAnswer.uncertain ? "UNCERTAIN" : "ANSWERED"} />
             <p>{props.ragAnswer.answer}</p>
             <div className="item-list compact">
-              {props.ragAnswer.evidenceChunks.map((item) => <div className="row-item" key={item.id}>{item.content}</div>)}
+              {(props.ragAnswer.evidenceChunks ?? []).map((item) => <div className="row-item" key={item.id}>{item.content}</div>)}
             </div>
           </div>
+        )}
+        {!props.loading && !props.ragAnswer && (
+          <EmptyState
+            compact
+            icon={<MessageSquareText size={20} />}
+            title={props.hasAsked ? "暂时没有回答" : "向当前知识库提问"}
+            description={props.hasAsked ? "如果资料不足，后端会返回不确定提示；也可以先导入更多资料。" : "回答会带不确定标记和证据片段，方便判断是否值得保存为笔记。"}
+          />
         )}
       </form>
     </section>
   );
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  compact = false
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={compact ? "empty-state compact" : "empty-state"}>
+      <div className="empty-icon">{icon}</div>
+      <div>
+        <h3>{title}</h3>
+        <p>{description}</p>
+      </div>
+      {actionLabel && onAction && (
+        <button type="button" className="ghost-button" onClick={onAction}>
+          <ChevronRight size={16} /> {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function LoadingRows({ count }: { count: number }) {
+  return (
+    <>
+      {Array.from({ length: count }, (_, index) => (
+        <div className="skeleton-row" key={index}>
+          <span />
+          <span />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function LoadingMetrics() {
+  return (
+    <>
+      {Array.from({ length: 4 }, (_, index) => (
+        <div className="metric skeleton-metric" key={index}>
+          <span />
+          <strong />
+        </div>
+      ))}
+    </>
+  );
+}
+
+function FormError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <span className="field-error" role="alert">{message}</span>;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {

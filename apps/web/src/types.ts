@@ -14,11 +14,11 @@ export interface KnowledgeBase {
 }
 
 export interface KnowledgeBaseDetail extends KnowledgeBase {
-  materialCount: number;
-  knowledgePointCount: number;
-  questionCount: number;
-  generatedContentCount: number;
-  aiNoteCount: number;
+  materialCount?: number;
+  knowledgePointCount?: number;
+  questionCount?: number;
+  generatedContentCount?: number;
+  aiNoteCount?: number;
 }
 
 export interface KnowledgeBaseStatistics {
@@ -28,7 +28,7 @@ export interface KnowledgeBaseStatistics {
   answerCount: number;
   correctRate?: number | null;
   wrongQuestionCount: number;
-  weakKnowledgePointIds: string[];
+  weakKnowledgePointIds?: string[];
 }
 
 export interface MaterialMetadata {
@@ -52,8 +52,8 @@ export interface MaterialChunk {
 export interface MaterialDetail extends MaterialMetadata {
   content?: string;
   contentPreview?: string;
-  chunks: MaterialChunk[];
-  extractedKnowledgePoints: KnowledgePoint[];
+  chunks?: MaterialChunk[];
+  extractedKnowledgePoints?: KnowledgePoint[];
 }
 
 export interface KnowledgePoint {
@@ -62,18 +62,30 @@ export interface KnowledgePoint {
   name: string;
   description: string;
   sourceMaterialId?: string;
-  sourceRefs: SourceRef[];
+  sourceRefs?: SourceRef[];
 }
 
 export interface SourceRef {
   type: SourceType;
   id: string;
-  knowledgeBaseId: string;
-  title: string;
+  knowledgeBaseId?: string;
+  title?: string;
   materialId?: string | null;
   chunkId?: string | null;
-  deleted: boolean;
+  deleted?: boolean;
   excerpt?: string | null;
+}
+
+export interface MaterialDeletionResult {
+  materialId: string;
+  status: MaterialStatus;
+  savedContentPolicy: "KEEP_SAVED_CONTENT" | "DELETE_SAVED_CONTENT";
+  pendingContentPolicy: "DELETE_PENDING_GENERATED_CONTENT" | "KEEP_PENDING_GENERATED_CONTENT";
+  invalidatedChunkCount: number;
+  deletedPendingGeneratedContentCount: number;
+  retainedSavedQuestionCount?: number;
+  retainedAiNoteCount?: number;
+  deletedAt?: string | null;
 }
 
 export interface GeneratedQuestionDraft {
@@ -88,13 +100,13 @@ export interface GeneratedQuestionDraft {
   categoryName: string;
   knowledgePointIds: string[];
   stem: string;
-  options: string[];
+  options?: string[];
   answer: string[];
   explanation: string;
   savedQuestionId?: string | null;
   savedAt?: string | null;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface QuestionSummary {
@@ -106,8 +118,8 @@ export interface QuestionSummary {
   categoryName: string;
   difficulty?: number | null;
   knowledgePointIds: string[];
-  answeredCount: number;
-  correctRate: number;
+  answeredCount?: number;
+  correctRate?: number | null;
   sourceRefs: SourceRef[];
   createdAt: string;
   savedAt?: string | null;
@@ -123,7 +135,13 @@ export interface AiNoteDraft {
   createdAt: string;
 }
 
-export interface SavedAiNote extends AiNoteDraft {
+export interface SavedAiNote {
+  id: string;
+  knowledgeBaseId: string;
+  type: AiNoteType;
+  title: string;
+  content: string;
+  sourceRefs: SourceRef[];
   savedAt: string;
 }
 
@@ -133,14 +151,14 @@ export interface SearchResult {
   title: string;
   summary: string;
   knowledgeBaseId?: string;
-  knowledgePointIds: string[];
-  sourceRefs: SourceRef[];
+  knowledgePointIds?: string[];
+  sourceRefs?: SourceRef[];
 }
 
 export interface RagAnswer {
   answer: string;
   uncertain: boolean;
   citations: SourceRef[];
-  evidenceChunks: MaterialChunk[];
+  evidenceChunks?: MaterialChunk[];
   savedAiNoteId?: string | null;
 }

@@ -58,6 +58,7 @@ fun HomeScreen(
     onOpenStatistics: () -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenWrongBook: () -> Unit,
+    onOpenAiKnowledge: () -> Unit,
 ) {
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
     val summary = uiState.homeSummary
@@ -132,6 +133,9 @@ fun HomeScreen(
                 onStartSequentialPractice = { onStartPractice(PracticeMode.SEQUENTIAL, null) },
                 onOpenSearch = onOpenSearch,
             )
+        }
+        item {
+            OptionalAiKnowledgeCard(onOpenAiKnowledge = onOpenAiKnowledge)
         }
     }
 }
@@ -390,6 +394,44 @@ private fun TodayActionCard(
                 onClick = onOpenSearch,
                 icon = Icons.Outlined.Search,
                 modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OptionalAiKnowledgeCard(onOpenAiKnowledge: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppIconBadge(
+                icon = Icons.Outlined.AutoAwesome,
+                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                contentColor = MaterialTheme.colorScheme.tertiary,
+            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "AI / 知识库（可选）",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "为第二版预留入口；未配置后端或 AI 时，本地刷题照常可用。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            AppOutlinedActionButton(
+                text = "查看",
+                onClick = onOpenAiKnowledge,
+                icon = Icons.Outlined.AutoAwesome,
             )
         }
     }

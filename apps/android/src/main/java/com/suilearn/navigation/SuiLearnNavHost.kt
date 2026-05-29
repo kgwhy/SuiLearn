@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Category
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Home
@@ -36,6 +37,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.suilearn.core.model.PracticeMode
+import com.suilearn.feature.ai.AiKnowledgeEntryScreen
 import com.suilearn.feature.categories.CategoriesScreen
 import com.suilearn.feature.categories.CategoriesViewModel
 import com.suilearn.feature.favorites.FavoritesScreen
@@ -74,6 +76,7 @@ fun SuiLearnNavHost(viewModelFactory: AppViewModelFactory) {
     val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
     val bottomBarRoutes = setOf(
         AppDestination.Home.route,
+        AppDestination.AiKnowledge.route,
         AppDestination.Library.route,
         AppDestination.Review.route,
         AppDestination.Profile.route,
@@ -100,6 +103,7 @@ fun SuiLearnNavHost(viewModelFactory: AppViewModelFactory) {
                         val selected = selectedBottomDestination == destination
                         val icon = when (destination) {
                             AppDestination.Home -> Icons.Outlined.Home
+                            AppDestination.AiKnowledge -> Icons.Outlined.AutoAwesome
                             AppDestination.Categories -> Icons.Outlined.Category
                             AppDestination.WrongBook -> Icons.Outlined.ErrorOutline
                             AppDestination.Favorites -> Icons.Outlined.StarBorder
@@ -153,6 +157,16 @@ fun SuiLearnNavHost(viewModelFactory: AppViewModelFactory) {
                     onOpenStatistics = { navController.navigate(AppDestination.Statistics.route) },
                     onOpenFavorites = { navController.navigate(AppDestination.Favorites.route) },
                     onOpenWrongBook = { navController.navigate(AppDestination.WrongBook.route) },
+                    onOpenAiKnowledge = { navController.navigate(AppDestination.AiKnowledge.route) },
+                )
+            }
+            composable(AppDestination.AiKnowledge.route) {
+                AiKnowledgeEntryScreen(
+                    onStartLocalPractice = {
+                        practiceViewModel.onEvent(PracticeEvent.StartPractice(PracticeMode.SEQUENTIAL, null))
+                        navController.navigate(AppDestination.Practice.route)
+                    },
+                    onOpenKnowledgeMap = { navController.navigate(AppDestination.Knowledge.route) },
                 )
             }
             composable(AppDestination.Practice.route) {
@@ -295,6 +309,7 @@ private fun NavHostController.navigateToBottomDestination(
 
 private fun bottomLabel(destination: AppDestination): String = when (destination) {
     AppDestination.Home -> "首页"
+    AppDestination.AiKnowledge -> "AI"
     AppDestination.Library -> "题库"
     AppDestination.Review -> "复盘"
     AppDestination.Profile -> "我的"
@@ -310,7 +325,9 @@ private fun bottomLabel(destination: AppDestination): String = when (destination
 
 private fun selectedBottomDestination(currentRoute: String?): AppDestination? = when {
     currentRoute == null -> AppDestination.Home
-    currentRoute == AppDestination.Home.route || currentRoute == AppDestination.Search.route -> AppDestination.Home
+    currentRoute == AppDestination.Home.route ||
+        currentRoute == AppDestination.Search.route ||
+        currentRoute == AppDestination.AiKnowledge.route -> AppDestination.Home
     currentRoute == AppDestination.Library.route ||
         currentRoute == AppDestination.Categories.route ||
         currentRoute.startsWith(AppDestination.Knowledge.route) -> AppDestination.Library

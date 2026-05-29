@@ -222,12 +222,26 @@ ID 规则：
 | 框架 | Spring Boot |
 | API | REST API |
 | 数据库 | PostgreSQL |
-| 缓存 / 任务状态 | Redis，按需引入 |
-| 文档解析 | Apache Tika，按需引入 |
-| AI 调用 | OpenAI API 或兼容 OpenAI 协议的模型服务 |
+| 缓存 / 任务状态 | MVP 先用 PostgreSQL 任务表；Redis 后置按需引入 |
+| 文档解析 | MVP 先支持 Markdown / TXT / 已文本化 PDF；Apache Tika 后置按需引入 |
+| AI 调用 | OpenAI-compatible Provider 抽象；Fake Provider 先打通流程，真实 Provider 作为适配层接入 |
 | 向量检索 | pgvector 优先，复杂后再评估 Milvus 等 |
 | Web 知识库工作台 | React + TypeScript + Vite |
 | 测试 | JUnit + Spring Boot Test |
+
+### 4.2.1 MVP 与后置边界
+
+第二版不一次性铺满所有 AI / RAG 基础设施，先保证可持久化、可追溯、可确认、可测试。
+
+| 方向 | MVP 必选 | 后置 |
+|---|---|---|
+| 持久化 | PostgreSQL 表模型和迁移；知识库、资料、chunk、生成内容、任务、笔记、来源追溯 | 多用户账号、云同步、权限模型 |
+| 向量检索 | pgvector 存储资料 chunk embedding | Milvus 等独立向量库、复杂重排 |
+| AI Provider | `AiProvider` 接口、Fake Provider、OpenAI-compatible 真实适配 | 多 Provider 路由、成本分析、模型评测平台 |
+| 资料解析 | Markdown / TXT / 已文本化 PDF 内容解析 | PDF 二进制解析、OCR、Office 文档解析 |
+| 任务模型 | PostgreSQL 记录任务状态；MVP 可同步执行后写状态 | Redis 队列、分布式 worker、复杂重试调度 |
+| Web | 知识库工作台、资料导入、生成确认、语义搜索、资料问答 | 完整 Web 刷题学习端 |
+| Android | 保留第一版本地闭环，接入必要生成入口和确认结果消费 | Android 完整知识库工作台、端侧 RAG |
 
 ### 4.3 主要能力
 
@@ -256,6 +270,7 @@ ID 规则：
 - 异步任务。
 - 任务状态管理。
 - AI API 封装。
+- Fake Provider / 真实 Provider 分层。
 - Prompt 模板管理。
 - Token 成本控制。
 - 生成内容质量校验。
@@ -273,6 +288,7 @@ Android 负责：
 - 展示生成结果。
 - 让用户确认、保存、删除或修正生成内容。
 - 消费后端已保存的生成结果；第二版不要求 Android 承担完整知识库工作台。
+- 未配置服务端或 AI Provider 不可用时，第一版本地刷题、错题、收藏、统计和搜索仍必须可用。
 
 ### 4.6 与 Web 的关系
 
@@ -283,6 +299,7 @@ Android 负责：
 - AI 生成题、解释、复习建议和 RAG 问答结果的确认、保存、丢弃或删除。
 - 语义搜索和资料问答。
 - 知识库详情中的题目列表和学习统计只做轻量查看，完整 Web 刷题流程留到第三版。
+- 第二版 Web 是知识库工作台主入口，优先覆盖资料和 RAG 操作；不承接第一版 Android 的完整本地刷题体验。
 
 ## 5. 第三版：完整 React Web 学习端扩展
 

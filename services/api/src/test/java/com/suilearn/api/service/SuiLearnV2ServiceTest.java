@@ -2,7 +2,12 @@ package com.suilearn.api.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.inOrder;
 
+import com.suilearn.api.ai.AiProvider;
+import com.suilearn.api.ai.FakeAiProvider;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
@@ -10,23 +15,61 @@ import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.material.DefaultMaterialChunker;
+import com.suilearn.api.material.TextMaterialParser;
 import com.suilearn.api.model.AiNoteType;
 import com.suilearn.api.model.GeneratedContentStatus;
+import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialSourceType;
 import com.suilearn.api.model.MaterialStatus;
 import com.suilearn.api.model.QuestionType;
+import com.suilearn.api.model.SearchResult;
+import com.suilearn.api.model.SearchResultType;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
+import com.suilearn.api.persistence.SuiLearnV2Store;
+import com.suilearn.api.retrieval.FakeEmbeddingProvider;
+import com.suilearn.api.retrieval.KeywordRetriever;
+import com.suilearn.api.retrieval.Retriever;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 
+@SpringBootTest(properties = {
+    "spring.datasource.url=jdbc:h2:mem:suilearn-v2-service-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    "spring.jpa.show-sql=false"
+})
 class SuiLearnV2ServiceTest {
-    private final SuiLearnV2Service service = new SuiLearnV2Service(
-        Clock.fixed(Instant.parse("2026-05-25T00:00:00Z"), ZoneOffset.UTC)
-    );
+    @Autowired
+    private SuiLearnV2Service service;
+
+    @SpyBean
+    private SuiLearnV2Store store;
+
+    @Autowired
+    private Clock clock;
+
+    @BeforeEach
+    void clearDatabase() {
+        store.deleteAll();
+    }
+
+    @AfterEach
+    void clearStoreSpy() {
+        clearInvocations(store);
+    }
 
     @Test
     void keepsKnowledgeBaseScopedContentPendingUntilSavedAndMarksDeletedMaterialSources() {
@@ -273,6 +316,205 @@ class SuiLearnV2ServiceTest {
             });
     }
 
+    @Test
+    void persistsCoreDataAfterRecreatingService() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets. Collision handling uses linked lists."
+        ));
+        var point = service.extractKnowledgePoints(material.id()).get(0);
+        var draft = service.generateQuestion(generateQuestionRequest(
+            kb.id(),
+            materialSourceRef(kb.id(), material.id(), material.title()),
+            "java-collections",
+            "Java Collections",
+            List.of(point.id())
+        ));
+        var saved = service.reviewGeneratedContent(draft.id(), saveRequest(null, null, null));
+        service.saveAiNote(new SaveAiNoteRequest(
+            null,
+            kb.id(),
+            AiNoteType.REVIEW_SUGGESTION,
+            "Review",
+            "Review HashMap collision handling.",
+            List.of(materialSourceRef(kb.id(), material.id(), material.title()))
+        ));
+
+        var recreatedService = new SuiLearnV2Service(
+            new FakeAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            keywordRetriever(),
+            clock,
+            store
+        );
+
+        assertThat(recreatedService.listKnowledgeBases()).extracting("id").contains(kb.id());
+        assertThat(recreatedService.listMaterials(kb.id())).extracting("id").contains(material.id());
+        assertThat(recreatedService.getMaterialDetail(material.id()).chunks()).isNotEmpty();
+        assertThat(recreatedService.listKnowledgePoints(kb.id())).extracting("id").contains(point.id());
+        assertThat(recreatedService.listGeneratedContents(null)).extracting("id").contains(draft.id());
+        assertThat(recreatedService.listQuestions(kb.id())).extracting("id").contains(saved.savedQuestionId());
+        assertThat(recreatedService.getKnowledgeBaseDetail(kb.id()).aiNoteCount()).isEqualTo(1);
+    }
+
+    @Test
+    void fakeAiProviderReturnsStableQuestionExplanationAndReviewSuggestion() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets. Collision handling uses linked lists."
+        ));
+        var point = service.extractKnowledgePoints(material.id()).get(0);
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+
+        var question = service.generateQuestion(generateQuestionRequest(
+            kb.id(),
+            sourceRef,
+            "java-collections",
+            "Java Collections",
+            List.of(point.id())
+        ));
+        var explanation = service.generateExplanation(new GenerateExplanationRequest(
+            kb.id(),
+            point.id(),
+            List.of(sourceRef),
+            null
+        ));
+        var suggestion = service.generateReviewSuggestion(new GenerateReviewSuggestionRequest(
+            kb.id(),
+            List.of(sourceRef),
+            List.of(point.id()),
+            List.of(question.id()),
+            null
+        ));
+
+        assertThat(question.stem()).isEqualTo("Fake AI question about HashMap Notes: which statement is most accurate?");
+        assertThat(question.options()).containsExactly(
+            "A. It should be checked against the cited source.",
+            "B. It ignores source traceability.",
+            "C. It should replace all existing questions automatically.",
+            "D. It does not need user review."
+        );
+        assertThat(question.answer()).containsExactly("A");
+        assertThat(question.explanation()).isEqualTo(
+            "Fake AI explanation: review the cited source for HashMap Notes before saving this generated question."
+        );
+        assertThat(explanation.title()).isEqualTo(point.name() + " explanation");
+        assertThat(explanation.content()).contains("Fake AI explanation for " + point.name());
+        assertThat(suggestion.title()).isEqualTo("Weak knowledge point review suggestion");
+        assertThat(suggestion.content()).contains("Fake AI review suggestion");
+    }
+
+    @Test
+    void serviceUsesReplaceableAiProviderForGeneratedContent() {
+        var customService = new SuiLearnV2Service(
+            new TestAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            keywordRetriever(),
+            clock,
+            store
+        );
+        var kb = customService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = customService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets."
+        ));
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+
+        var draft = customService.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, null));
+
+        assertThat(draft.stem()).isEqualTo("Provider replacement question");
+        assertThat(draft.options()).containsExactly("A. Custom provider option");
+        assertThat(draft.answer()).containsExactly("A");
+        assertThat(draft.explanation()).isEqualTo("Provider replacement explanation");
+    }
+
+    @Test
+    void importMaterialPersistsUploadedParsingChunkingReadyStatusFlow() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        clearInvocations(store);
+
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.PDF,
+            "HashMap uses buckets.\n\nCollision handling uses linked lists."
+        ));
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.READY);
+        assertThat(service.getMaterialDetail(material.id()).chunks())
+            .extracting("content")
+            .containsExactly("HashMap uses buckets.", "Collision handling uses linked lists.");
+
+        InOrder statusFlow = inOrder(store);
+        statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.UPLOADED));
+        statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.PARSING));
+        statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.CHUNKING));
+        statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.READY));
+    }
+
+    @Test
+    void importMaterialStoresFailedStatusWhenParserFails() {
+        var failingService = new SuiLearnV2Service(
+            new FakeAiProvider(),
+            request -> {
+                throw new IllegalStateException("parse failed");
+            },
+            new DefaultMaterialChunker(),
+            keywordRetriever(),
+            clock,
+            store
+        );
+        var kb = failingService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        var material = failingService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Broken Notes",
+            null,
+            MaterialSourceType.PDF,
+            "unparseable text"
+        ));
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.FAILED);
+        assertThat(store.findMaterial(material.id()))
+            .hasValueSatisfying(saved -> assertThat(saved.status()).isEqualTo(MaterialStatus.FAILED));
+        assertThat(store.listChunksByMaterial(material.id())).isEmpty();
+    }
+
+    @Test
+    void serviceUsesReplaceableRetrieverForSearchAndAsk() {
+        var customService = new SuiLearnV2Service(
+            new FakeAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            new TestRetriever(),
+            clock,
+            store
+        );
+        var kb = customService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        assertThat(customService.search("anything", kb.id(), null))
+            .singleElement()
+            .satisfies(result -> {
+                assertThat(result.id()).isEqualTo("custom_result");
+                assertThat(result.type()).isEqualTo(SearchResultType.MATERIAL_CHUNK);
+            });
+
+        var answer = customService.ask("anything", kb.id(), null);
+
+        assertThat(answer.uncertain()).isFalse();
+        assertThat(answer.citations()).singleElement()
+            .satisfies(ref -> assertThat(ref.id()).isEqualTo("custom_chunk"));
+    }
+
     private static GenerateQuestionRequest generateQuestionRequest(
         String knowledgeBaseId,
         SourceRef sourceRef,
@@ -322,5 +564,77 @@ class SuiLearnV2ServiceTest {
             false,
             null
         );
+    }
+
+    private KeywordRetriever keywordRetriever() {
+        return new KeywordRetriever(new FakeEmbeddingProvider(), store);
+    }
+
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock fixedClock() {
+            return Clock.fixed(Instant.parse("2026-05-25T00:00:00Z"), ZoneOffset.UTC);
+        }
+    }
+
+    private static class TestAiProvider implements AiProvider {
+        @Override
+        public GeneratedQuestion generateQuestion(QuestionGenerationPrompt prompt) {
+            return new GeneratedQuestion(
+                prompt.questionType(),
+                prompt.categoryId(),
+                prompt.categoryName(),
+                prompt.knowledgePointIds(),
+                "Provider replacement question",
+                List.of("A. Custom provider option"),
+                List.of("A"),
+                "Provider replacement explanation"
+            );
+        }
+
+        @Override
+        public GeneratedNote generateKnowledgePointExplanation(KnowledgePointExplanationPrompt prompt) {
+            return new GeneratedNote("Provider replacement explanation note", "Provider replacement explanation content");
+        }
+
+        @Override
+        public GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt) {
+            return new GeneratedNote("Provider replacement review note", "Provider replacement review content");
+        }
+    }
+
+    private static class TestRetriever implements Retriever {
+        @Override
+        public List<SearchResult> search(RetrievalRequest request) {
+            return List.of(new SearchResult(
+                "custom_result",
+                SearchResultType.MATERIAL_CHUNK,
+                "Custom result",
+                "Custom summary",
+                request.knowledgeBaseId(),
+                List.of(),
+                List.of(sourceRef(request))
+            ));
+        }
+
+        @Override
+        public List<MaterialChunk> retrieveEvidence(RetrievalRequest request, int limit) {
+            return List.of(new MaterialChunk("custom_chunk", "custom_material", "Custom evidence", 0, sourceRef(request)));
+        }
+
+        private static SourceRef sourceRef(RetrievalRequest request) {
+            return new SourceRef(
+                SourceType.MATERIAL_CHUNK,
+                "custom_chunk",
+                request.knowledgeBaseId(),
+                "Custom material",
+                "custom_material",
+                "custom_chunk",
+                false,
+                "Custom evidence"
+            );
+        }
     }
 }

@@ -1172,6 +1172,18 @@ Gradle module 演进边界：
 
 第二版不引入账号、多用户、云同步和自动发布机制。服务端可以先按单用户本地部署或开发环境运行，所有 API 仍保留 `knowledgeBaseId`、`sourceId` 和追溯字段，避免后续扩展时重写核心模型。
 
+第二版 MVP 与后置范围按以下边界执行：
+
+| 能力 | MVP 先做 | 后置 |
+|---|---|---|
+| 持久化 | PostgreSQL 作为真实集成前的必选落点；核心业务表和状态机先建齐 | 多租户、账号隔离、复杂权限、跨端云同步 |
+| 向量检索 | `material_chunks.embedding` 使用 pgvector；只索引资料片段 | 独立向量库、题目全量向量化、混合重排模型 |
+| AI Provider | 业务层依赖 `AiProvider` 抽象；默认可用 Fake Provider；真实 Provider 作为基础设施适配 | 多 Provider 路由、成本预算面板、复杂模型评测 |
+| 资料解析 | Markdown / TXT / 已文本化 PDF 内容进入解析链路 | 真实 PDF 二进制解析、OCR、Office 文档解析 |
+| 任务模型 | 资料导入、embedding、生成题保留任务状态；MVP 可同步执行并写状态 | 分布式队列、后台 worker 集群、复杂重试调度 |
+| Web 工作台 | 承载知识库、资料导入、生成确认、问答、语义搜索 | 完整 Web 刷题学习端 |
+| Android 接入 | 保留第一版本地闭环，只接入生成入口、状态展示、确认结果消费 | Android 完整知识库工作台、端侧 RAG、端侧 embedding |
+
 ## 22. 第二版模块划分
 
 ```text
@@ -1207,37 +1219,68 @@ apps/android
 - `SavedAiNote`：用户保存的解释、复习建议或问答内容。
 - `SourceRef`：生成来源，可指向知识点、错题、资料、资料片段或知识库。
 
+服务端实现边界：
+
+- `domain` 只表达领域对象和状态，不依赖 Spring、JPA、AI SDK 或 pgvector 类型。
+- `application` 编排导入、生成、问答、搜索和确认保存流程，只依赖 Repository、DocumentParser、Chunker、EmbeddingService、AiProvider 等接口。
+- `infrastructure.persistence` 负责 PostgreSQL / pgvector 表映射、事务和查询，不向 Controller 暴露 Entity。
+- `infrastructure.ai` 只实现 Provider 适配，不承载生成题、RAG 问答或内容保存业务规则。
+- `api` DTO 以 `contracts/openapi/suilearn-v2.yaml` 为准；新增字段先改 OpenAPI，再实现 DTO。
+
 ## 23. 第二版核心流程
+
+### 23.0 AI Provider 分层
+
+AI 调用必须通过服务端内部接口封装，业务层不直接调用任何厂商 SDK。建议最小接口：
+
+```text
+AiProvider
+├─ generateQuestion(request): GeneratedQuestionCandidate
+├─ generateExplanation(request): AiNoteCandidate
+├─ generateReviewSuggestion(request): AiNoteCandidate
+├─ answerWithContext(request): RagAnswerCandidate
+└─ embed(texts): List<EmbeddingVector>
+```
+
+Provider 分层：
+
+- `FakeAiProvider`：MVP 和测试默认可用，返回结构稳定、可预测的生成题、解释、建议、RAG 回答和 embedding 向量。用于端到端开发、契约验证和无密钥环境。
+- `OpenAiCompatibleProvider`：真实 Provider，封装 OpenAI API 或兼容 OpenAI 协议的模型服务。配置项只在 `config` / `infrastructure.ai` 中出现，不能泄漏到 `application` 或 Controller。
+- `AiProviderProperties`：保存 `providerType`、`baseUrl`、`model`、`embeddingModel`、超时、重试次数等配置；API key 只从环境变量或本地开发配置读取，不写入仓库文档示例之外的代码。
+
+MVP 先使用 Fake Provider 打通业务状态机和前后端契约；接入真实 Provider 时必须复用同一接口和测试用例。真实 Provider 返回内容必须经过结构校验、来源校验和状态机写入后才能暴露给客户端，不能直接把模型原始响应透传为正式题库内容。
 
 ### 23.1 AI 生成题
 
 1. 客户端从知识点、错题、资料或知识库发起生成请求。
 2. 服务端创建 `GenerationTask`，记录来源、范围、题型偏好和 prompt 参数。
-3. AI Provider 返回题干、选项、答案、解析、分类、知识点和来源说明。
-4. 服务端执行结构校验和基本质量校验，生成携带 `categoryId` / `categoryName` / `knowledgePointIds` 的 `GeneratedQuestionDraft`。
-5. 草稿进入 `PENDING_REVIEW`，客户端展示确认页。
-6. 用户选择保存、编辑后保存、删除或丢弃。
-7. 保存后转换为保留同一分类与知识点字段的正式题目，后续可进入刷题、错题、收藏、搜索和统计。
+3. `application` 根据 `SourceRef` 读取上下文；资料来源必须来自未删除的 `MaterialChunk`，错题和知识点来源必须属于请求的知识库或学习范围。
+4. AI Provider 返回题干、选项、答案、解析、分类、知识点和来源说明。
+5. 服务端执行结构校验和基本质量校验，生成携带 `categoryId` / `categoryName` / `knowledgePointIds` 的 `GeneratedQuestionDraft`。
+6. 草稿进入 `PENDING_REVIEW`，客户端展示确认页。
+7. 用户选择保存、编辑后保存、删除或丢弃。
+8. 保存后转换为保留同一分类与知识点字段的正式题目，后续可进入刷题、错题、收藏、搜索和统计。
 
 ### 23.2 资料导入与知识点提取
 
 1. 用户在知识库中上传 Markdown、TXT 或 PDF 来源资料；MVP 契约接收文本化后的内容、文件名和 `sourceType`，不承诺已解析真实 PDF 二进制。
 2. 服务端保存 `LearningMaterial`，状态从 `UPLOADED` 进入 `PARSING`。
-3. Document Parser 输出纯文本与结构信息；PDF 二进制解析在 MVP 后通过适配层接入。
-4. Chunker 按标题、段落和长度切片，形成 `MaterialChunk`。
-5. Embedding Worker 写入向量索引。
-6. Knowledge Extractor 生成候选知识点，进入可编辑状态。
-7. 用户可以编辑或删除提取出的知识点。
+3. Document Parser 输出纯文本与结构信息；Markdown 保留标题层级，TXT 按空行和长度分段，PDF 在 MVP 只消费已经文本化的内容。
+4. Chunker 按标题、段落和长度切片，形成 `MaterialChunk`，每个 chunk 保存 `ordinal`、`titlePath`、`content`、`tokenEstimate` 和 `sourceRef`。
+5. Embedding Service 对 chunk 生成向量并写入 `material_chunks.embedding`；Fake Provider 环境可写入确定性伪向量，保证检索链路可测试。
+6. 状态依次流转为 `CHUNKING`、`INDEXING`、`READY`；任一步失败写入 `FAILED` 和错误摘要，保留重试入口。
+7. Knowledge Extractor 基于 chunk 生成候选知识点，进入可编辑状态；用户可以编辑或删除提取出的知识点。
 
 资料删除采用软删除优先：`LearningMaterial` 标记为 `DELETED` 后，不再参与 RAG、语义搜索和新生成任务；关联的 `MaterialChunk` 与 embedding 失效或异步清理。已经保存为正式题目、AI 笔记、解释或复习建议的内容默认保留，但必须保留 `SourceRef`、设置 `SourceRef.deleted = true`，并在详情中提示来源资料已删除；仍处于 `PENDING_REVIEW` 的生成内容默认标记为 `DELETED`，避免用户继续保存不可追溯草稿。
 
 ### 23.3 RAG 问答
 
 1. 用户必须指定知识库或单份资料范围提问，禁止隐式全局问答。
-2. Query Service 做语义检索，返回候选资料片段。
-3. RAG Service 只基于候选片段组织回答。
-4. 如果证据不足，返回 `uncertain = true` 和“不确定 / 资料中未找到明确依据”提示。
-5. 回答必须携带引用片段，客户端可跳转到资料详情。
+2. Query Service 对问题生成 query embedding，并在指定范围内检索 `READY` 且未删除资料的 chunk。
+3. 检索结果按相似度和来源范围过滤；MVP 不做跨知识库全局召回，不做复杂重排。
+4. RAG Service 只基于候选片段组织回答，prompt 中必须带 chunk id、资料标题和片段内容。
+5. 如果证据不足，返回 `uncertain = true` 和“不确定 / 资料中未找到明确依据”提示。
+6. 回答必须携带引用片段，客户端可跳转到资料详情；用户选择保存后才写入 `ai_notes`。
 
 ### 23.4 语义搜索
 
@@ -1263,6 +1306,14 @@ API 契约由 `contracts/openapi/suilearn-v2.yaml` 维护，第一批接口覆�
 
 实现 Agent 不得绕过契约直接扩展端侧私有接口。新增接口先由架构 Agent 更新 OpenAPI，再由 Server Backend、Android 和 Web 分别消费。
 
+端侧接入边界：
+
+- Web 工作台是第二版主入口，必须完整消费知识库、资料、知识点提取、生成确认、RAG 问答和语义搜索接口。
+- Web 工作台只做知识库详情中的题目列表和学习统计轻量查看，不实现完整刷题、错题复习、收藏和学习记录闭环。
+- Android 第二版只在第一版页面上增加必要远程入口，例如从知识点、错题或题目详情发起生成、查看任务或生成结果、确认保存或丢弃。
+- Android 不承载资料导入、资料详情、知识库批量管理、完整语义搜索工作台或 RAG 对话工作台；这些由 Web 工作台优先承载。
+- Android 未配置服务端或 AI Provider 不可用时，第一版本地刷题、错题、收藏、统计和搜索必须完全可用。
+
 ## 25. 第二版数据表草案
 
 服务端首批表：
@@ -1277,7 +1328,36 @@ API 契约由 `contracts/openapi/suilearn-v2.yaml` 维护，第一批接口覆�
 - `ai_notes`
 - `source_refs`
 
-向量字段建议仅存在于 `material_chunks` 和后续需要语义检索的题目摘要表中。业务表不直接依赖向量库语义；语义检索失败时仍可通过关键词搜索和资料列表降级。
+PostgreSQL 表模型边界：
+
+| 表 | MVP 职责 | 不放入该表的内容 |
+|---|---|---|
+| `knowledge_bases` | 知识库元数据、软删除状态、创建/更新时间 | 用户账号、权限、同步设备信息 |
+| `learning_materials` | 资料元数据、`sourceType`、原始文件名、文本化内容或存储引用、导入状态、错误摘要 | chunk 正文、embedding、生成结果正文 |
+| `material_chunks` | 资料切片正文、顺序、标题路径、token 估算、pgvector embedding、索引状态 | AI 回答正文、正式题目、用户学习记录 |
+| `knowledge_points` | 第二版知识库内提取或生成的知识点、说明、软删除状态 | 第一版 Android 本地 Room 记录的直接同步副本 |
+| `questions` | 已保存进入正式题库的题目、题型、答案、解析、分类、知识点归属、来源追溯 | `PENDING_REVIEW` 草稿、模型原始响应 |
+| `generated_contents` | AI 生成题、解释、建议、RAG 回答等待确认或已处理内容的状态池 | 已保存后的正式题目主数据、资料 chunk |
+| `generation_tasks` | 生成、解析、embedding 等任务状态、输入摘要、错误、重试次数 | 大段资料正文、Provider 原始密钥 |
+| `ai_notes` | 用户保存的解释、复习建议、RAG 回答 | 未经用户保存的一次性模型输出 |
+| `source_refs` | 生成内容、题目、笔记与知识点/错题/资料/chunk/知识库的追溯关系 | 业务对象正文、跨表权限规则 |
+
+首批不建表的内容：
+
+- 不建 `users`、`accounts`、`subscriptions`、`devices`，第二版不做账号和商业化。
+- 不建完整 Web 学习记录表；Web 完整刷题闭环留到第三版。
+- 不把 Android 第一版 Room 数据做云同步镜像；后端只保存第二版服务端产生或用户导入的内容。
+- 不引入独立向量库表结构；pgvector 直接挂在 `material_chunks.embedding`，后续确有规模压力再迁移。
+
+向量字段仅存在于 `material_chunks` 和后续明确需要语义检索的摘要表中。业务表不直接依赖向量库语义；语义检索失败时仍可通过关键词搜索和资料列表降级。
+
+最小字段要求：
+
+- 所有业务表使用稳定字符串 ID 或 UUID，保留 `created_at`、`updated_at`；软删除表增加 `deleted_at`。
+- `learning_materials` 必须保存 `knowledge_base_id`、`title`、`file_name`、`source_type`、`status`、`error_message`。
+- `material_chunks` 必须保存 `knowledge_base_id`、`material_id`、`ordinal`、`content`、`embedding`、`embedding_model`、`source_ref`。
+- `generated_contents` 必须保存 `knowledge_base_id`、`type`、`status`、`payload_json`、`source_refs`、`saved_target_id`。
+- `source_refs` 必须能表达 `type`、`source_id`、`knowledge_base_id`、`material_id`、`chunk_id`、`deleted` 和 `excerpt`。
 
 AI 生成内容状态：
 
@@ -1309,5 +1389,7 @@ DELETED
 - 追溯字段：生成题、解释、建议至少保留一个 `SourceRef`。
 - 不确定性表达：资料不足时 RAG 返回 `uncertain = true`。
 - 第一版兼容：未配置 AI 服务时，Android 本地刷题、错题、收藏和统计不受影响。
+- Provider 分层：Fake Provider 和真实 Provider 使用同一接口，业务测试不依赖真实模型服务。
+- 资料导入状态机：成功路径必须覆盖 `UPLOADED -> PARSING -> CHUNKING -> INDEXING -> READY`，失败路径必须写入 `FAILED` 和错误摘要。
 
 服务端 MVP 可先用内存 Repository 验证 API 和业务状态机，但进入真实集成前必须切换 PostgreSQL，并补充 repository / integration test。
