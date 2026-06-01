@@ -1393,3 +1393,85 @@ DELETED
 - 资料导入状态机：成功路径必须覆盖 `UPLOADED -> PARSING -> CHUNKING -> INDEXING -> READY`，失败路径必须写入 `FAILED` 和错误摘要。
 
 服务端 MVP 可先用内存 Repository 验证 API 和业务状态机，但进入真实集成前必须切换 PostgreSQL，并补充 repository / integration test。
+
+## 27. 第二版本地运行配置
+
+第二版本地运行默认遵循“无密钥可启动”的原则：后端默认使用 H2 文件库和 `FakeAiProvider`，开发者只有在需要验证 PostgreSQL / pgvector 或真实 AI Provider 时才显式覆盖配置。
+
+### 27.1 配置文件边界
+
+后端默认配置位于 `services/api/src/main/resources/application.properties`，只保留可提交的默认值和环境变量占位符。它额外导入 `services/api/config/local.properties`：
+
+```properties
+spring.config.import=optional:file:./config/local.properties
+```
+
+`config/local.properties` 只用于本机开发，不提交仓库；模板见 `services/api/config/local.properties.example`。该模板包含数据库连接、AI Provider 模式、OpenAI-compatible Provider 的 base URL、模型名和 API key 占位符，但不包含真实密钥。真实 API key 必须从环境变量读取，例如 `SUILEARN_AI_API_KEY`。
+
+### 27.2 本地 PostgreSQL / pgvector
+
+需要验证真实 PostgreSQL 或 pgvector 行为时，在 `services/api` 目录运行：
+
+```bash
+docker compose -f compose.local.yml up -d
+```
+
+首次启动后启用 pgvector 扩展：
+
+```bash
+docker compose -f compose.local.yml exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+然后复制配置模板：
+
+```bash
+cp config/local.properties.example config/local.properties
+```
+
+Windows PowerShell 可使用：
+
+```powershell
+Copy-Item config/local.properties.example config/local.properties
+```
+
+模板默认连接：
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/suilearn
+spring.datasource.driver-class-name=org.postgresql.Driver
+spring.datasource.username=suilearn
+spring.datasource.password=suilearn_dev_password
+spring.jpa.hibernate.ddl-auto=update
+```
+
+`suilearn_dev_password` 只作为本地容器默认值，不用于远程、共享或生产环境。若需要自定义本地密码，可在启动 compose 前设置 `SUILEARN_POSTGRES_PASSWORD`，并同步更新 `config/local.properties`。
+
+### 27.3 Fake / Real AI Provider 切换
+
+默认模式：
+
+```properties
+suilearn.ai.provider=fake
+```
+
+`fake` 模式由 `FakeAiProvider` 提供稳定的生成题、解释和复习建议，不需要 API key，适合本地开发、契约验证和自动化测试。
+
+真实 Provider 按 OpenAI-compatible 适配层预留配置：
+
+```properties
+suilearn.ai.provider=openai-compatible
+suilearn.ai.base-url=https://api.openai.com/v1
+suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
+suilearn.ai.chat-model=gpt-4.1-mini
+suilearn.ai.embedding-model=text-embedding-3-small
+suilearn.ai.timeout-ms=30000
+suilearn.ai.max-retries=2
+```
+
+当前仓库已定义 `AiProvider` 接口和 `FakeAiProvider`，真实 `OpenAiCompatibleProvider` 尚未接入。因此本地运行应保持 `fake`；等真实适配层合入后，再通过 `suilearn.ai.provider=openai-compatible` 切换。无论使用哪种 Provider，业务层只能依赖 `AiProvider` 抽象，不能直接读取 API key 或调用厂商 SDK。
+
+### 27.4 推荐启动顺序
+
+1. 不需要 PostgreSQL 时，直接运行 `mvn -f services/api/pom.xml spring-boot:run`，使用默认 H2 + Fake Provider。
+2. 需要 PostgreSQL / pgvector 时，进入 `services/api` 启动 compose，启用 `vector` 扩展，复制并检查 `config/local.properties`。
+3. 需要真实 AI 时，仅在本机 shell 设置 `SUILEARN_AI_API_KEY`，不要把 key 写入模板、文档或提交历史。

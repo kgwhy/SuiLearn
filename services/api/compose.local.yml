@@ -1,0 +1,22 @@
+name: suilearn-api-local
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: suilearn-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${SUILEARN_POSTGRES_DB:-suilearn}
+      POSTGRES_USER: ${SUILEARN_POSTGRES_USER:-suilearn}
+      POSTGRES_PASSWORD: ${SUILEARN_POSTGRES_PASSWORD:-suilearn_dev_password}
+    volumes:
+      - suilearn-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  suilearn-postgres-data:
