@@ -3,9 +3,19 @@
 ## 核心文档
 
 - `docs/chat.md`：产品灵感讨论材料，只读参考，不是正式 PRD。
-- `docs/product-requirements.md`：正式产品需求文档。
+- `docs/product-requirements.md`：当前已确认产品规格，作为产品真相源。
+- `docs/architecture.md`：当前系统架构、模块边界和演进约束。
 - `docs/tech-selection.md`：技术选型与架构决策文档。
 - `docs/development-workflow.md`：Leader 驱动的多 Agent 开发流程。
+
+## AI First 文档入口
+
+SuiLearn 文档按“当前规格 + 变更提案 + Git 历史”组织。本节只做入口索引，具体规则见对应文档：
+
+- 当前规格：`docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md`。
+- 变更提案规则：`docs/proposals/README.md`。
+- 变更提案模板：`docs/proposals/_template.md`。
+- 多 Agent 执行流程：`docs/development-workflow.md`。
 
 ## Agent 规则
 

@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">SuiLearn app icon</title>
+  <desc id="desc">A soft rounded app icon with a large S, graduation cap, checklist, and open book.</desc>
+  <defs>
+    <linearGradient id="bg" x1="122" y1="98" x2="904" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F7F8F5"/>
+    </linearGradient>
+    <radialGradient id="wash" cx="45%" cy="39%" r="66%">
+      <stop offset="0" stop-color="#EAF2EC" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#EAF2EC" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="forest" x1="350" y1="190" x2="698" y2="826" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1F5A4E"/>
+      <stop offset="1" stop-color="#154438"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="676" y1="506" x2="742" y2="800" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D89A10"/>
+      <stop offset="1" stop-color="#E7B916"/>
+    </linearGradient>
+    <linearGradient id="bookRight" x1="520" y1="626" x2="776" y2="792" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFDF4"/>
+      <stop offset="1" stop-color="#FFF4D8"/>
+    </linearGradient>
+    <filter id="softShadow" x="-18%" y="-18%" width="136%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#17221C" flood-opacity="0.14"/>
+    </filter>
+    <filter id="smallShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#17221C" flood-opacity="0.10"/>
+    </filter>
+    <clipPath id="clip">
+      <rect x="92" y="92" width="840" height="840" rx="176"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="#FAFBF8"/>
+  <rect x="92" y="92" width="840" height="840" rx="176" fill="url(#bg)" stroke="#DDE4DA" stroke-width="28"/>
+  <g clip-path="url(#clip)">
+    <rect x="92" y="92" width="840" height="840" rx="176" fill="url(#wash)"/>
+    <circle cx="260" cy="250" r="172" fill="#EAF2EC" opacity="0.56"/>
+    <circle cx="820" cy="806" r="160" fill="#FFF4D8" opacity="0.72"/>
+  </g>
+
+  <g filter="url(#smallShadow)">
+    <rect x="620" y="348" width="190" height="210" rx="42" fill="#FFFFFF" stroke="#DDE4DA" stroke-width="16"/>
+    <path d="M665 422L698 456L748 392" fill="none" stroke="#214D43" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M665 506L698 540L748 476" fill="none" stroke="#214D43" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M764 430H802" stroke="#DDE4DA" stroke-width="18" stroke-linecap="round"/>
+    <path d="M764 514H802" stroke="#DDE4DA" stroke-width="18" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#smallShadow)">
+    <path d="M626 212L728 206C742 205 754 210 764 218L838 278C850 288 846 302 830 306L700 336C678 342 662 338 646 324L602 286C590 276 592 260 608 254Z"
+          fill="#214D43"/>
+    <path d="M818 306V372" stroke="#C78A11" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="818" cy="378" r="14" fill="#C78A11"/>
+    <path d="M804 396H832L846 432H790Z" fill="#C78A11"/>
+  </g>
+
+  <g filter="url(#smallShadow)">
+    <path d="M252 586C356 548 438 566 512 628V790C426 722 326 710 252 740Z"
+          fill="#FFFFFF" stroke="#DDE4DA" stroke-width="18" stroke-linejoin="round"/>
+    <path d="M512 628C586 566 668 548 772 586V740C698 710 598 722 512 790Z"
+          fill="url(#bookRight)" stroke="#DDE4DA" stroke-width="18" stroke-linejoin="round"/>
+    <path d="M512 632V786" stroke="#AFC8BD" stroke-width="16" stroke-linecap="round"/>
+    <path d="M332 642C410 622 468 634 514 676" fill="none" stroke="#AFC8BD" stroke-width="14" stroke-linecap="round"/>
+    <path d="M368 696C438 682 502 690 560 718" fill="none" stroke="#C78A11" stroke-width="14" stroke-linecap="round" opacity="0.78"/>
+    <path d="M560 674C618 640 688 628 742 650" fill="none" stroke="#DDE4DA" stroke-width="14" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <path d="M690 248C590 200 430 212 342 288C270 350 286 448 372 486C454 522 568 496 646 548C728 602 726 704 638 762C544 824 388 798 304 706"
+          fill="none" stroke="#FFFFFF" stroke-width="126" stroke-linecap="round"/>
+    <path d="M690 248C590 200 430 212 342 288C270 350 286 448 372 486C454 522 568 496 646 548C728 602 726 704 638 762C544 824 388 798 304 706"
+          fill="none" stroke="url(#forest)" stroke-width="86" stroke-linecap="round"/>
+    <path d="M646 548C724 604 728 704 638 762"
+          fill="none" stroke="url(#gold)" stroke-width="32" stroke-linecap="round"/>
+  </g>
+
+  <circle cx="342" cy="288" r="48" fill="#FFF4D8" stroke="#FFFFFF" stroke-width="16"/>
+  <circle cx="304" cy="706" r="48" fill="#FFF4D8" stroke="#FFFFFF" stroke-width="16"/>
+
+  <rect x="118" y="118" width="788" height="788" rx="154" fill="none" stroke="#FFFFFF" stroke-width="16" opacity="0.7"/>
+</svg>

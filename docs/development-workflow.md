@@ -75,6 +75,31 @@ Leader 不依赖长对话记忆来判断项目事实。每次开始开发任务�
 
 如果某个决策还没有写回文档，Leader 在后续任务中只能把它当作“待确认上下文”，不能当作稳定事实。
 
+## AI First 文档架构
+
+SuiLearn 文档优先服务于 AI 开发上下文消费：让执行 Agent 快速理解“当前系统长什么样、本次改什么、影响哪里”。详细 Proposal 规则以 `docs/proposals/README.md` 为准，本流程只规定 Leader 如何把这些规则纳入任务卡、派发、审查和完成定义。
+
+当前阶段采用以下结构：
+
+```text
+docs/chat.md                  # 灵感材料，只读参考
+docs/product-requirements.md  # 当前产品规格，产品真相源
+docs/architecture.md          # 当前系统架构与模块边界
+docs/tech-selection.md        # 当前技术选型与约束
+docs/development-workflow.md  # 多 Agent 协作流程
+docs/proposals/*.md           # 可选：尚未并入当前规格的变更提案
+```
+
+规则：
+
+- `docs/product-requirements.md` 只表达当前已确认的产品规格，不承载历史版本库，也不堆叠大量需求索引。
+- 未来变更先进入 `docs/proposals/*.md`，具体状态、命名、门禁、关闭和 `Spec Key` 规则见 `docs/proposals/README.md`。
+- AI 开发任务的文档输入包优先使用“当前规格 + 已批准 Proposal + 相关技术/架构约束”，避免一次性注入无关历史文档。
+
+### Proposal 实现门禁
+
+Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/proposals/README.md` 检查 Proposal 状态、当前规格影响、角色和文件影响、验收标准、实现后关闭方式。未通过门禁的 Proposal 只能用于讨论、探查或原型验证，不能作为已确认实现依据。
+
 ## 任务卡模板
 
 每个开发任务开始前，Leader 先生成任务卡。
@@ -83,6 +108,12 @@ Leader 不依赖长对话记忆来判断项目事实。每次开始开发任务�
 任务名称：
 背景：
 上下文来源：
+文档输入包：
+  Current Spec:
+  Approved Proposal:
+  Architecture:
+  Tech Constraints:
+  Excluded Docs:
 目标：
 归属角色：
 子 Agent 策略：
@@ -96,7 +127,15 @@ Leader 不依赖长对话记忆来判断项目事实。每次开始开发任务�
 完成定义：
 ```
 
-如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、可修改文件、禁止修改文件、完成定义。
+如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、文档输入包、可修改文件、禁止修改文件、完成定义。
+
+文档输入包规则：
+
+- `Current Spec` 必须列出当前实现依据，例如 `docs/product-requirements.md` 的相关章节。
+- `Approved Proposal` 只允许列出状态为 `Approved` 的 `docs/proposals/*.md`；如果没有，写“无”。
+- `Architecture` 列出相关架构文档，例如 `docs/architecture.md` 或 `contracts/**`。
+- `Tech Constraints` 列出相关技术约束，例如 `docs/tech-selection.md`。
+- `Excluded Docs` 列出本任务不得当作实现依据的材料，例如 `docs/chat.md`、`Draft Proposal` 或历史 diff。
 
 ## 子 Agent 调用决策
 
@@ -178,8 +217,9 @@ Leader 每次开始任务前，必须在任务卡中写明子 Agent 策略：
 
 | 范围 | 默认 owner | 说明 |
 | --- | --- | --- |
-| `docs/product-requirements.md` | 产品 Agent | 正式产品范围和验收标准 |
+| `docs/product-requirements.md` | 产品 Agent | 当前产品规格和验收标准 |
 | `docs/chat.md` | 只读参考 | 灵感材料，不直接当作 PRD |
+| `docs/proposals/**` | 产品 Agent / 架构 Agent | 变更提案；产品行为归产品 Agent，技术或架构变更归架构 Agent |
 | `docs/tech-selection.md` | 架构 Agent | 技术选型与阶段约束 |
 | `docs/architecture*.md` | 架构 Agent | 模块边界、数据演进、接口契约 |
 | `apps/android/**` | Android Agent | 第一版 Android App 全部客户端实现，包括 UI、ViewModel、domain、data、本地导入和 Android 测试代码 |
@@ -237,6 +277,7 @@ Leader 派发任务时，任务描述必须包含：
 - 角色：本次按哪个 Agent 执行。
 - 目标：只描述本任务要完成的结果。
 - 上下文来源：本任务依据哪些文档、代码、测试或错误日志。
+- 文档输入包：当前规格、Approved Proposal、架构约束、技术约束和排除文档。
 - 文件范围：允许修改和禁止修改的文件。
 - 依据：相关 PRD、技术文档或架构规则。
 - 验收：要跑的测试、要满足的断言或手动检查路径。
@@ -272,6 +313,8 @@ Leader 汇总阻塞问题后统一向用户确认，再继续派发执行任务�
 审查 Agent 每次至少检查：
 
 - 是否符合 `docs/product-requirements.md`。
+- 如果任务引用了 `docs/proposals/**`，该 Proposal 是否为 `Approved`，且实现后是否需要合并回当前规格文档。
+- 如果本次实现完成了 Proposal 的全部范围，是否已把稳定结论合并回当前规格，并将 Proposal 状态更新为 `Implemented`，或明确记录未完成项。
 - 是否符合 `docs/tech-selection.md` 和 `docs/architecture.md`。
 - 是否越权修改职责外文件。
 - 是否出现写死业务数据、魔法值或临时绕过逻辑。
@@ -290,6 +333,7 @@ Leader 汇总阻塞问题后统一向用户确认，再继续派发执行任务�
 - 修改文件没有超出锁定范围，或越界已被 Leader 批准。
 - 相关测试或手动验证已完成。
 - 审查清单没有 P0/P1 阻塞问题。
+- 如果任务完成了 Approved Proposal，Proposal 已关闭或留下明确未完成项。
 - 输出中说明了改动内容、验证结果、风险和后续建议。
 
 ## Token 控制

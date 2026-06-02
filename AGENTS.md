@@ -49,8 +49,11 @@
 
 - `docs/chat.md` 是产品灵感讨论材料，不是正式 PRD。
 - `docs/chat.md` 默认只读，不应被修改，除非用户明确要求编辑它。
-- `docs/product-requirements.md` 是正式产品需求文档，由产品 Agent 维护。
+- `docs/product-requirements.md` 是当前产品规格文档，由产品 Agent 维护。
 - `docs/tech-selection.md` 是技术选型与架构决策文档，由架构 Agent 维护。
+- 本项目采用 AI First 文档架构：当前规格以 `docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md` 为准；未来变更使用 `docs/proposals/*.md`；历史版本通过 Git 追踪。
+- AI 实现任务只能把当前规格和 `Approved` Proposal 作为实现依据；Proposal 细则以 `docs/proposals/README.md` 为准，任务输入规则以 `docs/development-workflow.md` 为准。
+- 不默认维护全量需求 ID 或多份完整版本 PRD；只有跨模块、高风险、需要测试/审查稳定引用的能力，才使用轻量 `Spec Key`。
 - 当需求表述不清时，优先回到 `docs/chat.md` 和后续用户对话校准，再由产品 Agent 写入正式产品文档。
 - 不把灵感讨论中的内容自动视为已确认需求；进入正式文档前需要产品 Agent 整理。
 

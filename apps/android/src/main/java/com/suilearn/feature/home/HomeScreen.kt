@@ -142,6 +142,8 @@ fun HomeScreen(
 
 @Composable
 private fun HomeHeader(summary: HomeSummary?, onOpenSearch: () -> Unit) {
+    val currentPackText = summary?.studyPack?.name?.let { "当前学习包：$it" } ?: "当前学习包加载中..."
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -149,16 +151,16 @@ private fun HomeHeader(summary: HomeSummary?, onOpenSearch: () -> Unit) {
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                text = summary?.todayTitle ?: "今天继续",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = summary?.studyPack?.name ?: "SuiLearn 学习",
+                text = "SuiLearn 随心学",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                text = currentPackText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Surface(
