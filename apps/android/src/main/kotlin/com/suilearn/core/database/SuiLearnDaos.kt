@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
+import androidx.room.Upsert
 
 @Dao
 interface StudyPackDao {
@@ -15,31 +16,51 @@ interface StudyPackDao {
     @Query("SELECT * FROM study_packs ORDER BY imported_at DESC LIMIT 1")
     suspend fun getLatestStudyPack(): StudyPackEntity?
 
-    @Query("SELECT * FROM categories ORDER BY sort_order")
+    @Query(
+        """
+        SELECT DISTINCT c.* FROM categories c
+        JOIN questions q ON q.category_id = c.category_id
+        WHERE q.is_deprecated = 0
+        ORDER BY c.sort_order
+        """
+    )
     suspend fun listCategories(): List<CategoryEntity>
 
-    @Query("SELECT * FROM knowledge_points ORDER BY sort_order")
+    @Query(
+        """
+        SELECT DISTINCT kp.* FROM knowledge_points kp
+        JOIN question_knowledge_points qkp ON qkp.knowledge_point_id = kp.knowledge_point_id
+        JOIN questions q ON q.question_id = qkp.question_id
+        WHERE q.is_deprecated = 0
+        ORDER BY kp.sort_order
+        """
+    )
     suspend fun listKnowledgePoints(): List<KnowledgePointEntity>
 
     @Query(
         """
         SELECT DISTINCT kp.* FROM knowledge_points kp
         JOIN categories c ON c.category_id = kp.category_id
-        WHERE kp.name LIKE :pattern ESCAPE '\'
-            OR kp.description LIKE :pattern ESCAPE '\'
-            OR c.name LIKE :pattern ESCAPE '\'
+        JOIN question_knowledge_points qkp ON qkp.knowledge_point_id = kp.knowledge_point_id
+        JOIN questions q ON q.question_id = qkp.question_id
+        WHERE q.is_deprecated = 0
+            AND (
+                kp.name LIKE :pattern ESCAPE '\'
+                OR kp.description LIKE :pattern ESCAPE '\'
+                OR c.name LIKE :pattern ESCAPE '\'
+            )
         ORDER BY kp.sort_order
         """
     )
     suspend fun searchKnowledgePoints(pattern: String): List<KnowledgePointEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertStudyPack(entity: StudyPackEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertCategories(entities: List<CategoryEntity>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertKnowledgePoints(entities: List<KnowledgePointEntity>)
 
     @Query("DELETE FROM categories")
@@ -95,7 +116,7 @@ interface QuestionDao {
     @Query("SELECT * FROM question_knowledge_points WHERE question_id = :questionId")
     suspend fun listKnowledgePointRefs(questionId: String): List<QuestionKnowledgePointEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertQuestions(entities: List<QuestionEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -107,8 +128,17 @@ interface QuestionDao {
     @Query("DELETE FROM question_knowledge_points")
     suspend fun deleteKnowledgePointRefs()
 
+    @Query("DELETE FROM question_knowledge_points WHERE question_id IN (:questionIds)")
+    suspend fun deleteKnowledgePointRefs(questionIds: List<String>)
+
     @Query("DELETE FROM question_options")
     suspend fun deleteOptions()
+
+    @Query("DELETE FROM question_options WHERE question_id IN (:questionIds)")
+    suspend fun deleteOptions(questionIds: List<String>)
+
+    @Query("UPDATE questions SET is_deprecated = 1 WHERE pack_id = :packId AND question_id NOT IN (:questionIds)")
+    suspend fun markMissingQuestionsDeprecated(packId: String, questionIds: List<String>)
 
     @Query("DELETE FROM questions")
     suspend fun deleteQuestions()

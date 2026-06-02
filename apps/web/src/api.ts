@@ -100,6 +100,7 @@ export const api = {
     sourceRefs: SourceRef[];
     questionType: QuestionType;
     categoryId?: string;
+    categoryName?: string;
     knowledgePointIds?: string[];
     prompt?: string;
   }) =>

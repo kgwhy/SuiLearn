@@ -344,6 +344,7 @@ export function App() {
           sourceRefs: [sourceRef],
           questionType: generationForm.questionType,
           categoryId: generationForm.categoryId.trim(),
+          categoryName: generationForm.categoryName.trim(),
           knowledgePointIds: pointIds,
           prompt: generationForm.prompt.trim()
         }),

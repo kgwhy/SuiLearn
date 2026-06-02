@@ -35,12 +35,10 @@ class RoomStudyPackRepository(
         studyPackDao.listCategories().map { it.toDomain() }
 
     override suspend fun replaceCategories(items: List<Category>) {
-        studyPackDao.deleteCategories()
         studyPackDao.upsertCategories(items.map { it.toEntity() })
     }
 
     override suspend fun replaceKnowledgePoints(items: List<KnowledgePoint>) {
-        studyPackDao.deleteKnowledgePoints()
         studyPackDao.upsertKnowledgePoints(items.map { it.toEntity() })
     }
 }
@@ -49,15 +47,16 @@ class RoomQuestionRepository(
     private val questionDao: QuestionDao,
 ) : QuestionRepository {
     override suspend fun listQuestions(): List<Question> =
-        questionDao.listQuestions().map { it.toDomain() }
+        questionDao.listActiveQuestions().map { it.toDomain() }
 
     override suspend fun getQuestion(questionId: String): Question? =
         questionDao.findQuestion(questionId)?.toDomain()
 
     override suspend fun replaceAll(pack: QuestionPack) {
-        questionDao.deleteKnowledgePointRefs()
-        questionDao.deleteOptions()
-        questionDao.deleteQuestions()
+        val questionIds = pack.questions.map { it.questionId }
+        questionDao.deleteKnowledgePointRefs(questionIds)
+        questionDao.deleteOptions(questionIds)
+        questionDao.markMissingQuestionsDeprecated(pack.packId, questionIds)
 
         questionDao.upsertQuestions(
             pack.questions.map {

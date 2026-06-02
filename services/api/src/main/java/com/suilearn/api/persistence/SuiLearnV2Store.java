@@ -42,6 +42,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class SuiLearnV2Store {
     private static final TypeReference<List<SourceRef>> SOURCE_REFS = new TypeReference<>() {
     };
+    private static final TypeReference<List<Double>> DOUBLES = new TypeReference<>() {
+    };
     private static final TypeReference<List<String>> STRINGS = new TypeReference<>() {
     };
 
@@ -141,7 +143,15 @@ public class SuiLearnV2Store {
     public void saveChunks(String materialId, List<MaterialChunk> materialChunks) {
         chunks.deleteByMaterialId(materialId);
         chunks.saveAll(materialChunks.stream()
-            .map(chunk -> new MaterialChunkEntity(chunk.id(), chunk.materialId(), chunk.content(), chunk.ordinal(), write(chunk.sourceRef())))
+            .map(chunk -> new MaterialChunkEntity(
+                chunk.id(),
+                chunk.materialId(),
+                chunk.content(),
+                chunk.ordinal(),
+                write(chunk.sourceRef()),
+                write(chunk.embedding()),
+                chunk.embeddingModel()
+            ))
             .toList());
     }
 
@@ -315,7 +325,15 @@ public class SuiLearnV2Store {
     }
 
     private MaterialChunk toModel(MaterialChunkEntity entity) {
-        return new MaterialChunk(entity.getId(), entity.getMaterialId(), entity.getContent(), entity.getOrdinal(), read(entity.getSourceRefJson(), SourceRef.class));
+        return new MaterialChunk(
+            entity.getId(),
+            entity.getMaterialId(),
+            entity.getContent(),
+            entity.getOrdinal(),
+            read(entity.getSourceRefJson(), SourceRef.class),
+            readNullable(entity.getEmbeddingJson(), DOUBLES),
+            entity.getEmbeddingModel()
+        );
     }
 
     private KnowledgePoint toModel(KnowledgePointEntity entity) {
@@ -416,6 +434,13 @@ public class SuiLearnV2Store {
         } catch (Exception exception) {
             throw new IllegalStateException("Failed to deserialize persistent value", exception);
         }
+    }
+
+    private <T> T readNullable(String json, TypeReference<T> type) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        return read(json, type);
     }
 
     private <E extends Enum<E>> E enumOrNull(Class<E> type, String value) {

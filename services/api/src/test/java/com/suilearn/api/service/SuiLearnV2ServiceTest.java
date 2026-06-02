@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.inOrder;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.ai.AiProvider;
 import com.suilearn.api.ai.FakeAiProvider;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
@@ -60,6 +61,9 @@ class SuiLearnV2ServiceTest {
 
     @Autowired
     private Clock clock;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @BeforeEach
     void clearDatabase() {
@@ -347,6 +351,7 @@ class SuiLearnV2ServiceTest {
             new FakeAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
+            new FakeEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -417,6 +422,7 @@ class SuiLearnV2ServiceTest {
             new TestAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
+            new FakeEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -452,13 +458,29 @@ class SuiLearnV2ServiceTest {
 
         assertThat(material.status()).isEqualTo(MaterialStatus.READY);
         assertThat(service.getMaterialDetail(material.id()).chunks())
-            .extracting("content")
-            .containsExactly("HashMap uses buckets.", "Collision handling uses linked lists.");
+            .satisfiesExactly(
+                chunk -> {
+                    assertThat(chunk.content()).isEqualTo("HashMap uses buckets.");
+                    assertThat(chunk.embedding()).hasSize(3);
+                    assertThat(chunk.embedding()).startsWith(21.0, 3.0);
+                    assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                },
+                chunk -> {
+                    assertThat(chunk.content()).isEqualTo("Collision handling uses linked lists.");
+                    assertThat(chunk.embedding()).hasSize(3);
+                    assertThat(chunk.embedding()).startsWith(37.0, 5.0);
+                    assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                }
+            );
+        var detailJson = objectMapper.valueToTree(service.getMaterialDetail(material.id()));
+        assertThat(detailJson.path("chunks").get(0).has("embedding")).isFalse();
+        assertThat(detailJson.path("chunks").get(0).has("embeddingModel")).isFalse();
 
         InOrder statusFlow = inOrder(store);
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.UPLOADED));
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.PARSING));
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.CHUNKING));
+        statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.INDEXING));
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.READY));
     }
 
@@ -470,6 +492,7 @@ class SuiLearnV2ServiceTest {
                 throw new IllegalStateException("parse failed");
             },
             new DefaultMaterialChunker(),
+            new FakeEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -495,6 +518,7 @@ class SuiLearnV2ServiceTest {
             new FakeAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
+            new FakeEmbeddingProvider(),
             new TestRetriever(),
             clock,
             store

@@ -684,6 +684,9 @@ components:
         categoryId:
           type: string
           description: Optional category hint. The returned draft must still include its final category fields.
+        categoryName:
+          type: string
+          description: Optional category name hint. The returned draft must still include its final category fields.
         knowledgePointIds:
           type: array
           description: Optional knowledge point hints. The returned draft must still include final knowledge point fields.

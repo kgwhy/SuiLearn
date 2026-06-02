@@ -35,6 +35,7 @@ import com.suilearn.api.model.SavedAiNote;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
 import com.suilearn.api.persistence.SuiLearnV2Store;
+import com.suilearn.api.retrieval.EmbeddingProvider;
 import com.suilearn.api.retrieval.Retriever;
 import java.time.Clock;
 import java.util.Comparator;
@@ -46,8 +47,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class SuiLearnV2Service {
+    private static final String FAKE_EMBEDDING_MODEL = "fake-embedding-v1";
+
     private final AiProvider aiProvider;
     private final Clock clock;
+    private final EmbeddingProvider embeddingProvider;
     private final MaterialChunker materialChunker;
     private final MaterialParser materialParser;
     private final Retriever retriever;
@@ -57,12 +61,14 @@ public class SuiLearnV2Service {
         AiProvider aiProvider,
         MaterialParser materialParser,
         MaterialChunker materialChunker,
+        EmbeddingProvider embeddingProvider,
         Retriever retriever,
         Clock clock,
         SuiLearnV2Store store
     ) {
         this.aiProvider = aiProvider;
         this.clock = clock;
+        this.embeddingProvider = embeddingProvider;
         this.materialChunker = materialChunker;
         this.materialParser = materialParser;
         this.retriever = retriever;
@@ -147,8 +153,10 @@ public class SuiLearnV2Service {
                 parsed.content(),
                 MaterialStatus.CHUNKING
             ));
-            store.saveChunks(chunking.id(), materialChunker.chunk(chunking));
-            return store.saveMaterial(withStatus(chunking, MaterialStatus.READY));
+            var chunks = materialChunker.chunk(chunking);
+            var indexing = store.saveMaterial(withStatus(chunking, MaterialStatus.INDEXING));
+            store.saveChunks(indexing.id(), chunks.stream().map(this::withEmbedding).toList());
+            return store.saveMaterial(withStatus(indexing, MaterialStatus.READY));
         } catch (RuntimeException exception) {
             return store.saveMaterial(withStatus(saved, MaterialStatus.FAILED));
         }
@@ -630,6 +638,18 @@ public class SuiLearnV2Service {
             content,
             material.createdAt(),
             material.deletedAt()
+        );
+    }
+
+    private MaterialChunk withEmbedding(MaterialChunk chunk) {
+        return new MaterialChunk(
+            chunk.id(),
+            chunk.materialId(),
+            chunk.content(),
+            chunk.ordinal(),
+            chunk.sourceRef(),
+            embeddingProvider.embed(chunk.content()).values(),
+            FAKE_EMBEDDING_MODEL
         );
     }
 

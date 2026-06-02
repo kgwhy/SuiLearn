@@ -18,16 +18,29 @@ public class MaterialChunkEntity {
     private int ordinal;
     @Lob
     private String sourceRefJson;
+    @Lob
+    private String embeddingJson;
+    private String embeddingModel;
 
     protected MaterialChunkEntity() {
     }
 
-    public MaterialChunkEntity(String id, String materialId, String content, int ordinal, String sourceRefJson) {
+    public MaterialChunkEntity(
+        String id,
+        String materialId,
+        String content,
+        int ordinal,
+        String sourceRefJson,
+        String embeddingJson,
+        String embeddingModel
+    ) {
         this.id = id;
         this.materialId = materialId;
         this.content = content;
         this.ordinal = ordinal;
         this.sourceRefJson = sourceRefJson;
+        this.embeddingJson = embeddingJson;
+        this.embeddingModel = embeddingModel;
     }
 
     public String getId() {
@@ -48,5 +61,13 @@ public class MaterialChunkEntity {
 
     public String getSourceRefJson() {
         return sourceRefJson;
+    }
+
+    public String getEmbeddingJson() {
+        return embeddingJson;
+    }
+
+    public String getEmbeddingModel() {
+        return embeddingModel;
     }
 }

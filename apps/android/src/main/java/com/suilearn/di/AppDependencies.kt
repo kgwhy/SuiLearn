@@ -169,7 +169,7 @@ class AppDependencies(
             val pack = QuestionPackJsonParser.parse(questionPackSource.loadQuestionPackJson())
             val currentPack = studyPackRepository.getCurrentPack()
             val currentPackId = settingsRepository.getCurrentPackId()
-            val currentQuestionCount = questionRepository.listQuestions().size
+            val currentQuestionCount = questionRepository.listQuestions().count { !it.isDeprecated }
             val isCurrentContent =
                 currentPackId == pack.packId &&
                     currentPack?.packVersion == pack.packVersion &&
@@ -180,7 +180,6 @@ class AppDependencies(
                 return
             }
 
-            resetLearningDataUseCase.execute()
             val result = initializeQuestionPackUseCase.execute(pack)
             if (result is AppResult.Success) {
                 notifyDataChanged()
