@@ -11,6 +11,7 @@ import jakarta.persistence.Table;
 public class MaterialChunkEntity {
     @Id
     private String id;
+    private String knowledgeBaseId;
     private String materialId;
     @Lob
     private String content;
@@ -20,31 +21,43 @@ public class MaterialChunkEntity {
     private String sourceRefJson;
     @Lob
     private String embeddingJson;
+    private String embeddingStatus;
     private String embeddingModel;
+    private Integer embeddingDimensions;
 
     protected MaterialChunkEntity() {
     }
 
     public MaterialChunkEntity(
         String id,
+        String knowledgeBaseId,
         String materialId,
         String content,
         int ordinal,
         String sourceRefJson,
         String embeddingJson,
-        String embeddingModel
+        String embeddingStatus,
+        String embeddingModel,
+        Integer embeddingDimensions
     ) {
         this.id = id;
+        this.knowledgeBaseId = knowledgeBaseId;
         this.materialId = materialId;
         this.content = content;
         this.ordinal = ordinal;
         this.sourceRefJson = sourceRefJson;
         this.embeddingJson = embeddingJson;
+        this.embeddingStatus = embeddingStatus;
         this.embeddingModel = embeddingModel;
+        this.embeddingDimensions = embeddingDimensions;
     }
 
     public String getId() {
         return id;
+    }
+
+    public String getKnowledgeBaseId() {
+        return knowledgeBaseId;
     }
 
     public String getMaterialId() {
@@ -67,7 +80,15 @@ public class MaterialChunkEntity {
         return embeddingJson;
     }
 
+    public String getEmbeddingStatus() {
+        return embeddingStatus;
+    }
+
     public String getEmbeddingModel() {
         return embeddingModel;
+    }
+
+    public Integer getEmbeddingDimensions() {
+        return embeddingDimensions;
     }
 }

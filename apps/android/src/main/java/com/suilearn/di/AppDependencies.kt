@@ -7,6 +7,7 @@ import com.suilearn.core.database.SuiLearnDatabase
 import com.suilearn.core.importer.QuestionPackJsonParser
 import com.suilearn.core.importer.QuestionPackSource
 import com.suilearn.core.repository.AnswerRecordRepository
+import com.suilearn.core.repository.AiKnowledgeRemoteRepository
 import com.suilearn.core.repository.FavoriteRepository
 import com.suilearn.core.repository.InMemoryAnswerRecordRepository
 import com.suilearn.core.repository.InMemoryFavoriteRepository
@@ -58,6 +59,8 @@ class AppDependencies(
     private val refreshFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     val refreshEvents: SharedFlow<Unit> = refreshFlow.asSharedFlow()
+
+    val aiKnowledgeRemoteRepository: AiKnowledgeRemoteRepository = AiKnowledgeRemoteRepository()
 
     val studyPackRepository: StudyPackRepository =
         database?.studyPackDao()?.let { RoomStudyPackRepository(it) }

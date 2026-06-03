@@ -8,6 +8,9 @@ public record MaterialMetadata(
     String title,
     MaterialSourceType sourceType,
     MaterialStatus status,
+    String importTaskId,
+    String embeddingTaskId,
+    String errorMessage,
     Instant createdAt,
     Instant deletedAt
 ) {

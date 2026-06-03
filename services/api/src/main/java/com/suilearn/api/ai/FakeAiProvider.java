@@ -3,9 +3,11 @@ package com.suilearn.api.ai;
 import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.SourceRef;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "suilearn.ai", name = "provider", havingValue = "fake", matchIfMissing = true)
 public class FakeAiProvider implements AiProvider {
     @Override
     public GeneratedQuestion generateQuestion(QuestionGenerationPrompt prompt) {

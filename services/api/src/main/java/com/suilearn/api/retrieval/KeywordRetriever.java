@@ -3,6 +3,7 @@ package com.suilearn.api.retrieval;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialStatus;
+import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.SearchResult;
 import com.suilearn.api.model.SearchResultType;
 import com.suilearn.api.model.SourceRef;
@@ -42,11 +43,13 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.KNOWLEDGE_POINT,
                 point.name(),
                 point.description(),
+                1.0,
                 point.knowledgeBaseId(),
                 List.of(point.id()),
                 point.sourceRefs()
             )));
         store.listChunks().stream()
+            .filter(chunk -> chunk.embeddingStatus() == EmbeddingStatus.READY)
             .filter(chunk -> {
                 var material = store.findMaterial(chunk.materialId()).orElse(null);
                 return material != null
@@ -60,6 +63,7 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.MATERIAL_CHUNK,
                 material.title(),
                 truncate(chunk.content()),
+                1.0,
                 material.knowledgeBaseId(),
                 List.of(),
                 List.of(chunk.sourceRef())
@@ -73,6 +77,7 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.QUESTION,
                 question.stem(),
                 question.stem(),
+                1.0,
                 question.knowledgeBaseId(),
                 question.knowledgePointIds(),
                 question.sourceRefs()
@@ -87,6 +92,7 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.GENERATED_CONTENT,
                 content.stem(),
                 content.explanation(),
+                1.0,
                 content.knowledgeBaseId(),
                 List.of(),
                 content.sourceRefs()
@@ -102,6 +108,7 @@ public class KeywordRetriever implements Retriever {
         }
         embeddingProvider.embed(request.query());
         return store.listChunks().stream()
+            .filter(chunk -> chunk.embeddingStatus() == EmbeddingStatus.READY)
             .filter(chunk -> request.materialId() == null || chunk.materialId().equals(request.materialId()))
             .filter(chunk -> {
                 var material = store.findMaterial(chunk.materialId()).orElse(null);

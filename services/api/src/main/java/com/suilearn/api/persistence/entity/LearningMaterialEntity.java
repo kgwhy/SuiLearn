@@ -15,6 +15,9 @@ public class LearningMaterialEntity {
     private String title;
     private String sourceType;
     private String status;
+    private String importTaskId;
+    private String embeddingTaskId;
+    private String errorMessage;
     @Lob
     private String content;
     private Instant createdAt;
@@ -29,6 +32,9 @@ public class LearningMaterialEntity {
         String title,
         String sourceType,
         String status,
+        String importTaskId,
+        String embeddingTaskId,
+        String errorMessage,
         String content,
         Instant createdAt,
         Instant deletedAt
@@ -38,6 +44,9 @@ public class LearningMaterialEntity {
         this.title = title;
         this.sourceType = sourceType;
         this.status = status;
+        this.importTaskId = importTaskId;
+        this.embeddingTaskId = embeddingTaskId;
+        this.errorMessage = errorMessage;
         this.content = content;
         this.createdAt = createdAt;
         this.deletedAt = deletedAt;
@@ -61,6 +70,18 @@ public class LearningMaterialEntity {
 
     public String getStatus() {
         return status;
+    }
+
+    public String getImportTaskId() {
+        return importTaskId;
+    }
+
+    public String getEmbeddingTaskId() {
+        return embeddingTaskId;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
     }
 
     public String getContent() {

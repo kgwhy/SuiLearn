@@ -7,6 +7,7 @@ public record SearchResult(
     SearchResultType type,
     String title,
     String summary,
+    double score,
     String knowledgeBaseId,
     List<String> knowledgePointIds,
     List<SourceRef> sourceRefs

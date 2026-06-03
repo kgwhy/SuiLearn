@@ -476,7 +476,9 @@ textarea[aria-invalid="true"] {
 .row-item,
 .result-item,
 .detail-box,
-.answer-box {
+.answer-box,
+.task-card,
+.chunk-item {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-alt);
@@ -505,6 +507,15 @@ textarea[aria-invalid="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.action-row small,
+.draft-list small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .row-actions {
@@ -557,6 +568,104 @@ textarea[aria-invalid="true"] {
 .answer-box {
   margin-top: 14px;
   padding: 14px;
+}
+
+.provider-status,
+.task-card,
+.chunk-list,
+.chunk-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-summary,
+.task-card-heading,
+.chunk-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-summary span,
+.task-card-heading span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.meta-item {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+}
+
+.meta-item span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.meta-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.task-actions {
+  margin: 8px 0;
+}
+
+.task-card {
+  margin: 10px 0;
+  padding: 12px;
+}
+
+.task-card.error {
+  border-color: #f1b5ae;
+  background: #fff7f6;
+}
+
+.task-card p,
+.chunk-item p {
+  margin: 0;
+}
+
+.chunk-list {
+  margin: 14px 0;
+}
+
+.chunk-list h4 {
+  margin: 0;
+}
+
+.chunk-item {
+  padding: 12px;
+}
+
+.chunk-heading {
+  justify-content: space-between;
+}
+
+.chunk-heading > span:first-child {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .detail-box p,
@@ -818,6 +927,7 @@ textarea[aria-invalid="true"] {
 
   .metrics,
   .field-row,
+  .metadata-grid,
   .draft-layout {
     grid-template-columns: 1fr;
   }

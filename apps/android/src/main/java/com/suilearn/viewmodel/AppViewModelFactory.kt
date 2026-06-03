@@ -3,6 +3,7 @@ package com.suilearn.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.suilearn.di.AppDependencies
+import com.suilearn.feature.ai.AiKnowledgeViewModel
 import com.suilearn.feature.categories.CategoriesViewModel
 import com.suilearn.feature.favorites.FavoritesViewModel
 import com.suilearn.feature.home.HomeViewModel
@@ -20,6 +21,7 @@ class AppViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         val viewModel = when {
             modelClass.isAssignableFrom(AppViewModel::class.java) -> AppViewModel(dependencies)
+            modelClass.isAssignableFrom(AiKnowledgeViewModel::class.java) -> AiKnowledgeViewModel(dependencies)
             modelClass.isAssignableFrom(HomeViewModel::class.java) -> HomeViewModel(dependencies)
             modelClass.isAssignableFrom(CategoriesViewModel::class.java) -> CategoriesViewModel(dependencies)
             modelClass.isAssignableFrom(PracticeViewModel::class.java) -> PracticeViewModel(dependencies)

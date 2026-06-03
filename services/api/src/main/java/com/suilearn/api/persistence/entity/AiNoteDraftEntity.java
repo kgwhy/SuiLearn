@@ -12,6 +12,7 @@ public class AiNoteDraftEntity {
     @Id
     private String id;
     private String knowledgeBaseId;
+    private String generationTaskId;
     private String type;
     private String title;
     @Lob
@@ -23,9 +24,10 @@ public class AiNoteDraftEntity {
     protected AiNoteDraftEntity() {
     }
 
-    public AiNoteDraftEntity(String id, String knowledgeBaseId, String type, String title, String content, String sourceRefsJson, Instant createdAt) {
+    public AiNoteDraftEntity(String id, String knowledgeBaseId, String generationTaskId, String type, String title, String content, String sourceRefsJson, Instant createdAt) {
         this.id = id;
         this.knowledgeBaseId = knowledgeBaseId;
+        this.generationTaskId = generationTaskId;
         this.type = type;
         this.title = title;
         this.content = content;
@@ -35,6 +37,7 @@ public class AiNoteDraftEntity {
 
     public String getId() { return id; }
     public String getKnowledgeBaseId() { return knowledgeBaseId; }
+    public String getGenerationTaskId() { return generationTaskId; }
     public String getType() { return type; }
     public String getTitle() { return title; }
     public String getContent() { return content; }

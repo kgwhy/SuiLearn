@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.AiNoteType;
+import com.suilearn.api.model.AiProviderType;
+import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
 import com.suilearn.api.model.KnowledgeBase;
@@ -17,6 +19,10 @@ import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.SavedAiNote;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
+import com.suilearn.api.model.TaskKind;
+import com.suilearn.api.model.TaskLifecycleStatus;
+import com.suilearn.api.model.TaskResultRef;
+import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.persistence.entity.AiNoteDraftEntity;
 import com.suilearn.api.persistence.entity.AiNoteEntity;
 import com.suilearn.api.persistence.entity.GeneratedContentEntity;
@@ -25,6 +31,7 @@ import com.suilearn.api.persistence.entity.KnowledgePointEntity;
 import com.suilearn.api.persistence.entity.LearningMaterialEntity;
 import com.suilearn.api.persistence.entity.MaterialChunkEntity;
 import com.suilearn.api.persistence.entity.QuestionEntity;
+import com.suilearn.api.persistence.entity.TaskStatusEntity;
 import com.suilearn.api.persistence.repository.AiNoteDraftJpaRepository;
 import com.suilearn.api.persistence.repository.AiNoteJpaRepository;
 import com.suilearn.api.persistence.repository.GeneratedContentJpaRepository;
@@ -33,6 +40,7 @@ import com.suilearn.api.persistence.repository.KnowledgePointJpaRepository;
 import com.suilearn.api.persistence.repository.LearningMaterialJpaRepository;
 import com.suilearn.api.persistence.repository.MaterialChunkJpaRepository;
 import com.suilearn.api.persistence.repository.QuestionJpaRepository;
+import com.suilearn.api.persistence.repository.TaskStatusJpaRepository;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -55,6 +63,7 @@ public class SuiLearnV2Store {
     private final QuestionJpaRepository questions;
     private final AiNoteDraftJpaRepository aiNoteDrafts;
     private final AiNoteJpaRepository aiNotes;
+    private final TaskStatusJpaRepository tasks;
     private final ObjectMapper objectMapper;
 
     public SuiLearnV2Store(
@@ -66,6 +75,7 @@ public class SuiLearnV2Store {
         QuestionJpaRepository questions,
         AiNoteDraftJpaRepository aiNoteDrafts,
         AiNoteJpaRepository aiNotes,
+        TaskStatusJpaRepository tasks,
         ObjectMapper objectMapper
     ) {
         this.knowledgeBases = knowledgeBases;
@@ -76,6 +86,7 @@ public class SuiLearnV2Store {
         this.questions = questions;
         this.aiNoteDrafts = aiNoteDrafts;
         this.aiNotes = aiNotes;
+        this.tasks = tasks;
         this.objectMapper = objectMapper;
     }
 
@@ -111,6 +122,7 @@ public class SuiLearnV2Store {
         questions.deleteByKnowledgeBaseId(knowledgeBaseId);
         aiNoteDrafts.deleteByKnowledgeBaseId(knowledgeBaseId);
         aiNotes.deleteByKnowledgeBaseId(knowledgeBaseId);
+        tasks.deleteByKnowledgeBaseId(knowledgeBaseId);
         knowledgeBases.deleteById(knowledgeBaseId);
     }
 
@@ -133,6 +145,9 @@ public class SuiLearnV2Store {
             material.title(),
             material.sourceType().name(),
             material.status().name(),
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            material.errorMessage(),
             material.content(),
             material.createdAt(),
             material.deletedAt()
@@ -145,14 +160,40 @@ public class SuiLearnV2Store {
         chunks.saveAll(materialChunks.stream()
             .map(chunk -> new MaterialChunkEntity(
                 chunk.id(),
+                chunk.knowledgeBaseId(),
                 chunk.materialId(),
                 chunk.content(),
                 chunk.ordinal(),
                 write(chunk.sourceRef()),
                 write(chunk.embedding()),
-                chunk.embeddingModel()
+                chunk.embeddingStatus().name(),
+                chunk.embeddingModel(),
+                chunk.embeddingDimensions()
             ))
             .toList());
+    }
+
+    @Transactional
+    public int invalidateChunksByMaterial(String materialId) {
+        var existing = chunks.findByMaterialId(materialId);
+        if (existing.isEmpty()) {
+            return 0;
+        }
+        chunks.saveAll(existing.stream()
+            .map(chunk -> new MaterialChunkEntity(
+                chunk.getId(),
+                chunk.getKnowledgeBaseId(),
+                chunk.getMaterialId(),
+                chunk.getContent(),
+                chunk.getOrdinal(),
+                chunk.getSourceRefJson(),
+                null,
+                EmbeddingStatus.INVALIDATED.name(),
+                chunk.getEmbeddingModel(),
+                chunk.getEmbeddingDimensions()
+            ))
+            .toList());
+        return existing.size();
     }
 
     public List<MaterialChunk> listChunks() {
@@ -206,6 +247,7 @@ public class SuiLearnV2Store {
         return toModel(generatedContents.save(new GeneratedContentEntity(
             draft.id(),
             draft.knowledgeBaseId(),
+            draft.generationTaskId(),
             draft.status().name(),
             write(draft.sourceRefs()),
             draft.sourceType() == null ? null : draft.sourceType().name(),
@@ -263,6 +305,7 @@ public class SuiLearnV2Store {
         return toModel(aiNoteDrafts.save(new AiNoteDraftEntity(
             note.id(),
             note.knowledgeBaseId(),
+            note.generationTaskId(),
             note.type().name(),
             note.title(),
             note.content(),
@@ -295,6 +338,37 @@ public class SuiLearnV2Store {
         )));
     }
 
+    public Optional<TaskStatus> findTask(String id) {
+        return tasks.findById(id).map(this::toModel);
+    }
+
+    public List<TaskStatus> listTasks() {
+        return tasks.findAll().stream().map(this::toModel).toList();
+    }
+
+    public TaskStatus saveTask(TaskStatus task) {
+        return toModel(tasks.save(new TaskStatusEntity(
+            task.id(),
+            task.kind().name(),
+            task.status().name(),
+            task.knowledgeBaseId(),
+            task.materialId(),
+            task.generatedContentId(),
+            task.providerType() == null ? null : task.providerType().name(),
+            task.model(),
+            task.progressPercent(),
+            task.currentStep(),
+            task.errorCode(),
+            task.errorMessage(),
+            task.retryCount(),
+            task.resultRef() == null ? null : write(task.resultRef()),
+            task.createdAt(),
+            task.startedAt(),
+            task.finishedAt(),
+            task.updatedAt()
+        )));
+    }
+
     @Transactional
     public void deleteAll() {
         chunks.deleteAll();
@@ -304,6 +378,7 @@ public class SuiLearnV2Store {
         questions.deleteAll();
         aiNoteDrafts.deleteAll();
         aiNotes.deleteAll();
+        tasks.deleteAll();
         knowledgeBases.deleteAll();
     }
 
@@ -318,6 +393,9 @@ public class SuiLearnV2Store {
             entity.getTitle(),
             MaterialSourceType.valueOf(entity.getSourceType()),
             MaterialStatus.valueOf(entity.getStatus()),
+            entity.getImportTaskId(),
+            entity.getEmbeddingTaskId(),
+            entity.getErrorMessage(),
             entity.getContent(),
             entity.getCreatedAt(),
             entity.getDeletedAt()
@@ -327,12 +405,15 @@ public class SuiLearnV2Store {
     private MaterialChunk toModel(MaterialChunkEntity entity) {
         return new MaterialChunk(
             entity.getId(),
+            entity.getKnowledgeBaseId(),
             entity.getMaterialId(),
             entity.getContent(),
             entity.getOrdinal(),
             read(entity.getSourceRefJson(), SourceRef.class),
             readNullable(entity.getEmbeddingJson(), DOUBLES),
-            entity.getEmbeddingModel()
+            enumOrDefault(EmbeddingStatus.class, entity.getEmbeddingStatus(), EmbeddingStatus.PENDING),
+            entity.getEmbeddingModel(),
+            entity.getEmbeddingDimensions()
         );
     }
 
@@ -351,6 +432,7 @@ public class SuiLearnV2Store {
         return new GeneratedQuestionDraft(
             entity.getId(),
             entity.getKnowledgeBaseId(),
+            entity.getGenerationTaskId(),
             GeneratedContentStatus.valueOf(entity.getStatus()),
             read(entity.getSourceRefsJson(), SOURCE_REFS),
             enumOrNull(SourceType.class, entity.getSourceType()),
@@ -392,6 +474,7 @@ public class SuiLearnV2Store {
         return new AiNoteDraft(
             entity.getId(),
             entity.getKnowledgeBaseId(),
+            entity.getGenerationTaskId(),
             AiNoteType.valueOf(entity.getType()),
             entity.getTitle(),
             entity.getContent(),
@@ -409,6 +492,29 @@ public class SuiLearnV2Store {
             entity.getContent(),
             read(entity.getSourceRefsJson(), SOURCE_REFS),
             entity.getSavedAt()
+        );
+    }
+
+    private TaskStatus toModel(TaskStatusEntity entity) {
+        return new TaskStatus(
+            entity.getId(),
+            TaskKind.valueOf(entity.getKind()),
+            TaskLifecycleStatus.valueOf(entity.getStatus()),
+            entity.getKnowledgeBaseId(),
+            entity.getMaterialId(),
+            entity.getGeneratedContentId(),
+            enumOrNull(AiProviderType.class, entity.getProviderType()),
+            entity.getModel(),
+            entity.getProgressPercent(),
+            entity.getCurrentStep(),
+            entity.getErrorCode(),
+            entity.getErrorMessage(),
+            entity.getRetryCount(),
+            readNullable(entity.getResultRefJson(), TaskResultRef.class),
+            entity.getCreatedAt(),
+            entity.getStartedAt(),
+            entity.getFinishedAt(),
+            entity.getUpdatedAt()
         );
     }
 
@@ -443,7 +549,18 @@ public class SuiLearnV2Store {
         return read(json, type);
     }
 
+    private <T> T readNullable(String json, Class<T> type) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        return read(json, type);
+    }
+
     private <E extends Enum<E>> E enumOrNull(Class<E> type, String value) {
         return value == null ? null : Enum.valueOf(type, value);
+    }
+
+    private <E extends Enum<E>> E enumOrDefault(Class<E> type, String value, E defaultValue) {
+        return value == null ? defaultValue : Enum.valueOf(type, value);
     }
 }

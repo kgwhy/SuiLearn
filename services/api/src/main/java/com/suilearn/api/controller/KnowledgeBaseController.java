@@ -10,6 +10,7 @@ import com.suilearn.api.model.KnowledgeBase;
 import com.suilearn.api.model.KnowledgeBaseDetail;
 import com.suilearn.api.model.KnowledgeBaseStatistics;
 import com.suilearn.api.model.KnowledgePoint;
+import com.suilearn.api.model.KnowledgePointExtractionResult;
 import com.suilearn.api.model.MaterialDeletionResult;
 import com.suilearn.api.model.MaterialDetail;
 import com.suilearn.api.model.MaterialMetadata;
@@ -124,7 +125,7 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping("/materials/{materialId}/extract-knowledge-points")
-    List<KnowledgePoint> extractKnowledgePoints(@PathVariable String materialId) {
+    KnowledgePointExtractionResult extractKnowledgePoints(@PathVariable String materialId) {
         return service.extractKnowledgePoints(materialId);
     }
 
@@ -154,6 +155,9 @@ public class KnowledgeBaseController {
             material.title(),
             material.sourceType(),
             material.status(),
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            material.errorMessage(),
             material.createdAt(),
             material.deletedAt()
         );

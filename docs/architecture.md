@@ -1178,9 +1178,9 @@ Gradle module 演进边界：
 |---|---|---|
 | 持久化 | PostgreSQL 作为真实集成前的必选落点；核心业务表和状态机先建齐 | 多租户、账号隔离、复杂权限、跨端云同步 |
 | 向量检索 | `material_chunks.embedding` 使用 pgvector；只索引资料片段 | 独立向量库、题目全量向量化、混合重排模型 |
-| AI Provider | 业务层依赖 `AiProvider` 抽象；默认可用 Fake Provider；真实 Provider 作为基础设施适配 | 多 Provider 路由、成本预算面板、复杂模型评测 |
+| AI Provider | 业务层依赖 `AiProvider` 抽象；默认可用 Fake Provider；真实 OpenAI-compatible Provider 作为基础设施适配，配置只暴露非密钥字段 | 多 Provider 路由、成本预算面板、复杂模型评测 |
 | 资料解析 | Markdown / TXT / 已文本化 PDF 内容进入解析链路 | 真实 PDF 二进制解析、OCR、Office 文档解析 |
-| 任务模型 | 资料导入、embedding、生成题保留任务状态；MVP 可同步执行并写状态 | 分布式队列、后台 worker 集群、复杂重试调度 |
+| 任务模型 | 资料导入、embedding、生成题保留任务状态；MVP 可同步执行，但必须写入 `generation_tasks` 并通过 `/api/v2/tasks/{taskId}` 查询 | 分布式队列、后台 worker 集群、复杂重试调度 |
 | Web 工作台 | 承载知识库、资料导入、生成确认、问答、语义搜索 | 完整 Web 刷题学习端 |
 | Android 接入 | 保留第一版本地闭环，只接入生成入口、状态展示、确认结果消费 | Android 完整知识库工作台、端侧 RAG、端侧 embedding |
 
@@ -1218,6 +1218,7 @@ apps/android
 - `GeneratedQuestionDraft`：待确认题目草稿，保存后转换为正式 `Question`。
 - `SavedAiNote`：用户保存的解释、复习建议或问答内容。
 - `SourceRef`：生成来源，可指向知识点、错题、资料、资料片段或知识库。
+- `GenerationTask`：资料导入、embedding 和 AI 生成的统一任务记录；即使同步执行也必须写最终状态，供 Web / Android 展示。
 
 服务端实现边界：
 
@@ -1248,14 +1249,54 @@ Provider 分层：
 - `OpenAiCompatibleProvider`：真实 Provider，封装 OpenAI API 或兼容 OpenAI 协议的模型服务。配置项只在 `config` / `infrastructure.ai` 中出现，不能泄漏到 `application` 或 Controller。
 - `AiProviderProperties`：保存 `providerType`、`baseUrl`、`model`、`embeddingModel`、超时、重试次数等配置；API key 只从环境变量或本地开发配置读取，不写入仓库文档示例之外的代码。
 
-MVP 先使用 Fake Provider 打通业务状态机和前后端契约；接入真实 Provider 时必须复用同一接口和测试用例。真实 Provider 返回内容必须经过结构校验、来源校验和状态机写入后才能暴露给客户端，不能直接把模型原始响应透传为正式题库内容。
+Provider 配置字段契约：
+
+| 字段 | MVP 语义 | 是否可返回给客户端 |
+|---|---|---|
+| `providerType` | `fake` 或 `openai-compatible` | 可返回为枚举 |
+| `baseUrl` | OpenAI-compatible API 基础地址 | 可返回，但不应包含 token |
+| `chatModel` | 生成题、解释、建议、RAG 使用的模型 | 可返回 |
+| `embeddingModel` | chunk embedding 使用的模型 | 可返回 |
+| `embeddingDimensions` | pgvector 维度，需与表结构和索引一致 | 可返回 |
+| `timeoutMs` / `maxRetries` | 调用超时和重试上限 | 可返回 |
+| `apiKeyEnvName` | API key 所在环境变量名，例如 `SUILEARN_AI_API_KEY` | 可返回变量名，不返回值 |
+| `apiKey` / Authorization header | 真实密钥或派生密钥 | 禁止返回、禁止写入任务表、禁止进入日志 |
+
+MVP 先使用 Fake Provider 打通业务状态机和前后端契约；真实 OpenAI-compatible Provider 属于 P0 基础设施适配，必须复用同一接口和测试用例。真实 Provider 返回内容必须经过结构校验、来源校验和状态机写入后才能暴露给客户端，不能直接把模型原始响应透传为正式题库内容。`/api/v2/ai/provider-status` 只返回脱敏后的可用性与非密钥配置，供端侧判断 AI 功能是否可用。
+
+### 23.0.1 任务状态模型
+
+第二版统一使用 `generation_tasks` 表记录资料导入、embedding 和 AI 生成任务。MVP 可以在同一个 HTTP 请求内同步执行，但执行前必须创建任务，执行后必须写入 `SUCCEEDED` 或 `FAILED`；客户端统一通过 `/api/v2/tasks/{taskId}` 查询最终状态。
+
+任务类型：
+
+```text
+MATERIAL_IMPORT
+EMBEDDING
+QUESTION_GENERATION
+KNOWLEDGE_POINT_EXTRACTION
+EXPLANATION_GENERATION
+REVIEW_SUGGESTION_GENERATION
+```
+
+任务生命周期：
+
+```text
+QUEUED
+RUNNING
+SUCCEEDED
+FAILED
+CANCELLED
+```
+
+任务记录只保存输入摘要、范围 ID、Provider 类型、模型名、进度、错误摘要和结果引用；不保存大段资料正文、模型原始响应、API key 或 Authorization header。同步 MVP 的最小写入顺序是：`QUEUED -> RUNNING -> SUCCEEDED`，失败路径是：`QUEUED -> RUNNING -> FAILED` 并写入可展示的 `errorCode` / `errorMessage`。
 
 ### 23.1 AI 生成题
 
 1. 客户端从知识点、错题、资料或知识库发起生成请求。
 2. 服务端创建 `GenerationTask`，记录来源、范围、题型偏好和 prompt 参数。
 3. `application` 根据 `SourceRef` 读取上下文；资料来源必须来自未删除的 `MaterialChunk`，错题和知识点来源必须属于请求的知识库或学习范围。
-4. AI Provider 返回题干、选项、答案、解析、分类、知识点和来源说明。
+4. AI Provider 返回题干、选项、答案、解析、分类、知识点和来源说明；真实 Provider 的原始响应只在适配层解析，不作为 API 响应或正式题库内容直接透传。
 5. 服务端执行结构校验和基本质量校验，生成携带 `categoryId` / `categoryName` / `knowledgePointIds` 的 `GeneratedQuestionDraft`。
 6. 草稿进入 `PENDING_REVIEW`，客户端展示确认页。
 7. 用户选择保存、编辑后保存、删除或丢弃。
@@ -1271,15 +1312,17 @@ MVP 先使用 Fake Provider 打通业务状态机和前后端契约；接入真�
 6. 状态依次流转为 `CHUNKING`、`INDEXING`、`READY`；任一步失败写入 `FAILED` 和错误摘要，保留重试入口。
 7. Knowledge Extractor 基于 chunk 生成候选知识点，进入可编辑状态；用户可以编辑或删除提取出的知识点。
 
+资料导入至少产生一个 `MATERIAL_IMPORT` 任务；进入 embedding 阶段时产生或关联一个 `EMBEDDING` 任务。`LearningMaterial.importTaskId` 必须存在，`embeddingTaskId` 在 chunk embedding 开始后写入。资料状态和任务状态不是同一个字段：资料状态表达资料是否可用于搜索/RAG，任务状态表达本次处理动作的执行结果。
+
 资料删除采用软删除优先：`LearningMaterial` 标记为 `DELETED` 后，不再参与 RAG、语义搜索和新生成任务；关联的 `MaterialChunk` 与 embedding 失效或异步清理。已经保存为正式题目、AI 笔记、解释或复习建议的内容默认保留，但必须保留 `SourceRef`、设置 `SourceRef.deleted = true`，并在详情中提示来源资料已删除；仍处于 `PENDING_REVIEW` 的生成内容默认标记为 `DELETED`，避免用户继续保存不可追溯草稿。
 
 ### 23.3 RAG 问答
 
 1. 用户必须指定知识库或单份资料范围提问，禁止隐式全局问答。
-2. Query Service 对问题生成 query embedding，并在指定范围内检索 `READY` 且未删除资料的 chunk。
-3. 检索结果按相似度和来源范围过滤；MVP 不做跨知识库全局召回，不做复杂重排。
+2. Query Service 对问题生成 query embedding，并在指定范围内检索 `READY` 且未删除资料的 chunk；查询 embedding 不入库，只用于本次检索。
+3. 检索结果按 pgvector 相似度、资料状态和来源范围过滤；MVP 不做跨知识库全局召回，不做复杂重排。
 4. RAG Service 只基于候选片段组织回答，prompt 中必须带 chunk id、资料标题和片段内容。
-5. 如果证据不足，返回 `uncertain = true` 和“不确定 / 资料中未找到明确依据”提示。
+5. 如果证据不足，返回 `uncertain = true`、`uncertaintyReason` 和“不确定 / 资料中未找到明确依据”提示；不得编造没有 citation 的确定答案。
 6. 回答必须携带引用片段，客户端可跳转到资料详情；用户选择保存后才写入 `ai_notes`。
 
 ### 23.4 语义搜索
@@ -1291,7 +1334,9 @@ MVP 先使用 Fake Provider 打通业务状态机和前后端契约；接入真�
 - `MATERIAL_CHUNK`
 - `GENERATED_CONTENT`
 
-搜索必须显式限定范围，客户端至少传入 `knowledgeBaseId` 或 `materialId`，禁止隐式全局搜索。若同时传入二者，`materialId` 必须属于该 `knowledgeBaseId`，结果需要展示类型、标题或摘要、所属知识库、关联知识点和详情入口。
+搜索必须显式限定范围，客户端至少传入 `knowledgeBaseId` 或 `materialId`，禁止隐式全局搜索。若同时传入二者，`materialId` 必须属于该 `knowledgeBaseId`，结果需要展示类型、标题或摘要、相关度 `score`、所属知识库、关联知识点和详情入口。
+
+MVP 的语义向量只索引资料 chunk。题目、知识点和已保存 AI 内容可以通过 `SourceRef` 关联的 chunk、标题/正文关键词或后续摘要 embedding 进入结果集；在未实现对应向量化前，不得假装存在题目或知识点 embedding。embedding 不可用时允许降级关键词搜索，但返回结果仍必须受知识库/资料范围约束。
 
 ## 24. 第二版 API 边界
 
@@ -1300,6 +1345,8 @@ API 契约由 `contracts/openapi/suilearn-v2.yaml` 维护，第一批接口覆�
 - 知识库：创建、列表、详情、重命名、删除。
 - 资料：导入、列表、详情、删除、知识点提取。
 - AI 生成：生成题、相似题、复习建议、结果确认、编辑保存、丢弃。
+- 任务：按 `taskId` 查询资料导入、embedding 和生成任务状态；同步 MVP 也必须返回可查询任务。
+- AI Provider：查询脱敏 Provider 可用性和非密钥配置，不暴露 API key。
 - RAG：知识库问答、单资料问答。
 - 语义搜索：题目、知识点、资料片段、已保存生成内容。
 - 知识库工作台轻量学习视图：知识库下题目列表、知识库学习统计。
@@ -1351,13 +1398,34 @@ PostgreSQL 表模型边界：
 
 向量字段仅存在于 `material_chunks` 和后续明确需要语义检索的摘要表中。业务表不直接依赖向量库语义；语义检索失败时仍可通过关键词搜索和资料列表降级。
 
+pgvector / embedding 字段约束：
+
+- `material_chunks.embedding` 使用 pgvector 类型，维度必须与 `suilearn.ai.embedding-dimensions` 或所选 embedding 模型一致。
+- `material_chunks.embedding_model` 保存模型名，`embedding_status` 保存 `PENDING`、`INDEXING`、`READY`、`FAILED` 或 `INVALIDATED`。
+- 删除资料或切换 embedding 模型后，旧 chunk embedding 必须从检索范围排除；可以异步清理，但不得继续用于 RAG。
+- API 不返回原始向量，只返回 `embeddingStatus`、`embeddingModel`、`embeddingDimensions` 等非敏感元数据。
+
 最小字段要求：
 
 - 所有业务表使用稳定字符串 ID 或 UUID，保留 `created_at`、`updated_at`；软删除表增加 `deleted_at`。
 - `learning_materials` 必须保存 `knowledge_base_id`、`title`、`file_name`、`source_type`、`status`、`error_message`。
 - `material_chunks` 必须保存 `knowledge_base_id`、`material_id`、`ordinal`、`content`、`embedding`、`embedding_model`、`source_ref`。
 - `generated_contents` 必须保存 `knowledge_base_id`、`type`、`status`、`payload_json`、`source_refs`、`saved_target_id`。
+- `generation_tasks` 必须保存 `kind`、`status`、`knowledge_base_id`、`material_id`、`generated_content_id`、`provider_type`、`model`、`progress_percent`、`current_step`、`error_code`、`error_message`、`retry_count`、`result_ref`。
 - `source_refs` 必须能表达 `type`、`source_id`、`knowledge_base_id`、`material_id`、`chunk_id`、`deleted` 和 `excerpt`。
+
+知识库详情轻量统计字段语义：
+
+- `materialCount`：未删除资料数量。
+- `knowledgePointCount`：未删除、归属该知识库的知识点数量。
+- `questionCount`：已保存正式题目数量，包含用户确认保存的 AI 题。
+- `generatedContentCount`：未软删除的生成内容数量，包含待确认、已保存和已丢弃记录。
+- `aiNoteCount`：用户保存的 AI 笔记数量。
+- `answeredQuestionCount`：至少有一次答题记录的正式题目数量。
+- `answerCount`：该知识库正式题目的答题尝试总数。
+- `correctRate`：`correctAnswerCount / answerCount`，没有答题记录时返回 `null` 或省略，不返回占位 0。
+- `wrongQuestionCount`：当前仍未掌握的错题数量。
+- `weakKnowledgePointIds`：由错题或低正确率证据推导；没有证据时返回空数组。
 
 AI 生成内容状态：
 
@@ -1391,6 +1459,9 @@ DELETED
 - 第一版兼容：未配置 AI 服务时，Android 本地刷题、错题、收藏和统计不受影响。
 - Provider 分层：Fake Provider 和真实 Provider 使用同一接口，业务测试不依赖真实模型服务。
 - 资料导入状态机：成功路径必须覆盖 `UPLOADED -> PARSING -> CHUNKING -> INDEXING -> READY`，失败路径必须写入 `FAILED` 和错误摘要。
+- 任务查询：资料导入、embedding、生成题、解释和复习建议即使同步完成，也能通过 `/api/v2/tasks/{taskId}` 查询到 `SUCCEEDED` 或 `FAILED`。
+- Provider 脱敏：`/api/v2/ai/provider-status` 不返回 API key、Authorization header 或原始密钥。
+- 统计字段：知识库详情统计必须由持久化数据计算，不允许返回常量占位。
 
 服务端 MVP 可先用内存 Repository 验证 API 和业务状态机，但进入真实集成前必须切换 PostgreSQL，并补充 repository / integration test。
 

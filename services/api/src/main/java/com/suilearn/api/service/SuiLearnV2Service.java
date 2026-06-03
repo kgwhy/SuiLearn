@@ -14,14 +14,17 @@ import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.AiNoteType;
+import com.suilearn.api.model.AiProviderType;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
+import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
 import com.suilearn.api.model.KnowledgeBase;
 import com.suilearn.api.model.KnowledgeBaseDetail;
 import com.suilearn.api.model.KnowledgeBaseStatistics;
 import com.suilearn.api.model.KnowledgePoint;
+import com.suilearn.api.model.KnowledgePointExtractionResult;
 import com.suilearn.api.model.LearningMaterial;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialDeletionResult;
@@ -34,6 +37,10 @@ import com.suilearn.api.model.SearchResult;
 import com.suilearn.api.model.SavedAiNote;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
+import com.suilearn.api.model.TaskKind;
+import com.suilearn.api.model.TaskLifecycleStatus;
+import com.suilearn.api.model.TaskResultRef;
+import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.persistence.SuiLearnV2Store;
 import com.suilearn.api.retrieval.EmbeddingProvider;
 import com.suilearn.api.retrieval.Retriever;
@@ -47,8 +54,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class SuiLearnV2Service {
-    private static final String FAKE_EMBEDDING_MODEL = "fake-embedding-v1";
-
     private final AiProvider aiProvider;
     private final Clock clock;
     private final EmbeddingProvider embeddingProvider;
@@ -120,6 +125,11 @@ public class SuiLearnV2Service {
         store.deleteKnowledgeBase(knowledgeBaseId);
     }
 
+    public TaskStatus getTaskStatus(String taskId) {
+        return store.findTask(taskId)
+            .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+    }
+
     public List<LearningMaterial> listMaterials(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
         return store.listMaterials(knowledgeBaseId).stream()
@@ -129,19 +139,32 @@ public class SuiLearnV2Service {
 
     public LearningMaterial importMaterial(String knowledgeBaseId, ImportMaterialRequest request) {
         requireKnowledgeBase(knowledgeBaseId);
+        var importTask = startTask(createTask(
+            TaskKind.MATERIAL_IMPORT,
+            knowledgeBaseId,
+            null,
+            null,
+            null,
+            "UPLOADED"
+        ), "UPLOADED");
         var material = new LearningMaterial(
             newId("mat"),
             knowledgeBaseId,
             request.title(),
             request.sourceType(),
             MaterialStatus.UPLOADED,
+            importTask.id(),
+            null,
+            null,
             request.content(),
             clock.instant(),
             null
         );
         var saved = store.saveMaterial(material);
+        TaskStatus embeddingTask = null;
         try {
             var parsing = store.saveMaterial(withStatus(saved, MaterialStatus.PARSING));
+            importTask = updateTask(importTask, TaskLifecycleStatus.RUNNING, 20, "PARSING", null, null, null, parsing.id(), null);
             var parsed = materialParser.parse(new MaterialParser.ParseRequest(
                 parsing.title(),
                 request.fileName(),
@@ -153,12 +176,69 @@ public class SuiLearnV2Service {
                 parsed.content(),
                 MaterialStatus.CHUNKING
             ));
+            importTask = updateTask(importTask, TaskLifecycleStatus.RUNNING, 45, "CHUNKING", null, null, null, chunking.id(), null);
             var chunks = materialChunker.chunk(chunking);
-            var indexing = store.saveMaterial(withStatus(chunking, MaterialStatus.INDEXING));
+            embeddingTask = startTask(createTask(
+                TaskKind.EMBEDDING,
+                knowledgeBaseId,
+                chunking.id(),
+                null,
+                embeddingProvider.model(),
+                "INDEXING"
+            ), "INDEXING");
+            var indexing = store.saveMaterial(withEmbeddingTaskId(withStatus(chunking, MaterialStatus.INDEXING), embeddingTask.id()));
             store.saveChunks(indexing.id(), chunks.stream().map(this::withEmbedding).toList());
-            return store.saveMaterial(withStatus(indexing, MaterialStatus.READY));
+            var ready = store.saveMaterial(withStatus(indexing, MaterialStatus.READY));
+            updateTask(
+                embeddingTask,
+                TaskLifecycleStatus.SUCCEEDED,
+                100,
+                "READY",
+                new TaskResultRef("MATERIAL_CHUNKS", ready.id(), chunks.size()),
+                null,
+                null,
+                ready.id(),
+                null
+            );
+            updateTask(
+                importTask,
+                TaskLifecycleStatus.SUCCEEDED,
+                100,
+                "READY",
+                new TaskResultRef("MATERIAL", ready.id(), null),
+                null,
+                null,
+                ready.id(),
+                null
+            );
+            return ready;
         } catch (RuntimeException exception) {
-            return store.saveMaterial(withStatus(saved, MaterialStatus.FAILED));
+            if (embeddingTask != null) {
+                updateTask(
+                    embeddingTask,
+                    TaskLifecycleStatus.FAILED,
+                    100,
+                    "FAILED",
+                    null,
+                    "EMBEDDING_FAILED",
+                    safeErrorMessage(exception),
+                    saved.id(),
+                    null
+                );
+            }
+            updateTask(
+                importTask,
+                TaskLifecycleStatus.FAILED,
+                100,
+                "FAILED",
+                null,
+                "MATERIAL_IMPORT_FAILED",
+                safeErrorMessage(exception),
+                saved.id(),
+                null
+            );
+            var failedMaterial = embeddingTask == null ? saved : withEmbeddingTaskId(saved, embeddingTask.id());
+            return store.saveMaterial(withStatusAndError(failedMaterial, MaterialStatus.FAILED, safeErrorMessage(exception)));
         }
     }
 
@@ -170,6 +250,9 @@ public class SuiLearnV2Service {
             material.title(),
             material.sourceType(),
             material.status(),
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            material.errorMessage(),
             material.content(),
             truncate(material.content()),
             material.createdAt(),
@@ -201,13 +284,16 @@ public class SuiLearnV2Service {
             material.title(),
             material.sourceType(),
             MaterialStatus.DELETED,
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            material.errorMessage(),
             material.content(),
             material.createdAt(),
             deletedAt
         );
         store.saveMaterial(updatedMaterial);
 
-        var invalidatedChunkCount = store.listChunksByMaterial(materialId).size();
+        var invalidatedChunkCount = store.invalidateChunksByMaterial(materialId);
         var deletedPendingCount = 0;
         for (var content : store.listGeneratedContents()) {
             if (!referencesMaterial(content.sourceRefs(), materialId)) {
@@ -261,8 +347,16 @@ public class SuiLearnV2Service {
         );
     }
 
-    public List<KnowledgePoint> extractKnowledgePoints(String materialId) {
+    public KnowledgePointExtractionResult extractKnowledgePoints(String materialId) {
         var material = requireMaterial(materialId);
+        var task = startTask(createTask(
+            TaskKind.KNOWLEDGE_POINT_EXTRACTION,
+            material.knowledgeBaseId(),
+            material.id(),
+            null,
+            null,
+            "EXTRACTING"
+        ), "EXTRACTING");
         var candidates = extractCandidateTerms(material.content());
         var extracted = candidates.stream()
             .map(term -> new KnowledgePoint(
@@ -275,7 +369,18 @@ public class SuiLearnV2Service {
             ))
             .toList();
         extracted.forEach(store::saveKnowledgePoint);
-        return extracted;
+        var finished = updateTask(
+            task,
+            TaskLifecycleStatus.SUCCEEDED,
+            100,
+            "READY",
+            new TaskResultRef("KNOWLEDGE_POINTS", material.id(), extracted.size()),
+            null,
+            null,
+            material.id(),
+            null
+        );
+        return new KnowledgePointExtractionResult(finished.id(), finished, extracted);
     }
 
     public List<KnowledgePoint> listKnowledgePoints(String knowledgeBaseId) {
@@ -307,45 +412,81 @@ public class SuiLearnV2Service {
         requireKnowledgeBase(request.knowledgeBaseId());
         var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
         ensureSourcesUsableForGeneration(sourceRefs);
+        var task = startTask(createTask(
+            TaskKind.QUESTION_GENERATION,
+            request.knowledgeBaseId(),
+            firstMaterialId(sourceRefs),
+            aiProviderType(),
+            chatModelName(),
+            "GENERATING"
+        ), "GENERATING");
         var now = clock.instant();
         var type = request.questionType() == null ? QuestionType.SINGLE_CHOICE : request.questionType();
         var draftKnowledgePointIds = requestedKnowledgePointIds(request.knowledgePointIds(), sourceRefs);
         var categoryId = valueOrDefault(request.categoryId(), defaultCategoryId(draftKnowledgePointIds));
         var categoryName = valueOrDefault(request.categoryName(), defaultCategoryName(categoryId));
-        var generated = aiProvider.generateQuestion(new AiProvider.QuestionGenerationPrompt(
-            request.knowledgeBaseId(),
-            sourceRefs,
-            request.sourceType() == null ? sourceRefs.get(0).type() : request.sourceType(),
-            request.sourceId() == null ? sourceRefs.get(0).id() : request.sourceId(),
-            type,
-            categoryId,
-            categoryName,
-            draftKnowledgePointIds,
-            request.prompt()
-        ));
-        var draft = new GeneratedQuestionDraft(
-            newId("gen"),
-            request.knowledgeBaseId(),
-            GeneratedContentStatus.PENDING_REVIEW,
-            sourceRefs,
-            request.sourceType() == null ? sourceRefs.get(0).type() : request.sourceType(),
-            request.sourceId() == null ? sourceRefs.get(0).id() : request.sourceId(),
-            generated.questionType() == null ? type : generated.questionType(),
-            valueOrDefault(generated.categoryId(), categoryId),
-            valueOrDefault(generated.categoryName(), categoryName),
-            generated.knowledgePointIds() == null || generated.knowledgePointIds().isEmpty()
-                ? draftKnowledgePointIds
-                : generated.knowledgePointIds(),
-            requireGeneratedText(generated.stem(), "question stem"),
-            generated.options() == null ? List.of() : generated.options(),
-            generated.answer() == null ? List.of() : generated.answer(),
-            requireGeneratedText(generated.explanation(), "question explanation"),
-            null,
-            null,
-            now,
-            now
-        );
-        return store.saveGeneratedContent(draft);
+        try {
+            var generated = aiProvider.generateQuestion(new AiProvider.QuestionGenerationPrompt(
+                request.knowledgeBaseId(),
+                sourceRefs,
+                request.sourceType() == null ? sourceRefs.get(0).type() : request.sourceType(),
+                request.sourceId() == null ? sourceRefs.get(0).id() : request.sourceId(),
+                type,
+                categoryId,
+                categoryName,
+                draftKnowledgePointIds,
+                request.prompt()
+            ));
+            var draft = new GeneratedQuestionDraft(
+                newId("gen"),
+                request.knowledgeBaseId(),
+                task.id(),
+                GeneratedContentStatus.PENDING_REVIEW,
+                sourceRefs,
+                request.sourceType() == null ? sourceRefs.get(0).type() : request.sourceType(),
+                request.sourceId() == null ? sourceRefs.get(0).id() : request.sourceId(),
+                generated.questionType() == null ? type : generated.questionType(),
+                valueOrDefault(generated.categoryId(), categoryId),
+                valueOrDefault(generated.categoryName(), categoryName),
+                generated.knowledgePointIds() == null || generated.knowledgePointIds().isEmpty()
+                    ? draftKnowledgePointIds
+                    : generated.knowledgePointIds(),
+                requireGeneratedText(generated.stem(), "question stem"),
+                generated.options() == null ? List.of() : generated.options(),
+                generated.answer() == null ? List.of() : generated.answer(),
+                requireGeneratedText(generated.explanation(), "question explanation"),
+                null,
+                null,
+                now,
+                now
+            );
+            var savedDraft = store.saveGeneratedContent(draft);
+            updateTask(
+                task,
+                TaskLifecycleStatus.SUCCEEDED,
+                100,
+                "READY",
+                new TaskResultRef("GENERATED_CONTENT", savedDraft.id(), null),
+                null,
+                null,
+                task.materialId(),
+                savedDraft.id()
+            );
+            return savedDraft;
+        } catch (RuntimeException exception) {
+            updateTask(
+                task,
+                TaskLifecycleStatus.FAILED,
+                100,
+                "FAILED",
+                null,
+                "QUESTION_GENERATION_FAILED",
+                safeErrorMessage(exception),
+                task.materialId(),
+                null
+            );
+            throw exception;
+        }
     }
 
     public List<GeneratedQuestionDraft> listGeneratedContents(GeneratedContentStatus status) {
@@ -365,9 +506,20 @@ public class SuiLearnV2Service {
     public KnowledgeBaseStatistics getStatistics(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
         var questionCount = countSavedQuestions(knowledgeBaseId);
+        var activeMaterials = store.listMaterials(knowledgeBaseId).stream()
+            .filter(material -> material.status() != MaterialStatus.DELETED)
+            .toList();
         return new KnowledgeBaseStatistics(
             knowledgeBaseId,
             questionCount,
+            activeMaterials.size(),
+            (int) activeMaterials.stream().filter(material -> material.status() == MaterialStatus.READY).count(),
+            countKnowledgePoints(knowledgeBaseId),
+            (int) store.listGeneratedContents().stream()
+                .filter(content -> content.knowledgeBaseId().equals(knowledgeBaseId))
+                .filter(content -> content.status() == GeneratedContentStatus.PENDING_REVIEW)
+                .count(),
+            countAiNotes(knowledgeBaseId),
             0,
             0,
             null,
@@ -387,24 +539,59 @@ public class SuiLearnV2Service {
         }
         var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
         ensureSourcesUsableForGeneration(sourceRefs);
-        var generated = aiProvider.generateKnowledgePointExplanation(new AiProvider.KnowledgePointExplanationPrompt(
+        var task = startTask(createTask(
+            TaskKind.EXPLANATION_GENERATION,
             request.knowledgeBaseId(),
-            point.id(),
-            point.name(),
-            point.description(),
-            sourceRefs,
-            request.prompt()
-        ));
-        var draft = new AiNoteDraft(
-            newId("note_draft"),
-            request.knowledgeBaseId(),
-            AiNoteType.KNOWLEDGE_POINT_EXPLANATION,
-            requireGeneratedText(generated.title(), "explanation title"),
-            requireGeneratedText(generated.content(), "explanation content"),
-            sourceRefs,
-            clock.instant()
-        );
-        return store.saveAiNoteDraft(draft);
+            firstMaterialId(sourceRefs),
+            aiProviderType(),
+            chatModelName(),
+            "GENERATING"
+        ), "GENERATING");
+        try {
+            var generated = aiProvider.generateKnowledgePointExplanation(new AiProvider.KnowledgePointExplanationPrompt(
+                request.knowledgeBaseId(),
+                point.id(),
+                point.name(),
+                point.description(),
+                sourceRefs,
+                request.prompt()
+            ));
+            var draft = store.saveAiNoteDraft(new AiNoteDraft(
+                newId("note_draft"),
+                request.knowledgeBaseId(),
+                task.id(),
+                AiNoteType.KNOWLEDGE_POINT_EXPLANATION,
+                requireGeneratedText(generated.title(), "explanation title"),
+                requireGeneratedText(generated.content(), "explanation content"),
+                sourceRefs,
+                clock.instant()
+            ));
+            updateTask(
+                task,
+                TaskLifecycleStatus.SUCCEEDED,
+                100,
+                "READY",
+                new TaskResultRef("AI_NOTE_DRAFT", draft.id(), null),
+                null,
+                null,
+                task.materialId(),
+                null
+            );
+            return draft;
+        } catch (RuntimeException exception) {
+            updateTask(
+                task,
+                TaskLifecycleStatus.FAILED,
+                100,
+                "FAILED",
+                null,
+                "EXPLANATION_GENERATION_FAILED",
+                safeErrorMessage(exception),
+                task.materialId(),
+                null
+            );
+            throw exception;
+        }
     }
 
     public AiNoteDraft generateReviewSuggestion(GenerateReviewSuggestionRequest request) {
@@ -412,24 +599,58 @@ public class SuiLearnV2Service {
         var sourceRefs = normalizeSourceRefs(request.knowledgeBaseId(), request.sourceRefs());
         ensureSourcesUsableForGeneration(sourceRefs);
         var weakPoints = request.weakKnowledgePointIds() == null ? List.<String>of() : request.weakKnowledgePointIds();
-        var generated = aiProvider.generateReviewSuggestion(new AiProvider.ReviewSuggestionPrompt(
+        var task = startTask(createTask(
+            TaskKind.REVIEW_SUGGESTION_GENERATION,
             request.knowledgeBaseId(),
-            sourceRefs,
-            weakPoints,
-            request.wrongQuestionIds() == null ? List.of() : request.wrongQuestionIds(),
-            request.prompt()
-        ));
-        var title = weakPoints.isEmpty() ? "Review suggestion" : "Weak knowledge point review suggestion";
-        var draft = new AiNoteDraft(
-            newId("note_draft"),
-            request.knowledgeBaseId(),
-            AiNoteType.REVIEW_SUGGESTION,
-            requireGeneratedText(generated.title(), "review suggestion title"),
-            requireGeneratedText(generated.content(), "review suggestion content"),
-            sourceRefs,
-            clock.instant()
-        );
-        return store.saveAiNoteDraft(draft);
+            firstMaterialId(sourceRefs),
+            aiProviderType(),
+            chatModelName(),
+            "GENERATING"
+        ), "GENERATING");
+        try {
+            var generated = aiProvider.generateReviewSuggestion(new AiProvider.ReviewSuggestionPrompt(
+                request.knowledgeBaseId(),
+                sourceRefs,
+                weakPoints,
+                request.wrongQuestionIds() == null ? List.of() : request.wrongQuestionIds(),
+                request.prompt()
+            ));
+            var draft = store.saveAiNoteDraft(new AiNoteDraft(
+                newId("note_draft"),
+                request.knowledgeBaseId(),
+                task.id(),
+                AiNoteType.REVIEW_SUGGESTION,
+                requireGeneratedText(generated.title(), "review suggestion title"),
+                requireGeneratedText(generated.content(), "review suggestion content"),
+                sourceRefs,
+                clock.instant()
+            ));
+            updateTask(
+                task,
+                TaskLifecycleStatus.SUCCEEDED,
+                100,
+                "READY",
+                new TaskResultRef("AI_NOTE_DRAFT", draft.id(), null),
+                null,
+                null,
+                task.materialId(),
+                null
+            );
+            return draft;
+        } catch (RuntimeException exception) {
+            updateTask(
+                task,
+                TaskLifecycleStatus.FAILED,
+                100,
+                "FAILED",
+                null,
+                "REVIEW_SUGGESTION_GENERATION_FAILED",
+                safeErrorMessage(exception),
+                task.materialId(),
+                null
+            );
+            throw exception;
+        }
     }
 
     public SavedAiNote saveAiNote(SaveAiNoteRequest request) {
@@ -474,6 +695,7 @@ public class SuiLearnV2Service {
         var updated = new GeneratedQuestionDraft(
             existing.id(),
             existing.knowledgeBaseId(),
+            existing.generationTaskId(),
             request.status(),
             sourceRefs,
             existing.sourceType(),
@@ -503,6 +725,7 @@ public class SuiLearnV2Service {
         var deleted = new GeneratedQuestionDraft(
             existing.id(),
             existing.knowledgeBaseId(),
+            existing.generationTaskId(),
             GeneratedContentStatus.DELETED,
             existing.sourceRefs(),
             existing.sourceType(),
@@ -628,6 +851,22 @@ public class SuiLearnV2Service {
         return withContentAndStatus(material, material.content(), status);
     }
 
+    private LearningMaterial withStatusAndError(LearningMaterial material, MaterialStatus status, String errorMessage) {
+        return new LearningMaterial(
+            material.id(),
+            material.knowledgeBaseId(),
+            material.title(),
+            material.sourceType(),
+            status,
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            errorMessage,
+            material.content(),
+            material.createdAt(),
+            material.deletedAt()
+        );
+    }
+
     private LearningMaterial withContentAndStatus(LearningMaterial material, String content, MaterialStatus status) {
         return new LearningMaterial(
             material.id(),
@@ -635,21 +874,44 @@ public class SuiLearnV2Service {
             material.title(),
             material.sourceType(),
             status,
+            material.importTaskId(),
+            material.embeddingTaskId(),
+            status == MaterialStatus.FAILED ? material.errorMessage() : null,
             content,
             material.createdAt(),
             material.deletedAt()
         );
     }
 
+    private LearningMaterial withEmbeddingTaskId(LearningMaterial material, String embeddingTaskId) {
+        return new LearningMaterial(
+            material.id(),
+            material.knowledgeBaseId(),
+            material.title(),
+            material.sourceType(),
+            material.status(),
+            material.importTaskId(),
+            embeddingTaskId,
+            material.errorMessage(),
+            material.content(),
+            material.createdAt(),
+            material.deletedAt()
+        );
+    }
+
     private MaterialChunk withEmbedding(MaterialChunk chunk) {
+        var embedding = embeddingProvider.embed(chunk.content()).values();
         return new MaterialChunk(
             chunk.id(),
+            chunk.knowledgeBaseId(),
             chunk.materialId(),
             chunk.content(),
             chunk.ordinal(),
             chunk.sourceRef(),
-            embeddingProvider.embed(chunk.content()).values(),
-            FAKE_EMBEDDING_MODEL
+            embedding,
+            EmbeddingStatus.READY,
+            embeddingProvider.model(),
+            embedding.size()
         );
     }
 
@@ -676,6 +938,10 @@ public class SuiLearnV2Service {
     }
 
     private SourceRef chunkSourceRef(LearningMaterial material, String chunkId, String content) {
+        return chunkSourceRef(material, chunkId, content, material.status() == MaterialStatus.DELETED);
+    }
+
+    private SourceRef chunkSourceRef(LearningMaterial material, String chunkId, String content, boolean deleted) {
         return new SourceRef(
             SourceType.MATERIAL_CHUNK,
             chunkId,
@@ -683,7 +949,7 @@ public class SuiLearnV2Service {
             material.title(),
             material.id(),
             chunkId,
-            material.status() == MaterialStatus.DELETED,
+            deleted,
             truncate(content)
         );
     }
@@ -738,7 +1004,12 @@ public class SuiLearnV2Service {
             if (!material.knowledgeBaseId().equals(knowledgeBaseId)) {
                 throw new IllegalArgumentException("SourceRef is outside knowledge base: " + ref.id());
             }
-            return chunkSourceRef(material, chunk.id(), chunk.content());
+            return chunkSourceRef(
+                material,
+                chunk.id(),
+                chunk.content(),
+                material.status() == MaterialStatus.DELETED || chunk.embeddingStatus() != EmbeddingStatus.READY
+            );
         }
         return new SourceRef(
             ref.type(),
@@ -769,6 +1040,7 @@ public class SuiLearnV2Service {
         return new GeneratedQuestionDraft(
             existing.id(),
             existing.knowledgeBaseId(),
+            existing.generationTaskId(),
             status,
             existing.sourceRefs(),
             existing.sourceType(),
@@ -792,6 +1064,7 @@ public class SuiLearnV2Service {
         return new GeneratedQuestionDraft(
             existing.id(),
             existing.knowledgeBaseId(),
+            existing.generationTaskId(),
             existing.status(),
             sourceRefs,
             existing.sourceType(),
@@ -934,6 +1207,106 @@ public class SuiLearnV2Service {
             throw new IllegalStateException("AiProvider returned blank " + fieldName);
         }
         return value;
+    }
+
+    private TaskStatus createTask(
+        TaskKind kind,
+        String knowledgeBaseId,
+        String materialId,
+        AiProviderType providerType,
+        String model,
+        String currentStep
+    ) {
+        var now = clock.instant();
+        return store.saveTask(new TaskStatus(
+            newId("task"),
+            kind,
+            TaskLifecycleStatus.QUEUED,
+            knowledgeBaseId,
+            materialId,
+            null,
+            providerType,
+            model,
+            0,
+            currentStep,
+            null,
+            null,
+            0,
+            null,
+            now,
+            null,
+            null,
+            now
+        ));
+    }
+
+    private TaskStatus startTask(TaskStatus task, String currentStep) {
+        return updateTask(task, TaskLifecycleStatus.RUNNING, 0, currentStep, null, null, null, task.materialId(), task.generatedContentId());
+    }
+
+    private TaskStatus updateTask(
+        TaskStatus existing,
+        TaskLifecycleStatus status,
+        Integer progressPercent,
+        String currentStep,
+        TaskResultRef resultRef,
+        String errorCode,
+        String errorMessage,
+        String materialId,
+        String generatedContentId
+    ) {
+        var now = clock.instant();
+        return store.saveTask(new TaskStatus(
+            existing.id(),
+            existing.kind(),
+            status,
+            existing.knowledgeBaseId(),
+            materialId == null ? existing.materialId() : materialId,
+            generatedContentId == null ? existing.generatedContentId() : generatedContentId,
+            existing.providerType(),
+            existing.model(),
+            progressPercent,
+            currentStep,
+            errorCode,
+            errorMessage,
+            existing.retryCount(),
+            resultRef,
+            existing.createdAt(),
+            existing.startedAt() == null && status == TaskLifecycleStatus.RUNNING ? now : existing.startedAt(),
+            status == TaskLifecycleStatus.SUCCEEDED || status == TaskLifecycleStatus.FAILED || status == TaskLifecycleStatus.CANCELLED
+                ? now
+                : existing.finishedAt(),
+            now
+        ));
+    }
+
+    private String firstMaterialId(List<SourceRef> sourceRefs) {
+        if (sourceRefs == null) {
+            return null;
+        }
+        return sourceRefs.stream()
+            .map(ref -> ref.materialId() == null && ref.type() == SourceType.MATERIAL ? ref.id() : ref.materialId())
+            .filter(id -> id != null && !id.isBlank())
+            .findFirst()
+            .orElse(null);
+    }
+
+    private String safeErrorMessage(RuntimeException exception) {
+        var message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return truncate(message);
+    }
+
+    private AiProviderType aiProviderType() {
+        return aiProvider.getClass().getSimpleName().contains("OpenAiCompatible")
+            ? AiProviderType.OPENAI_COMPATIBLE
+            : AiProviderType.FAKE;
+    }
+
+    private String chatModelName() {
+        return aiProviderType() == AiProviderType.FAKE ? "fake-chat-v1" : "openai-compatible-chat";
     }
 
     private String newId(String prefix) {

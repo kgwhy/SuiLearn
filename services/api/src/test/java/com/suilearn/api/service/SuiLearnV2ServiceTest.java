@@ -19,6 +19,8 @@ import com.suilearn.api.dto.SaveAiNoteRequest;
 import com.suilearn.api.material.DefaultMaterialChunker;
 import com.suilearn.api.material.TextMaterialParser;
 import com.suilearn.api.model.AiNoteType;
+import com.suilearn.api.model.AiProviderType;
+import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialSourceType;
@@ -28,6 +30,8 @@ import com.suilearn.api.model.SearchResult;
 import com.suilearn.api.model.SearchResultType;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
+import com.suilearn.api.model.TaskKind;
+import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.persistence.SuiLearnV2Store;
 import com.suilearn.api.retrieval.FakeEmbeddingProvider;
 import com.suilearn.api.retrieval.KeywordRetriever;
@@ -55,6 +59,9 @@ import org.springframework.context.annotation.Primary;
 class SuiLearnV2ServiceTest {
     @Autowired
     private SuiLearnV2Service service;
+
+    @Autowired
+    private AiProviderStatusService providerStatusService;
 
     @SpyBean
     private SuiLearnV2Store store;
@@ -256,7 +263,7 @@ class SuiLearnV2ServiceTest {
             MaterialSourceType.MARKDOWN,
             "HashMap buckets collision"
         ));
-        var point = service.extractKnowledgePoints(material.id()).get(0);
+        var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
         var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
         service.deleteMaterial(material.id(), null, null);
 
@@ -329,7 +336,7 @@ class SuiLearnV2ServiceTest {
             MaterialSourceType.MARKDOWN,
             "HashMap uses buckets. Collision handling uses linked lists."
         ));
-        var point = service.extractKnowledgePoints(material.id()).get(0);
+        var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
         var draft = service.generateQuestion(generateQuestionRequest(
             kb.id(),
             materialSourceRef(kb.id(), material.id(), material.title()),
@@ -375,7 +382,7 @@ class SuiLearnV2ServiceTest {
             MaterialSourceType.MARKDOWN,
             "HashMap uses buckets. Collision handling uses linked lists."
         ));
-        var point = service.extractKnowledgePoints(material.id()).get(0);
+        var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
         var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
 
         var question = service.generateQuestion(generateQuestionRequest(
@@ -463,18 +470,24 @@ class SuiLearnV2ServiceTest {
                     assertThat(chunk.content()).isEqualTo("HashMap uses buckets.");
                     assertThat(chunk.embedding()).hasSize(3);
                     assertThat(chunk.embedding()).startsWith(21.0, 3.0);
+                    assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
                     assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                    assertThat(chunk.embeddingDimensions()).isEqualTo(3);
                 },
                 chunk -> {
                     assertThat(chunk.content()).isEqualTo("Collision handling uses linked lists.");
                     assertThat(chunk.embedding()).hasSize(3);
                     assertThat(chunk.embedding()).startsWith(37.0, 5.0);
+                    assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
                     assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                    assertThat(chunk.embeddingDimensions()).isEqualTo(3);
                 }
             );
         var detailJson = objectMapper.valueToTree(service.getMaterialDetail(material.id()));
         assertThat(detailJson.path("chunks").get(0).has("embedding")).isFalse();
-        assertThat(detailJson.path("chunks").get(0).has("embeddingModel")).isFalse();
+        assertThat(detailJson.path("chunks").get(0).path("embeddingStatus").asText()).isEqualTo("READY");
+        assertThat(detailJson.path("chunks").get(0).path("embeddingModel").asText()).isEqualTo("fake-embedding-v1");
+        assertThat(detailJson.path("chunks").get(0).path("embeddingDimensions").asInt()).isEqualTo(3);
 
         InOrder statusFlow = inOrder(store);
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.UPLOADED));
@@ -507,6 +520,13 @@ class SuiLearnV2ServiceTest {
         ));
 
         assertThat(material.status()).isEqualTo(MaterialStatus.FAILED);
+        assertThat(material.errorMessage()).contains("parse failed");
+        assertThat(failingService.getTaskStatus(material.importTaskId()))
+            .satisfies(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.MATERIAL_IMPORT);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.FAILED);
+                assertThat(task.errorMessage()).contains("parse failed");
+            });
         assertThat(store.findMaterial(material.id()))
             .hasValueSatisfying(saved -> assertThat(saved.status()).isEqualTo(MaterialStatus.FAILED));
         assertThat(store.listChunksByMaterial(material.id())).isEmpty();
@@ -537,6 +557,223 @@ class SuiLearnV2ServiceTest {
         assertThat(answer.uncertain()).isFalse();
         assertThat(answer.citations()).singleElement()
             .satisfies(ref -> assertThat(ref.id()).isEqualTo("custom_chunk"));
+    }
+
+    @Test
+    void providerStatusReturnsSanitizedFakeProviderMetadata() {
+        var status = providerStatusService.getStatus();
+        var json = objectMapper.valueToTree(status);
+
+        assertThat(status.providerType()).isEqualTo(AiProviderType.FAKE);
+        assertThat(status.configured()).isTrue();
+        assertThat(status.available()).isTrue();
+        assertThat(status.chatModel()).isEqualTo("fake-chat-v1");
+        assertThat(status.embeddingModel()).isEqualTo("fake-embedding-v1");
+        assertThat(status.embeddingDimensions()).isEqualTo(3);
+        assertThat(json.has("apiKey")).isFalse();
+        assertThat(json.has("authorization")).isFalse();
+        assertThat(json.has("header")).isFalse();
+    }
+
+    @Test
+    void importMaterialCreatesSucceededImportAndEmbeddingTasks() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets.\nCollision handling uses linked lists."
+        ));
+
+        assertThat(material.importTaskId()).isNotBlank();
+        assertThat(material.embeddingTaskId()).isNotBlank();
+        assertThat(service.getTaskStatus(material.importTaskId()))
+            .satisfies(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.MATERIAL_IMPORT);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
+                assertThat(task.resultRef().type()).isEqualTo("MATERIAL");
+                assertThat(task.resultRef().id()).isEqualTo(material.id());
+            });
+        assertThat(service.getTaskStatus(material.embeddingTaskId()))
+            .satisfies(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.EMBEDDING);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
+                assertThat(task.model()).isEqualTo("fake-embedding-v1");
+                assertThat(task.resultRef().type()).isEqualTo("MATERIAL_CHUNKS");
+                assertThat(task.resultRef().count()).isEqualTo(2);
+            });
+    }
+
+    @Test
+    void importMaterialFailureStoresFailedTaskAndMaterialError() {
+        var failingService = new SuiLearnV2Service(
+            new FakeAiProvider(),
+            request -> {
+                throw new IllegalStateException("parse failed before chunking");
+            },
+            new DefaultMaterialChunker(),
+            new FakeEmbeddingProvider(),
+            keywordRetriever(),
+            clock,
+            store
+        );
+        var kb = failingService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        var material = failingService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Broken Notes",
+            null,
+            MaterialSourceType.PDF,
+            "unparseable text"
+        ));
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.FAILED);
+        assertThat(material.errorMessage()).contains("parse failed before chunking");
+        assertThat(failingService.getTaskStatus(material.importTaskId()))
+            .satisfies(task -> {
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.FAILED);
+                assertThat(task.errorCode()).isEqualTo("MATERIAL_IMPORT_FAILED");
+                assertThat(task.errorMessage()).contains("parse failed before chunking");
+            });
+    }
+
+    @Test
+    void aiGenerationCreatesSucceededTasksWithResultRefs() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+        var extraction = service.extractKnowledgePoints(material.id());
+        var point = extraction.knowledgePoints().get(0);
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+
+        var question = service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, List.of(point.id())));
+        var explanation = service.generateExplanation(new GenerateExplanationRequest(kb.id(), point.id(), List.of(sourceRef), null));
+        var suggestion = service.generateReviewSuggestion(new GenerateReviewSuggestionRequest(kb.id(), List.of(sourceRef), List.of(point.id()), List.of(question.id()), null));
+
+        assertThat(store.listTasks())
+            .anySatisfy(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.QUESTION_GENERATION);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
+                assertThat(task.generatedContentId()).isEqualTo(question.id());
+                assertThat(task.resultRef().id()).isEqualTo(question.id());
+            })
+            .anySatisfy(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.EXPLANATION_GENERATION);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
+                assertThat(task.resultRef().id()).isEqualTo(explanation.id());
+            })
+            .anySatisfy(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.REVIEW_SUGGESTION_GENERATION);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
+                assertThat(task.resultRef().id()).isEqualTo(suggestion.id());
+            });
+    }
+
+    @Test
+    void deletingMaterialInvalidatesChunkEmbeddingsAndExcludesSearch() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+
+        assertThat(service.search("HashMap", kb.id(), null)).isNotEmpty();
+        var deletion = service.deleteMaterial(material.id(), null, null);
+
+        assertThat(deletion.invalidatedChunkCount()).isEqualTo(1);
+        assertThat(store.listChunksByMaterial(material.id()))
+            .singleElement()
+            .satisfies(chunk -> {
+                assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.INVALIDATED);
+                assertThat(chunk.embedding()).isNull();
+            });
+        assertThat(service.search("HashMap", kb.id(), null)).isEmpty();
+        assertThat(service.ask("HashMap", kb.id(), material.id()).uncertain()).isTrue();
+    }
+
+    @Test
+    void statisticsUsePersistedCountsWithoutPlaceholders() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+        var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+        service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, List.of(point.id())));
+        service.saveAiNote(new SaveAiNoteRequest(
+            null,
+            kb.id(),
+            AiNoteType.REVIEW_SUGGESTION,
+            "Review",
+            "Review HashMap collision handling.",
+            List.of(sourceRef)
+        ));
+
+        var statistics = service.getStatistics(kb.id());
+
+        assertThat(statistics.materialCount()).isEqualTo(1);
+        assertThat(statistics.readyMaterialCount()).isEqualTo(1);
+        assertThat(statistics.knowledgePointCount()).isGreaterThanOrEqualTo(1);
+        assertThat(statistics.pendingGeneratedContentCount()).isEqualTo(1);
+        assertThat(statistics.savedAiNoteCount()).isEqualTo(1);
+        assertThat(statistics.answerCount()).isZero();
+        assertThat(statistics.correctRate()).isNull();
+    }
+
+    @Test
+    void generatedQuestionAndAiNoteDraftsSerializeGenerationTaskId() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+        var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+
+        var question = service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, List.of(point.id())));
+        var reviewed = service.reviewGeneratedContent(question.id(), saveRequest(null, null, null));
+        var listed = service.listGeneratedContents(null).get(0);
+        var explanation = service.generateExplanation(new GenerateExplanationRequest(kb.id(), point.id(), List.of(sourceRef), null));
+        var suggestion = service.generateReviewSuggestion(new GenerateReviewSuggestionRequest(kb.id(), List.of(sourceRef), List.of(point.id()), List.of(question.id()), null));
+
+        assertThat(question.generationTaskId()).isNotBlank();
+        assertThat(reviewed.generationTaskId()).isEqualTo(question.generationTaskId());
+        assertThat(listed.generationTaskId()).isEqualTo(question.generationTaskId());
+        assertThat(objectMapper.valueToTree(question).path("generationTaskId").asText()).isEqualTo(question.generationTaskId());
+        assertThat(explanation.generationTaskId()).isNotBlank();
+        assertThat(suggestion.generationTaskId()).isNotBlank();
+        assertThat(objectMapper.valueToTree(explanation).path("generationTaskId").asText()).isEqualTo(explanation.generationTaskId());
+        assertThat(objectMapper.valueToTree(suggestion).path("generationTaskId").asText()).isEqualTo(suggestion.generationTaskId());
+    }
+
+    @Test
+    void searchResultsSerializeRequiredScore() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+
+        var result = service.search("HashMap", kb.id(), null).get(0);
+        var json = objectMapper.valueToTree(result);
+
+        assertThat(result.score()).isBetween(0.0, 1.0);
+        assertThat(json.has("score")).isTrue();
+        assertThat(json.path("score").isNumber()).isTrue();
+        assertThat(json.path("score").asDouble()).isEqualTo(result.score());
     }
 
     private static GenerateQuestionRequest generateQuestionRequest(
@@ -637,6 +874,7 @@ class SuiLearnV2ServiceTest {
                 SearchResultType.MATERIAL_CHUNK,
                 "Custom result",
                 "Custom summary",
+                1.0,
                 request.knowledgeBaseId(),
                 List.of(),
                 List.of(sourceRef(request))

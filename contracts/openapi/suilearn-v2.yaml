@@ -174,6 +174,9 @@ paths:
   /api/v2/materials/{materialId}/extract-knowledge-points:
     post:
       summary: Extract editable knowledge points from material
+      description: >
+        Creates a persisted generation task even when the MVP executes synchronously.
+        The returned task id can be queried through /api/v2/tasks/{taskId}.
       parameters:
         - $ref: "#/components/parameters/MaterialId"
       responses:
@@ -182,9 +185,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/KnowledgePoint"
+                $ref: "#/components/schemas/KnowledgePointExtractionResult"
   /api/v2/knowledge-bases/{knowledgeBaseId}/knowledge-points:
     get:
       summary: List extracted or generated knowledge points
@@ -227,6 +228,9 @@ paths:
   /api/v2/ai/generated-questions:
     post:
       summary: Generate question draft from source
+      description: >
+        Creates a persisted generation task. MVP implementations may execute synchronously,
+        but must still write a SUCCEEDED or FAILED task row before returning.
       requestBody:
         required: true
         content:
@@ -243,6 +247,9 @@ paths:
   /api/v2/ai/knowledge-point-explanations:
     post:
       summary: Generate a knowledge point explanation
+      description: >
+        Creates a persisted generation task. The response must not contain provider raw
+        output or secrets; only the reviewed draft shape is returned.
       requestBody:
         required: true
         content:
@@ -259,6 +266,9 @@ paths:
   /api/v2/ai/review-suggestions:
     post:
       summary: Generate review suggestions from answer history, weak knowledge points, or wrong questions
+      description: >
+        Creates a persisted generation task. The task records provider type/model metadata
+        and error summaries, never API keys.
       requestBody:
         required: true
         content:
@@ -330,6 +340,20 @@ paths:
       responses:
         "204":
           description: Deleted
+  /api/v2/ai/provider-status:
+    get:
+      summary: Get sanitized AI provider runtime status
+      description: >
+        Returns non-secret provider configuration needed by clients to decide whether AI
+        features are available. The response must never include API keys, raw authorization
+        headers, or provider secret values.
+      responses:
+        "200":
+          description: Sanitized AI provider status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiProviderStatus"
   /api/v2/search:
     get:
       summary: Semantic search across questions, knowledge points, material chunks, and generated content
@@ -353,6 +377,14 @@ paths:
           schema:
             type: string
           description: Required unless knowledgeBaseId is provided. Limits search to one material.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+          description: Maximum results to return after scope filtering.
       responses:
         "200":
           description: Search results
@@ -378,6 +410,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RagAnswer"
+  /api/v2/tasks/{taskId}:
+    get:
+      summary: Get generation, material import, or embedding task status
+      description: >
+        Unified task status endpoint. MVP implementations may execute work synchronously,
+        but every material import, embedding, and AI generation flow must persist a task
+        row and expose its final status here.
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskStatus"
 components:
   parameters:
     KnowledgeBaseId:
@@ -401,6 +449,12 @@ components:
     KnowledgePointId:
       in: path
       name: knowledgePointId
+      required: true
+      schema:
+        type: string
+    TaskId:
+      in: path
+      name: taskId
       required: true
       schema:
         type: string
@@ -441,17 +495,25 @@ components:
       allOf:
         - $ref: "#/components/schemas/KnowledgeBase"
         - type: object
+          description: >
+            Lightweight detail counters. Counts are computed from persisted rows in the
+            knowledge base and must not be placeholder constants.
           properties:
             materialCount:
               type: integer
+              description: Non-deleted materials in this knowledge base.
             knowledgePointCount:
               type: integer
+              description: Non-deleted extracted or generated knowledge points in this knowledge base.
             questionCount:
               type: integer
+              description: Saved formal questions in this knowledge base, including saved AI-generated questions.
             generatedContentCount:
               type: integer
+              description: Generated contents not soft-deleted, including pending review, saved, and discarded items.
             aiNoteCount:
               type: integer
+              description: Saved AI notes in this knowledge base.
     QuestionSummary:
       type: object
       required: [id, knowledgeBaseId, questionType, stem, categoryId, categoryName, knowledgePointIds, createdAt, sourceRefs]
@@ -495,22 +557,35 @@ components:
     KnowledgeBaseStatistics:
       type: object
       required: [knowledgeBaseId, questionCount, answeredQuestionCount, answerCount, wrongQuestionCount]
+      description: >
+        Lightweight learning statistics for the knowledge base detail page. Values must be
+        derived from saved questions and answer records; if no answer records exist, counts
+        are zero and correctRate is omitted or null rather than filled with a placeholder.
       properties:
         knowledgeBaseId:
           type: string
         questionCount:
           type: integer
+          description: Saved formal questions in the knowledge base.
         answeredQuestionCount:
           type: integer
+          description: Distinct saved questions with at least one answer record.
         answerCount:
           type: integer
+          description: Total answer attempts recorded for saved questions in the knowledge base.
         correctRate:
           type: number
           format: double
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Correct answers divided by answerCount; null or omitted when answerCount is 0.
         wrongQuestionCount:
           type: integer
+          description: Saved questions that currently have at least one unmastered wrong-question record.
         weakKnowledgePointIds:
           type: array
+          description: Knowledge point ids ranked as weak by wrong-question or low-correct-rate evidence; empty when there is no evidence.
           items:
             type: string
     ImportMaterialRequest:
@@ -555,7 +630,7 @@ components:
           description: Optional original file part retained for client compatibility; MVP behavior must not depend on parsing PDF binary content.
     LearningMaterial:
       type: object
-      required: [id, knowledgeBaseId, title, sourceType, status, createdAt]
+      required: [id, knowledgeBaseId, title, sourceType, status, importTaskId, createdAt]
       description: Material list item. It intentionally excludes original content; call material detail for content or chunk data.
       properties:
         id:
@@ -568,6 +643,15 @@ components:
           $ref: "#/components/schemas/MaterialSourceType"
         status:
           $ref: "#/components/schemas/MaterialStatus"
+        importTaskId:
+          type: string
+          description: Material import task id. Present even when import completed synchronously.
+        embeddingTaskId:
+          type: string
+          description: Embedding task id once chunk embedding has started or completed.
+        errorMessage:
+          type: string
+          description: Short user-safe failure summary when status is FAILED.
         createdAt:
           type: string
           format: date-time
@@ -596,9 +680,14 @@ components:
                 $ref: "#/components/schemas/KnowledgePoint"
     MaterialChunk:
       type: object
-      required: [id, materialId, content, ordinal]
+      required: [id, knowledgeBaseId, materialId, content, ordinal, embeddingStatus]
+      description: >
+        Smallest retrievable unit for semantic search and RAG. The embedding vector itself
+        is stored server-side in pgvector and is not returned by the API.
       properties:
         id:
+          type: string
+        knowledgeBaseId:
           type: string
         materialId:
           type: string
@@ -606,6 +695,22 @@ components:
           type: string
         ordinal:
           type: integer
+        titlePath:
+          type: array
+          items:
+            type: string
+          description: Heading path or structural labels used to help users locate the chunk.
+        tokenEstimate:
+          type: integer
+          description: Approximate token count used by retrieval and prompt budgeting.
+        embeddingStatus:
+          $ref: "#/components/schemas/EmbeddingStatus"
+        embeddingModel:
+          type: string
+          description: Embedding model used for the stored pgvector value; never an API key or secret.
+        embeddingDimensions:
+          type: integer
+          description: Dimension count of the stored vector, used for migration and compatibility checks.
         sourceRef:
           $ref: "#/components/schemas/SourceRef"
     MaterialDeletionResult:
@@ -654,6 +759,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SourceRef"
+    KnowledgePointExtractionResult:
+      type: object
+      required: [taskId, task, knowledgePoints]
+      properties:
+        taskId:
+          type: string
+        task:
+          $ref: "#/components/schemas/TaskStatus"
+        knowledgePoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgePoint"
     UpdateKnowledgePointRequest:
       type: object
       required: [name, description]
@@ -766,7 +883,7 @@ components:
             $ref: "#/components/schemas/SourceRef"
     GeneratedQuestionDraft:
       type: object
-      required: [id, knowledgeBaseId, status, sourceRefs, questionType, stem, answer, explanation, categoryId, categoryName, knowledgePointIds]
+      required: [id, knowledgeBaseId, generationTaskId, status, sourceRefs, questionType, stem, answer, explanation, categoryId, categoryName, knowledgePointIds]
       description: >
         Pending or reviewed AI-generated question. Drafts must carry the same formal classification
         fields that saved questions use, so review and save flows do not lose category or knowledge point
@@ -777,6 +894,9 @@ components:
           type: string
         knowledgeBaseId:
           type: string
+        generationTaskId:
+          type: string
+          description: Persisted generation task id. Present even when generation completed synchronously.
         status:
           $ref: "#/components/schemas/GeneratedContentStatus"
         sourceRefs:
@@ -827,12 +947,15 @@ components:
           format: date-time
     AiNoteDraft:
       type: object
-      required: [id, knowledgeBaseId, type, title, content, sourceRefs, createdAt]
+      required: [id, knowledgeBaseId, generationTaskId, type, title, content, sourceRefs, createdAt]
       properties:
         id:
           type: string
         knowledgeBaseId:
           type: string
+        generationTaskId:
+          type: string
+          description: Persisted generation task id. Present even when generation completed synchronously.
         type:
           $ref: "#/components/schemas/AiNoteType"
         title:
@@ -890,7 +1013,11 @@ components:
           format: date-time
     SearchResult:
       type: object
-      required: [id, type, title, summary]
+      required: [id, type, title, summary, score]
+      description: >
+        Search result after explicit knowledgeBaseId/materialId scope filtering. Semantic
+        results use pgvector similarity over material chunk embeddings in the MVP; other
+        result types may be matched by linked chunk/source metadata or keyword fallback.
       properties:
         id:
           type: string
@@ -900,6 +1027,12 @@ components:
           type: string
         summary:
           type: string
+        score:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: Normalized relevance score after retrieval and fallback ranking.
         knowledgeBaseId:
           type: string
         knowledgePointIds:
@@ -932,13 +1065,21 @@ components:
     RagAnswer:
       type: object
       required: [answer, uncertain, citations]
+      description: >
+        RAG answer constrained to the requested knowledge base or material. When evidence is
+        insufficient, uncertain must be true and answer should explicitly say the material
+        does not contain enough basis instead of inventing a definitive answer.
       properties:
         answer:
           type: string
         uncertain:
           type: boolean
+        uncertaintyReason:
+          type: string
+          description: Short user-safe reason when uncertain is true, such as INSUFFICIENT_EVIDENCE.
         citations:
           type: array
+          description: Source references for chunks actually used in the answer. May be empty only when uncertain is true.
           items:
             $ref: "#/components/schemas/SourceRef"
         evidenceChunks:
@@ -953,6 +1094,12 @@ components:
     MaterialStatus:
       type: string
       enum: [UPLOADED, PARSING, CHUNKING, INDEXING, READY, FAILED, DELETED]
+    EmbeddingStatus:
+      type: string
+      enum: [PENDING, INDEXING, READY, FAILED, INVALIDATED]
+      description: >
+        Server-side embedding lifecycle for material chunks. INVALIDATED means the source
+        material was deleted or the embedding model changed and the vector must not be used.
     DeletedMaterialSavedContentPolicy:
       type: string
       enum: [KEEP_SAVED_CONTENT, DELETE_SAVED_CONTENT]
@@ -979,6 +1126,41 @@ components:
     AiNoteType:
       type: string
       enum: [KNOWLEDGE_POINT_EXPLANATION, REVIEW_SUGGESTION, RAG_ANSWER, MANUAL_NOTE]
+    AiProviderStatus:
+      type: object
+      required: [providerType, configured, available]
+      description: Sanitized provider status for clients and diagnostics. Secrets are never exposed.
+      properties:
+        providerType:
+          $ref: "#/components/schemas/AiProviderType"
+        configured:
+          type: boolean
+          description: True when required non-secret fields and secret references are configured.
+        available:
+          type: boolean
+          description: False when provider configuration is missing or the adapter is disabled/unreachable.
+        baseUrl:
+          type: string
+          description: Non-secret OpenAI-compatible base URL; omit if it should not be displayed.
+        chatModel:
+          type: string
+        embeddingModel:
+          type: string
+        embeddingDimensions:
+          type: integer
+        apiKeyEnvName:
+          type: string
+          description: Environment variable name used for the key, for example SUILEARN_AI_API_KEY. Never return the key value.
+        timeoutMs:
+          type: integer
+        maxRetries:
+          type: integer
+        message:
+          type: string
+          description: User-safe availability or configuration summary.
+    AiProviderType:
+      type: string
+      enum: [FAKE, OPENAI_COMPATIBLE]
     SourceType:
       type: string
       enum: [KNOWLEDGE_POINT, WRONG_QUESTION, MATERIAL, MATERIAL_CHUNK, KNOWLEDGE_BASE, ANSWER_HISTORY]
@@ -1012,3 +1194,71 @@ components:
     SearchResultType:
       type: string
       enum: [QUESTION, KNOWLEDGE_POINT, MATERIAL_CHUNK, GENERATED_CONTENT]
+    TaskStatus:
+      type: object
+      required: [id, kind, status, createdAt, updatedAt]
+      description: >
+        Persisted status for material import, embedding, and AI generation work. Synchronous
+        MVP execution still creates a task and finishes it before returning from the initiating API.
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: "#/components/schemas/TaskKind"
+        status:
+          $ref: "#/components/schemas/TaskLifecycleStatus"
+        knowledgeBaseId:
+          type: string
+        materialId:
+          type: string
+        generatedContentId:
+          type: string
+        providerType:
+          $ref: "#/components/schemas/AiProviderType"
+        model:
+          type: string
+          description: Chat or embedding model used by this task; never contains secrets.
+        progressPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        currentStep:
+          type: string
+          description: User-safe step label such as PARSING, CHUNKING, EMBEDDING, GENERATING.
+        errorCode:
+          type: string
+        errorMessage:
+          type: string
+          description: User-safe error summary. Do not store or return provider raw secrets.
+        retryCount:
+          type: integer
+        resultRef:
+          $ref: "#/components/schemas/TaskResultRef"
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TaskResultRef:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [MATERIAL, MATERIAL_CHUNKS, GENERATED_CONTENT, AI_NOTE_DRAFT, KNOWLEDGE_POINTS]
+        id:
+          type: string
+        count:
+          type: integer
+    TaskKind:
+      type: string
+      enum: [MATERIAL_IMPORT, EMBEDDING, QUESTION_GENERATION, KNOWLEDGE_POINT_EXTRACTION, EXPLANATION_GENERATION, REVIEW_SUGGESTION_GENERATION]
+    TaskLifecycleStatus:
+      type: string
+      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]

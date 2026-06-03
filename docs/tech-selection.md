@@ -236,10 +236,10 @@ ID 规则：
 | 方向 | MVP 必选 | 后置 |
 |---|---|---|
 | 持久化 | PostgreSQL 表模型和迁移；知识库、资料、chunk、生成内容、任务、笔记、来源追溯 | 多用户账号、云同步、权限模型 |
-| 向量检索 | pgvector 存储资料 chunk embedding | Milvus 等独立向量库、复杂重排 |
-| AI Provider | `AiProvider` 接口、Fake Provider、OpenAI-compatible 真实适配 | 多 Provider 路由、成本分析、模型评测平台 |
+| 向量检索 | pgvector 存储资料 chunk embedding；API 不返回原始向量，只返回 embedding 状态和模型元数据 | Milvus 等独立向量库、题目/知识点全量向量化、复杂重排 |
+| AI Provider | `AiProvider` 接口、Fake Provider、OpenAI-compatible 真实适配；只暴露脱敏 provider status，不暴露 API key | 多 Provider 路由、成本分析、模型评测平台 |
 | 资料解析 | Markdown / TXT / 已文本化 PDF 内容解析 | PDF 二进制解析、OCR、Office 文档解析 |
-| 任务模型 | PostgreSQL 记录任务状态；MVP 可同步执行后写状态 | Redis 队列、分布式 worker、复杂重试调度 |
+| 任务模型 | PostgreSQL 记录资料导入、embedding、生成任务状态；MVP 可同步执行，但必须可按 taskId 查询最终状态 | Redis 队列、分布式 worker、复杂重试调度 |
 | Web | 知识库工作台、资料导入、生成确认、语义搜索、资料问答 | 完整 Web 刷题学习端 |
 | Android | 保留第一版本地闭环，接入必要生成入口和确认结果消费 | Android 完整知识库工作台、端侧 RAG |
 
@@ -269,8 +269,12 @@ ID 规则：
 - 文件上传和解析。
 - 异步任务。
 - 任务状态管理。
-- AI API 封装。
+- AI API 封装：业务层只依赖 `AiProvider`，真实适配层使用 OpenAI-compatible HTTP 边界。
 - Fake Provider / 真实 Provider 分层。
+- Provider 配置脱敏：`baseUrl`、模型名、超时、重试、API key 环境变量名可进入状态接口；API key 值、Authorization header 和原始密钥禁止进入 API 响应、任务表和日志。
+- pgvector embedding：MVP 只索引资料 chunk，保存 `embedding_model`、维度和状态；RAG / 搜索必须排除删除资料和失效 embedding。
+- RAG 引用与不确定表达：回答必须受知识库或资料范围约束，证据不足时返回不确定而不是确定性编造。
+- 知识库轻量统计：详情统计由持久化题目、答题记录、错题和笔记计算；没有答题记录时正确率为 null 或省略，不返回占位常量。
 - Prompt 模板管理。
 - Token 成本控制。
 - 生成内容质量校验。

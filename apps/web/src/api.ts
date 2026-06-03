@@ -1,4 +1,5 @@
 import type {
+  AiProviderStatus,
   AiNoteDraft,
   AiNoteType,
   GeneratedContentStatus,
@@ -6,6 +7,7 @@ import type {
   KnowledgeBase,
   KnowledgeBaseDetail,
   KnowledgeBaseStatistics,
+  KnowledgePointExtractionResult,
   KnowledgePoint,
   MaterialDeletionResult,
   MaterialDetail,
@@ -16,7 +18,8 @@ import type {
   RagAnswer,
   SavedAiNote,
   SearchResult,
-  SourceRef
+  SourceRef,
+  TaskStatus
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v2";
@@ -68,6 +71,8 @@ function readableApiError(body: string, response: Response) {
 }
 
 export const api = {
+  getAiProviderStatus: () => request<AiProviderStatus>("/ai/provider-status"),
+  getTaskStatus: (taskId: string) => request<TaskStatus>(`/tasks/${taskId}`),
   listKnowledgeBases: () => request<KnowledgeBase[]>("/knowledge-bases"),
   createKnowledgeBase: (payload: { name: string; description?: string }) =>
     request<KnowledgeBase>("/knowledge-bases", { method: "POST", body: JSON.stringify(payload) }),
@@ -90,7 +95,7 @@ export const api = {
   deleteMaterial: (materialId: string) =>
     request<MaterialDeletionResult>(`/materials/${materialId}`, { method: "DELETE" }),
   extractKnowledgePoints: (materialId: string) =>
-    request<KnowledgePoint[]>(`/materials/${materialId}/extract-knowledge-points`, { method: "POST" }),
+    request<KnowledgePointExtractionResult>(`/materials/${materialId}/extract-knowledge-points`, { method: "POST" }),
   listKnowledgePoints: (knowledgeBaseId: string) =>
     request<KnowledgePoint[]>(`/knowledge-bases/${knowledgeBaseId}/knowledge-points`),
   listQuestions: (knowledgeBaseId: string) =>
@@ -162,10 +167,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
-  search: (params: { q: string; knowledgeBaseId?: string; materialId?: string }) => {
+  search: (params: { q: string; knowledgeBaseId?: string; materialId?: string; limit?: number }) => {
     const query = new URLSearchParams({ q: params.q });
     if (params.knowledgeBaseId) query.set("knowledgeBaseId", params.knowledgeBaseId);
     if (params.materialId) query.set("materialId", params.materialId);
+    if (params.limit !== undefined) query.set("limit", String(params.limit));
     return request<SearchResult[]>(`/search?${query.toString()}`);
   },
   ask: (payload: { question: string; knowledgeBaseId?: string; materialId?: string }) =>

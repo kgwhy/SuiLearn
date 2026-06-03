@@ -13,4 +13,14 @@ public class FakeEmbeddingProvider implements EmbeddingProvider {
         var hashBucket = (double) Math.floorMod(normalized.hashCode(), 1000) / 1000.0;
         return new Embedding(List.of(length, tokenCount, hashBucket));
     }
+
+    @Override
+    public String model() {
+        return "fake-embedding-v1";
+    }
+
+    @Override
+    public int dimensions() {
+        return 3;
+    }
 }

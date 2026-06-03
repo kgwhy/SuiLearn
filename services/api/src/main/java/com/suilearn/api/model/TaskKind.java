@@ -1,0 +1,10 @@
+package com.suilearn.api.model;
+
+public enum TaskKind {
+    MATERIAL_IMPORT,
+    EMBEDDING,
+    QUESTION_GENERATION,
+    KNOWLEDGE_POINT_EXTRACTION,
+    EXPLANATION_GENERATION,
+    REVIEW_SUGGESTION_GENERATION
+}

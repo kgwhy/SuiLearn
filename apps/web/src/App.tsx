@@ -23,6 +23,7 @@ import {
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import type {
+  AiProviderStatus,
   AiNoteDraft,
   GeneratedContentStatus,
   GeneratedQuestionDraft,
@@ -37,13 +38,16 @@ import type {
   QuestionType,
   RagAnswer,
   SearchResult,
-  SourceRef
+  SourceRef,
+  TaskStatus
 } from "./types";
 
 type Section = "overview" | "materials" | "generate" | "search";
 type ToastTone = "info" | "success" | "error";
 type ContentFilter = GeneratedContentStatus | "ALL";
 type FieldErrors = Record<string, string>;
+type TaskStatusMap = Record<string, TaskStatus>;
+type TaskErrorMap = Record<string, string>;
 
 const sourceTypes: MaterialSourceType[] = ["MARKDOWN", "TXT", "PDF"];
 const questionTypes: QuestionType[] = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"];
@@ -64,6 +68,12 @@ export function App() {
   const [aiNoteDraft, setAiNoteDraft] = useState<AiNoteDraft | null>(null);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [ragAnswer, setRagAnswer] = useState<RagAnswer | null>(null);
+  const [aiProviderStatus, setAiProviderStatus] = useState<AiProviderStatus | null>(null);
+  const [aiProviderError, setAiProviderError] = useState("");
+  const [providerLoading, setProviderLoading] = useState(false);
+  const [taskStatuses, setTaskStatuses] = useState<TaskStatusMap>({});
+  const [taskErrors, setTaskErrors] = useState<TaskErrorMap>({});
+  const [taskLoading, setTaskLoading] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
   const [formErrors, setFormErrors] = useState<FieldErrors>({});
@@ -103,6 +113,7 @@ export function App() {
 
   useEffect(() => {
     void loadKnowledgeBases();
+    void loadAiProviderStatus();
   }, []);
 
   useEffect(() => {
@@ -202,6 +213,39 @@ export function App() {
     setKnowledgePoints(nextKnowledgePoints);
     setQuestions(nextQuestions);
     setDrafts(nextDrafts.filter((draft) => draft.knowledgeBaseId === knowledgeBaseId));
+  }
+
+  async function loadAiProviderStatus() {
+    setProviderLoading(true);
+    setAiProviderError("");
+    try {
+      setAiProviderStatus(await api.getAiProviderStatus());
+    } catch (error) {
+      setAiProviderStatus(null);
+      setAiProviderError(error instanceof Error ? error.message : "AI Provider 状态读取失败");
+    } finally {
+      setProviderLoading(false);
+    }
+  }
+
+  async function refreshWorkbench() {
+    await Promise.all([loadWorkbench(), loadAiProviderStatus()]);
+  }
+
+  async function viewTaskStatus(taskId: string) {
+    setTaskLoading((current) => ({ ...current, [taskId]: true }));
+    setTaskErrors((current) => ({ ...current, [taskId]: "" }));
+    try {
+      const status = await api.getTaskStatus(taskId);
+      setTaskStatuses((current) => ({ ...current, [taskId]: status }));
+    } catch (error) {
+      setTaskErrors((current) => ({
+        ...current,
+        [taskId]: error instanceof Error ? error.message : "任务状态读取失败"
+      }));
+    } finally {
+      setTaskLoading((current) => ({ ...current, [taskId]: false }));
+    }
   }
 
   async function createKnowledgeBase(event: FormEvent) {
@@ -470,7 +514,7 @@ export function App() {
     }
     setFormErrors((current) => ({ ...current, search: "", searchQuery: "" }));
     setHasSearched(true);
-    const results = await run(() => api.search({ q: searchForm.query.trim(), knowledgeBaseId: selectedKnowledgeBaseId }));
+    const results = await run(() => api.search({ q: searchForm.query.trim(), knowledgeBaseId: selectedKnowledgeBaseId, limit: 10 }));
     if (results) setSearchResults(results);
   }
 
@@ -554,8 +598,8 @@ export function App() {
             <p className="eyebrow">第二版工作台</p>
             <h2>{selectedKnowledgeBase?.name ?? "暂无知识库"}</h2>
           </div>
-          <button className="ghost-button" onClick={() => void loadWorkbench()} disabled={!selectedKnowledgeBaseId || loading}>
-            {loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />} 刷新
+          <button className="ghost-button" onClick={() => void refreshWorkbench()} disabled={!selectedKnowledgeBaseId || loading || providerLoading}>
+            {loading || providerLoading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />} 刷新
           </button>
         </header>
 
@@ -591,6 +635,9 @@ export function App() {
             knowledgePoints={knowledgePoints}
             questions={questions}
             drafts={drafts}
+            aiProviderStatus={aiProviderStatus}
+            aiProviderError={aiProviderError}
+            providerLoading={providerLoading}
             loading={loading}
             goToMaterials={() => setSection("materials")}
             goToGenerate={() => setSection("generate")}
@@ -608,6 +655,10 @@ export function App() {
             openMaterial={openMaterial}
             extractKnowledgePoints={extractKnowledgePoints}
             deleteMaterial={deleteMaterial}
+            taskStatuses={taskStatuses}
+            taskErrors={taskErrors}
+            taskLoading={taskLoading}
+            viewTaskStatus={viewTaskStatus}
             loading={loading}
             errors={formErrors}
           />
@@ -632,6 +683,10 @@ export function App() {
             generateReviewSuggestion={generateReviewSuggestion}
             aiNoteDraft={aiNoteDraft}
             saveAiNote={saveAiNote}
+            taskStatuses={taskStatuses}
+            taskErrors={taskErrors}
+            taskLoading={taskLoading}
+            viewTaskStatus={viewTaskStatus}
             loading={loading}
             errors={formErrors}
             goToMaterials={() => setSection("materials")}
@@ -719,6 +774,9 @@ function OverviewPanel({
   knowledgePoints,
   questions,
   drafts,
+  aiProviderStatus,
+  aiProviderError,
+  providerLoading,
   loading,
   goToMaterials,
   goToGenerate
@@ -729,6 +787,9 @@ function OverviewPanel({
   knowledgePoints: KnowledgePoint[];
   questions: QuestionSummary[];
   drafts: GeneratedQuestionDraft[];
+  aiProviderStatus: AiProviderStatus | null;
+  aiProviderError: string;
+  providerLoading: boolean;
   loading: boolean;
   goToMaterials: () => void;
   goToGenerate: () => void;
@@ -740,12 +801,19 @@ function OverviewPanel({
           <LoadingMetrics />
         ) : (
           <>
-            <Metric label="资料" value={detail?.materialCount ?? 0} />
-            <Metric label="知识点" value={detail?.knowledgePointCount ?? 0} />
-            <Metric label="已保存题" value={statistics?.questionCount ?? detail?.questionCount ?? 0} />
-            <Metric label="待确认" value={drafts.length} />
+            <Metric label="资料" value={statistics?.materialCount ?? detail?.materialCount ?? materials.length} />
+            <Metric label="就绪资料" value={statistics?.readyMaterialCount ?? materials.filter((item) => item.status === "READY").length} />
+            <Metric label="知识点" value={statistics?.knowledgePointCount ?? detail?.knowledgePointCount ?? knowledgePoints.length} />
+            <Metric label="待确认" value={statistics?.pendingGeneratedContentCount ?? drafts.filter((draft) => draft.status === "PENDING_REVIEW").length} />
           </>
         )}
+      </div>
+      <div className="panel wide">
+        <div className="panel-heading">
+          <h3>AI Provider</h3>
+          <Bot size={18} />
+        </div>
+        <ProviderStatusCard status={aiProviderStatus} error={aiProviderError} loading={providerLoading} />
       </div>
       <div className="panel wide">
         <div className="panel-heading">
@@ -824,6 +892,10 @@ function MaterialsPanel(props: {
   openMaterial: (id: string) => Promise<void>;
   extractKnowledgePoints: (id: string) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
+  taskStatuses: TaskStatusMap;
+  taskErrors: TaskErrorMap;
+  taskLoading: Record<string, boolean>;
+  viewTaskStatus: (id: string) => Promise<void>;
   loading: boolean;
   errors: FieldErrors;
 }) {
@@ -884,10 +956,14 @@ function MaterialsPanel(props: {
             <div className="row-item action-row" key={item.id}>
               <button type="button" onClick={() => void props.openMaterial(item.id)}>
                 <FileText size={16} />
-                <span>{item.title}</span>
+                <span>
+                  {item.title}
+                  <small>import {shortId(item.importTaskId)}{item.embeddingTaskId ? ` · embed ${shortId(item.embeddingTaskId)}` : ""}</small>
+                </span>
               </button>
               <div className="row-actions">
                 <StatusPill label={item.sourceType} />
+                <StatusPill label={item.status} />
                 <button title="提取知识点" aria-label="提取知识点" onClick={() => void props.extractKnowledgePoints(item.id)}>
                   <Sparkles size={16} />
                 </button>
@@ -909,7 +985,58 @@ function MaterialsPanel(props: {
         {props.materialDetail && (
           <div className="detail-box">
             <h4>{props.materialDetail.title}</h4>
+            <div className="metadata-grid">
+              <MetaItem label="导入任务" value={props.materialDetail.importTaskId} />
+              {props.materialDetail.embeddingTaskId && <MetaItem label="Embedding 任务" value={props.materialDetail.embeddingTaskId} />}
+              <MetaItem label="资料状态" value={props.materialDetail.status} />
+              {props.materialDetail.errorMessage && <MetaItem label="错误" value={props.materialDetail.errorMessage} />}
+            </div>
+            <div className="button-row task-actions">
+              <TaskStatusButton
+                taskId={props.materialDetail.importTaskId}
+                label="查看导入任务"
+                loading={props.taskLoading[props.materialDetail.importTaskId]}
+                onView={props.viewTaskStatus}
+              />
+              {props.materialDetail.embeddingTaskId && (
+                <TaskStatusButton
+                  taskId={props.materialDetail.embeddingTaskId}
+                  label="查看 Embedding 任务"
+                  loading={props.taskLoading[props.materialDetail.embeddingTaskId]}
+                  onView={props.viewTaskStatus}
+                />
+              )}
+            </div>
+            <TaskStatusCard
+              task={props.taskStatuses[props.materialDetail.importTaskId]}
+              error={props.taskErrors[props.materialDetail.importTaskId]}
+            />
+            {props.materialDetail.embeddingTaskId && (
+              <TaskStatusCard
+                task={props.taskStatuses[props.materialDetail.embeddingTaskId]}
+                error={props.taskErrors[props.materialDetail.embeddingTaskId]}
+              />
+            )}
             <p>{props.materialDetail.contentPreview ?? props.materialDetail.content ?? "暂无可预览内容"}</p>
+            <div className="chunk-list">
+              <h4>资料片段</h4>
+              {(props.materialDetail.chunks ?? []).slice(0, 8).map((chunk) => (
+                <div className="chunk-item" key={chunk.id}>
+                  <div className="chunk-heading">
+                    <span>#{chunk.ordinal + 1}</span>
+                    <StatusPill label={chunk.embeddingStatus} />
+                  </div>
+                  <p>{chunk.content}</p>
+                  <div className="result-meta">
+                    <span>model {chunk.embeddingModel ?? "未返回"}</span>
+                    <span>dim {chunk.embeddingDimensions ?? "未返回"}</span>
+                    {chunk.tokenEstimate !== undefined && <span>tokens {chunk.tokenEstimate}</span>}
+                    {chunk.titlePath?.length ? <span>{chunk.titlePath.join(" / ")}</span> : null}
+                  </div>
+                </div>
+              ))}
+              {(props.materialDetail.chunks ?? []).length === 0 && <EmptyLine label="还没有返回可检索片段" />}
+            </div>
             <div className="tag-cloud">
               {(props.materialDetail.extractedKnowledgePoints ?? []).map((item) => <span key={item.id}>{item.name}</span>)}
               {(props.materialDetail.extractedKnowledgePoints ?? []).length === 0 && (
@@ -948,6 +1075,10 @@ function GeneratePanel(props: {
   generateReviewSuggestion: () => Promise<void>;
   aiNoteDraft: AiNoteDraft | null;
   saveAiNote: () => Promise<void>;
+  taskStatuses: TaskStatusMap;
+  taskErrors: TaskErrorMap;
+  taskLoading: Record<string, boolean>;
+  viewTaskStatus: (id: string) => Promise<void>;
   loading: boolean;
   errors: FieldErrors;
   goToMaterials: () => void;
@@ -1079,7 +1210,10 @@ function GeneratePanel(props: {
           <div className="draft-list">
             {props.drafts.map((draft) => (
               <button key={draft.id} type="button" onClick={() => props.setSelectedDraftId(draft.id)}>
-                <span>{draft.stem}</span>
+                <span>
+                  {draft.stem}
+                  <small>task {shortId(draft.generationTaskId)}</small>
+                </span>
                 <StatusPill label={draft.status} />
               </button>
             ))}
@@ -1105,6 +1239,23 @@ function GeneratePanel(props: {
                 />
                 <FormError message={props.errors.draftStem} />
               </label>
+              <div className="metadata-grid">
+                <MetaItem label="生成任务" value={props.selectedDraft.generationTaskId} />
+                <MetaItem label="草稿状态" value={props.selectedDraft.status} />
+                {props.selectedDraft.savedQuestionId && <MetaItem label="保存题目" value={props.selectedDraft.savedQuestionId} />}
+              </div>
+              <div className="button-row task-actions">
+                <TaskStatusButton
+                  taskId={props.selectedDraft.generationTaskId}
+                  label="查看生成任务"
+                  loading={props.taskLoading[props.selectedDraft.generationTaskId]}
+                  onView={props.viewTaskStatus}
+                />
+              </div>
+              <TaskStatusCard
+                task={props.taskStatuses[props.selectedDraft.generationTaskId]}
+                error={props.taskErrors[props.selectedDraft.generationTaskId]}
+              />
               <label>
                 选项（每行一项）
                 <textarea rows={4} value={draftEdit.optionsText} onChange={(event) => updateDraftEdit({ optionsText: event.target.value })} />
@@ -1183,6 +1334,22 @@ function GeneratePanel(props: {
         {props.aiNoteDraft && (
           <div className="detail-box">
             <h4>{props.aiNoteDraft.title}</h4>
+            <div className="metadata-grid">
+              <MetaItem label="生成任务" value={props.aiNoteDraft.generationTaskId} />
+              <MetaItem label="笔记类型" value={props.aiNoteDraft.type} />
+            </div>
+            <div className="button-row task-actions">
+              <TaskStatusButton
+                taskId={props.aiNoteDraft.generationTaskId}
+                label="查看笔记任务"
+                loading={props.taskLoading[props.aiNoteDraft.generationTaskId]}
+                onView={props.viewTaskStatus}
+              />
+            </div>
+            <TaskStatusCard
+              task={props.taskStatuses[props.aiNoteDraft.generationTaskId]}
+              error={props.taskErrors[props.aiNoteDraft.generationTaskId]}
+            />
             <p>{props.aiNoteDraft.content}</p>
             <button className="primary-button" onClick={() => void props.saveAiNote()}>
               <Save size={16} /> 保存笔记
@@ -1248,6 +1415,115 @@ function sourceRefLabel(ref: SourceRef) {
   return ref.deleted ? "来源已删除" : ref.title ?? ref.id;
 }
 
+function ProviderStatusCard({
+  status,
+  error,
+  loading
+}: {
+  status: AiProviderStatus | null;
+  error: string;
+  loading: boolean;
+}) {
+  if (loading && !status) {
+    return <LoadingRows count={1} />;
+  }
+  if (error) {
+    return (
+      <div className="task-card error">
+        <StatusPill label="UNAVAILABLE" />
+        <p>{error}</p>
+      </div>
+    );
+  }
+  if (!status) {
+    return <EmptyLine label="暂未读取到 AI Provider 状态" />;
+  }
+  return (
+    <div className="provider-status">
+      <div className="provider-summary">
+        <StatusPill label={status.available ? "AVAILABLE" : "UNAVAILABLE"} />
+        <StatusPill label={status.configured ? "CONFIGURED" : "NOT_CONFIGURED"} />
+        <span>{status.message ?? "后端未返回说明"}</span>
+      </div>
+      <div className="metadata-grid">
+        <MetaItem label="Provider" value={status.providerType} />
+        <MetaItem label="Chat Model" value={status.chatModel ?? "未配置"} />
+        <MetaItem label="Embedding Model" value={status.embeddingModel ?? "未配置"} />
+        <MetaItem label="Embedding Dimensions" value={status.embeddingDimensions ?? "未返回"} />
+        {status.apiKeyEnvName && <MetaItem label="Key Env" value={status.apiKeyEnvName} />}
+      </div>
+    </div>
+  );
+}
+
+function MetaItem({ label, value }: { label: string; value?: string | number | boolean | null }) {
+  return (
+    <div className="meta-item">
+      <span>{label}</span>
+      <strong>{value === undefined || value === null || value === "" ? "未返回" : String(value)}</strong>
+    </div>
+  );
+}
+
+function TaskStatusButton({
+  taskId,
+  label,
+  loading,
+  onView
+}: {
+  taskId: string;
+  label: string;
+  loading?: boolean;
+  onView: (id: string) => Promise<void>;
+}) {
+  return (
+    <button type="button" className="ghost-button" onClick={() => void onView(taskId)} disabled={loading}>
+      {loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />} {label}
+    </button>
+  );
+}
+
+function TaskStatusCard({ task, error }: { task?: TaskStatus; error?: string }) {
+  if (!task && !error) return null;
+  if (error) {
+    return (
+      <div className="task-card error">
+        <StatusPill label="TASK_ERROR" />
+        <p>{error}</p>
+      </div>
+    );
+  }
+  if (!task) return null;
+  return (
+    <div className="task-card">
+      <div className="task-card-heading">
+        <StatusPill label={task.status} />
+        <span>{task.kind}</span>
+      </div>
+      <div className="metadata-grid">
+        <MetaItem label="任务 ID" value={task.id} />
+        <MetaItem label="进度" value={task.progressPercent !== undefined ? `${task.progressPercent}%` : "未返回"} />
+        <MetaItem label="步骤" value={task.currentStep ?? "未返回"} />
+        <MetaItem label="模型" value={task.model ?? "未返回"} />
+        {task.providerType && <MetaItem label="Provider" value={task.providerType} />}
+        {task.resultRef?.type && <MetaItem label="结果" value={`${task.resultRef.type}${task.resultRef.count !== undefined ? ` x${task.resultRef.count}` : ""}`} />}
+        {task.errorCode && <MetaItem label="错误码" value={task.errorCode} />}
+        {task.errorMessage && <MetaItem label="错误" value={task.errorMessage} />}
+      </div>
+    </div>
+  );
+}
+
+function shortId(value?: string) {
+  if (!value) return "未返回";
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
+}
+
+function formatScore(score?: number) {
+  if (score === undefined || Number.isNaN(score)) return "未返回";
+  return score.toFixed(2);
+}
+
 function SearchPanel(props: {
   form: { query: string; question: string };
   setForm: (value: { query: string; question: string }) => void;
@@ -1290,6 +1566,7 @@ function SearchPanel(props: {
               <h4>{item.title}</h4>
               <p>{item.summary}</p>
               <div className="result-meta">
+                <span>score {formatScore(item.score)}</span>
                 <span>{props.knowledgeBases.find((base) => base.id === item.knowledgeBaseId)?.name ?? item.knowledgeBaseId ?? "当前知识库"}</span>
                 {(item.knowledgePointIds ?? []).map((id) => (
                   <span key={id}>{knowledgePointNames.get(id) ?? id}</span>

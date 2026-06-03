@@ -6,6 +6,7 @@ import java.util.List;
 public record GeneratedQuestionDraft(
     String id,
     String knowledgeBaseId,
+    String generationTaskId,
     GeneratedContentStatus status,
     List<SourceRef> sourceRefs,
     SourceType sourceType,

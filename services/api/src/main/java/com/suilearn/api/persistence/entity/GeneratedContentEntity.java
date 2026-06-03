@@ -12,6 +12,7 @@ public class GeneratedContentEntity {
     @Id
     private String id;
     private String knowledgeBaseId;
+    private String generationTaskId;
     private String status;
     @Lob
     private String sourceRefsJson;
@@ -41,6 +42,7 @@ public class GeneratedContentEntity {
     public GeneratedContentEntity(
         String id,
         String knowledgeBaseId,
+        String generationTaskId,
         String status,
         String sourceRefsJson,
         String sourceType,
@@ -60,6 +62,7 @@ public class GeneratedContentEntity {
     ) {
         this.id = id;
         this.knowledgeBaseId = knowledgeBaseId;
+        this.generationTaskId = generationTaskId;
         this.status = status;
         this.sourceRefsJson = sourceRefsJson;
         this.sourceType = sourceType;
@@ -80,6 +83,7 @@ public class GeneratedContentEntity {
 
     public String getId() { return id; }
     public String getKnowledgeBaseId() { return knowledgeBaseId; }
+    public String getGenerationTaskId() { return generationTaskId; }
     public String getStatus() { return status; }
     public String getSourceRefsJson() { return sourceRefsJson; }
     public String getSourceType() { return sourceType; }

@@ -38,6 +38,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.suilearn.core.model.PracticeMode
 import com.suilearn.feature.ai.AiKnowledgeEntryScreen
+import com.suilearn.feature.ai.AiKnowledgeViewModel
 import com.suilearn.feature.categories.CategoriesScreen
 import com.suilearn.feature.categories.CategoriesViewModel
 import com.suilearn.feature.favorites.FavoritesScreen
@@ -74,6 +75,7 @@ fun SuiLearnNavHost(viewModelFactory: AppViewModelFactory) {
     val knowledgePointViewModel: KnowledgePointViewModel = viewModel(factory = viewModelFactory)
     val statisticsViewModel: StatisticsViewModel = viewModel(factory = viewModelFactory)
     val settingsViewModel: SettingsViewModel = viewModel(factory = viewModelFactory)
+    val aiKnowledgeViewModel: AiKnowledgeViewModel = viewModel(factory = viewModelFactory)
     val bottomBarRoutes = setOf(
         AppDestination.Home.route,
         AppDestination.AiKnowledge.route,
@@ -162,6 +164,7 @@ fun SuiLearnNavHost(viewModelFactory: AppViewModelFactory) {
             }
             composable(AppDestination.AiKnowledge.route) {
                 AiKnowledgeEntryScreen(
+                    aiKnowledgeViewModel = aiKnowledgeViewModel,
                     onStartLocalPractice = {
                         practiceViewModel.onEvent(PracticeEvent.StartPractice(PracticeMode.SEQUENTIAL, null))
                         navController.navigate(AppDestination.Practice.route)
