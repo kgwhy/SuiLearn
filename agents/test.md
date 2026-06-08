@@ -8,8 +8,9 @@
 
 | 改动文件路径 | 自动运行 |
 |-------------|---------|
-| `apps/android/src/main/kotlin/com/suilearn/core/**` | `./gradlew :apps:android:test` 全部 Android 单元测试 |
+| `apps/android/src/main/java/com/suilearn/data/**` | `./gradlew :app:test` 全部 Android 单元测试 |
 | `apps/android/src/main/java/com/suilearn/feature/**` | 对应 feature 的 ViewModel 测试 + Compose UI 测试 |
+| `apps/android/src/main/java/com/suilearn/core/**` | 对应 core 模块的单元测试 |
 | `services/api/src/main/java/com/suilearn/api/service/**` | `mvn -f services/api/pom.xml test` 全部后端测试 |
 | `services/api/src/main/java/com/suilearn/api/controller/**` | 对应 Controller 的集成测试 |
 | `contracts/**` | OpenAPI 校验 + 契约与实现一致性检查 |

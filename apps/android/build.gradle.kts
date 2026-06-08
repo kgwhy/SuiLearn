@@ -5,6 +5,25 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+import java.util.Properties
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) {
+        file.inputStream().use(::load)
+    }
+}
+
+fun signingValue(key: String): String? =
+    localProperties.getProperty(key) ?: providers.environmentVariable(key).orNull
+
+val releaseStoreFile = signingValue("SUILEARN_RELEASE_STORE_FILE")
+val hasReleaseSigning =
+    releaseStoreFile != null &&
+        signingValue("SUILEARN_RELEASE_STORE_PASSWORD") != null &&
+        signingValue("SUILEARN_RELEASE_KEY_ALIAS") != null &&
+        signingValue("SUILEARN_RELEASE_KEY_PASSWORD") != null
+
 android {
     namespace = "com.suilearn"
     compileSdk = 35
@@ -13,15 +32,31 @@ android {
         applicationId = "com.suilearn"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = signingValue("SUILEARN_RELEASE_STORE_PASSWORD")
+                keyAlias = signingValue("SUILEARN_RELEASE_KEY_ALIAS")
+                keyPassword = signingValue("SUILEARN_RELEASE_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

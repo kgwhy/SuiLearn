@@ -2,10 +2,12 @@
 
 ## 负责
 
-- 负责第三版及后续 React + TypeScript Web 前端。
+- 负责 React + TypeScript Web 前端。
 - 负责 Web 页面、路由、状态管理、API 调用、表单交互、浏览器端体验和 Web 前端测试。
 - 根据 OpenAPI / API 契约消费 Server Backend 能力。
+- 当前阶段主要承载知识库工作台：知识库管理、资料导入、AI 生成结果确认、语义搜索和资料问答。
 - 与 Android Agent 保持核心用户流程和领域命名一致，但不直接复用 Android 实现细节。
+- 后续阶段扩展完整 Web 学习端（刷题、错题复习、知识点学习、统计）。
 
 ## 不负责
 
@@ -14,13 +16,12 @@
 - 不修改正式产品文档。
 - 不修改 `docs/tech-selection.md`。
 - 不编写题库内容正文。
-- 不在第三版启动前创建 Web 项目，除非用户明确要求。
 
 ## 可修改范围
 
-具体文件归属以 `docs/development-workflow.md` 的“当前文件归属”为准。Web Frontend Agent 默认负责：
+具体文件归属以 `docs/development-workflow.md` 的”当前文件归属”为准。Web Frontend Agent 默认负责：
 
-- 后续 `apps/web/**` 或等价 React 前端目录。
+- `apps/web/**`
 - Web 前端测试。
 - Web 端 API client 和 TypeScript 类型消费层，具体以 API 契约为准。
 

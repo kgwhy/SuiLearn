@@ -2,7 +2,7 @@
 
 ## 核心文档
 
-- `docs/chat.md`：产品灵感讨论材料，只读参考，不是正式 PRD。
+- `docs/chat.md`：产品灵感讨论材料，历史讨论记录，不作为实现依据。当前规格以 `docs/product-requirements.md` 为准。
 - `docs/product-requirements.md`：当前已确认产品规格，作为产品真相源。
 - `docs/architecture.md`：当前系统架构、模块边界和演进约束。
 - `docs/tech-selection.md`：技术选型与架构决策文档。

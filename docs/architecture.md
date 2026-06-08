@@ -4,13 +4,15 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v0.2 |
+| 文档版本 | v2.1 |
 | 维护角色 | 架构 Agent |
 | 依据文档 | `docs/product-requirements.md`、`docs/tech-selection.md` |
-| 适用阶段 | 第一版 Android 本地学习 App + 第二版 AI / 知识库 / RAG |
+| 适用阶段 | 当前架构（Android 本地 + Java Spring Boot 后端 + React Web 知识库工作台） |
 | 目标读者 | Android Agent、Server Backend Agent、Web Frontend Agent、内容 Agent、测试 Agent |
 
 本文前半部分保留第一版 Android 本地方案，新增第二版架构设计用于承接 PRD v2。第一版能力必须继续离线可用；第二版通过 Java Spring Boot 服务端承载 AI、资料导入、语义搜索和 RAG，Web 前端作为第二版知识库工作台，Android 只消费必要的生成和确认能力。
+
+> **注意：Section 1-20（V1 Android 本地架构）为历史设计文档。实际代码结构与设计文档存在差异，以下标注"实际"的段落反映当前代码的真实结构。V2 当前架构从 Section 21 开始。**
 
 ## 1. 技术决策摘要
 
@@ -54,7 +56,9 @@
 - “继续刷题”有明确可恢复的本地会话状态。
 - 第一版可快速实现，但模型不为了 demo 牺牲后续演进。
 
-## 3. 总体分层
+## 3. 总体分层 (V1 设计)
+
+> **与实际代码的差异：以下为 V1 设计稿中的分层结构。实际 Android 代码未按 `core/database/`、`core/repository/` 等 package 组织，而是采用更扁平的结构。以下分层作为后续重构的参考目标。**
 
 推荐采用 Feature-first + 分层架构。
 
@@ -81,6 +85,35 @@ app
 ```
 
 第一版采用单 Android module，并按 package 划分上述结构，不拆 Gradle 多 module。
+
+**实际代码结构（当前）：**
+
+```text
+apps/android/src/main/java/com/suilearn/
+├─ MainActivity.kt
+├─ SuiLearnApp.kt
+├─ data/
+│   └─ AssetQuestionPackSource.kt
+├─ di/
+│   └─ AppDependencies.kt
+├─ feature/
+│   ├─ ai/
+│   ├─ categories/
+│   ├─ common/
+│   ├─ favorites/
+│   ├─ home/
+│   ├─ knowledge/
+│   ├─ practice/
+│   ├─ search/
+│   ├─ settings/
+│   ├─ statistics/
+│   └─ wrongbook/
+├─ core/remote/
+├─ navigation/
+├─ theme/
+├─ ui/
+└─ viewmodel/
+```
 
 取舍理由：
 
@@ -899,7 +932,20 @@ Repository 和 UseCase 对 UI 暴露 `AppResult` 或包含错误字段的 `UiSta
 - 简答题允许没有 options，但必须有参考答案和解析。
 - difficulty 必须在 1-5 范围内，并按本文标准填写。
 
-## 16. Agent 实现分工
+## 16. Agent 实现分工（当前实际状态）
+
+> **V1 设计文档中的分工描述与实际状态已不同步。以下标注当前各 Agent 的实际职责边界。Section 16.1-16.6 为 V1 设计内容，保留作为参考。**
+
+**当前实际状态：**
+
+| Agent | 当前状态 | 实际负责模块 |
+|---|---|---|
+| Android Agent | 已交付 V1 本地闭环 + V2 远程入口 | `apps/android/**` |
+| Server Backend Agent | 已交付 V2 REST API + AI/RAG 服务端 | `services/api/**`（controller, service, model, persistence, retrieval, ai, config） |
+| Web Frontend Agent | 已交付 V2 知识库工作台 | `apps/web/**`（App.tsx, api.ts, types.ts） |
+| 内容 Agent | 已交付题库 JSON | `apps/android/src/main/assets/question_pack_java_interview.json` |
+| 架构 Agent | 维护 contracts + architecture doc | `contracts/openapi/suilearn-v2.yaml`、`docs/architecture.md`、`docs/tech-selection.md` |
+| 测试 Agent | 后端测试覆盖 SuiLearnV2Service | `services/api/src/test/**` |
 
 ### 16.1 产品 Agent
 
@@ -1186,28 +1232,48 @@ Gradle module 演进边界：
 
 ## 22. 第二版模块划分
 
+**设计目标结构：**
+
 ```text
 services/api
 ├─ api              REST Controller、请求/响应 DTO
 ├─ application      UseCase / Service，编排业务流程
 ├─ domain           KnowledgeBase、Material、Chunk、GeneratedContent 等领域模型
 ├─ infrastructure
-│  ├─ persistence   PostgreSQL / pgvector Repository
-│  ├─ document      Markdown、TXT、PDF 解析适配
-│  ├─ ai            OpenAI-compatible 调用适配
-│  └─ task          任务状态、重试、错误记录
+│ ├─ persistence   PostgreSQL / pgvector Repository
+│ ├─ document      Markdown、TXT、PDF 解析适配
+│ ├─ ai            OpenAI-compatible 调用适配
+│ └─ task          任务状态、重试、错误记录
 └─ config           CORS、AI Provider、存储、任务配置
+```
+
+**实际代码结构（当前）：**
+
+```text
+services/api/src/main/java/com/suilearn/api/
+├─ SuiLearnApiApplication.java
+├─ ai/                   AI Provider 实现（FakeAiProvider, OpenAiCompatibleAiProvider）
+├─ config/               配置类（AppConfig, SuiLearnAiProperties）
+├─ controller/           REST Controller（KnowledgeBaseController, AiProviderController, TaskController）
+├─ dto/                  请求/响应 DTO
+├─ material/             资料解析
+├─ model/                领域模型（KnowledgeBase, LearningMaterial, MaterialChunk, GeneratedContent 等）
+├─ persistence/          JPA Entity + Repository + SuiLearnV2Store
+├─ retrieval/            检索（KeywordRetriever, EmbeddingProvider, FakeEmbeddingProvider）
+└─ service/              业务服务（SuiLearnV2Service, AiProviderStatusService）
 
 contracts
-├─ openapi          REST API 契约
-└─ schemas          题库、生成题和资料导入 JSON schema
+├─ openapi/              suilearn-v2.yaml（REST API 契约）
+└─ schemas/              （预留，当前为空）
 
-apps/web
-└─ 第二版知识库工作台，按 OpenAPI 消费后端
+apps/web/src/
+├─ App.tsx               Web 知识库工作台主页面
+├─ api.ts                API 客户端
+├─ types.ts              TypeScript 类型定义
+└─ styles.css
 
 apps/android
-└─ 第一版本地闭环 + 第二版远程能力入口
-```
+└─ 第一版本地闭环 + 第二版远程能力入口（AiKnowledgeEntryScreen, AiRemoteApiClient）
 
 服务端领域层必须保持与第一版核心命名一致：`StudyPack`、`Category`、`KnowledgePoint`、`Question`、`AnswerRecord`、`WrongQuestion`、`FavoriteQuestion`。第二版新增模型不替代第一版模型，而是围绕知识库和 AI 内容沉淀扩展：
 

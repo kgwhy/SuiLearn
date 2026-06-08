@@ -24,7 +24,6 @@
 ## 可修改范围
 
 - `docs/product-requirements.md`
-- `docs/roadmap.md`
 - `agents/product.md`
 
 修改其他文件前，必须确认这是用户明确要求或与产品文档维护直接相关。

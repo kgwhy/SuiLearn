@@ -12,22 +12,27 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
+JAVA_AVAILABLE=false
+if command -v java &>/dev/null; then
+    JAVA_AVAILABLE=true
+fi
+
 check() {
     local name="$1" cmd="$2"
     shift 2
     echo -n "  [$name] "
     if ! command -v "$cmd" &>/dev/null; then
         echo -e "${YELLOW}SKIP${NC} (未安装 $cmd)"
-        ((SKIP++))
+        ((SKIP+=1))
         return
     fi
     if "$@" > /tmp/suilearn-check.log 2>&1; then
         echo -e "${GREEN}PASS${NC}"
-        ((PASS++))
+        ((PASS+=1))
     else
         echo -e "${RED}FAIL${NC}"
         tail -15 /tmp/suilearn-check.log | sed 's/^/  │ /'
-        ((FAIL++))
+        ((FAIL+=1))
     fi
 }
 
@@ -35,7 +40,12 @@ echo "=== SuiLearn Quality Gate ==="
 echo ""
 
 echo "── Android ──"
-check "Unit tests"       gradle    ./gradlew :apps:android:test --no-daemon
+if [ "$JAVA_AVAILABLE" = true ] && [ -f gradlew ]; then
+    check "Unit tests"       java      ./gradlew :app:test --no-daemon
+else
+    echo "  [Unit tests] ${YELLOW}SKIP${NC} (需要 Java 环境 + gradlew)"
+    ((SKIP+=1))
+fi
 
 echo ""
 echo "── Backend ──"
@@ -43,12 +53,23 @@ check "Service tests"    mvn       mvn -f services/api/pom.xml test -q
 
 echo ""
 echo "── Contracts ──"
-check "OpenAPI valid"    python3   python3 -c "
+PYTHON_CMD=""
+if command -v python3 &>/dev/null; then
+    PYTHON_CMD="python3"
+elif command -v python &>/dev/null; then
+    PYTHON_CMD="python"
+fi
+if [ -n "$PYTHON_CMD" ]; then
+    check "OpenAPI valid"    "$PYTHON_CMD"   "$PYTHON_CMD" -c "
 import yaml, sys
 with open('contracts/openapi/suilearn-v2.yaml') as f:
     yaml.safe_load(f)
 print('OK')
 "
+else
+    echo "  [OpenAPI valid] ${YELLOW}SKIP${NC} (未安装 python)"
+    ((SKIP+=1))
+fi
 
 echo ""
 echo "═══════════════════════════════"

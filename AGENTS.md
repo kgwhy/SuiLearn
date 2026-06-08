@@ -9,8 +9,13 @@
 1. **角色加载**：读取 `agents/<你的角色>.md`，确认本次修改在「可修改范围」内。
 2. **边界检查**：将计划修改的文件列表写入回复，逐条与角色文件「文件归属」对比。
    若任一文件不在允许范围内 → 停止，报告越界，等待用户确认。
-3. **基线测试**：修改业务代码前，先运行该模块的测试命令并报告结果。
-   - Android: `./gradlew :apps:android:test --no-daemon 2>&1 | tail -5`
+3. **Worktree 检查**：若 Leader 任务卡要求 `隔离模式: worktree`，必须进入独立 git worktree。
+   可使用项目或环境提供的封装入口；若无封装入口，则使用 `git worktree` 原生命令。
+   若当前环境无法创建 worktree，Leader 必须改为严格串行并说明原因，或停止等待用户确认。
+   禁止在 Leader 的 worktree 中越界修改属于其他 Agent 的文件。
+   共享文件（`contracts/**`、根 `build.gradle.kts`、`docs/*.md`）在并行任务中必须 worktree 隔离。
+4. **基线测试**：修改业务代码前，先运行该模块的测试命令并报告结果。
+   - Android: `./gradlew :app:test --no-daemon 2>&1 | tail -5`
    - Backend: `mvn -f services/api/pom.xml test -q 2>&1 | tail -5`
    若测试环境不可用（WSL 无 Gradle/Maven），必须在回复中**显式说明**，不得静默跳过。
 

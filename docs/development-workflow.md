@@ -117,9 +117,11 @@ Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/p
 目标：
 归属角色：
 子 Agent 策略：
+隔离模式：none / worktree
 可修改文件：
 禁止修改文件：
 依赖任务：
+前置任务（已完成）：
 需要用户确认：
 实现要求：
 测试要求：
@@ -127,7 +129,7 @@ Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/p
 完成定义：
 ```
 
-如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、文档输入包、可修改文件、禁止修改文件、完成定义。
+如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、文档输入包、隔离模式、可修改文件、禁止修改文件、完成定义。
 
 文档输入包规则：
 
@@ -213,6 +215,68 @@ Leader 每次开始任务前，必须在任务卡中写明子 Agent 策略：
 - Leader 判断越界是否合理；必要时重新拆任务或请求用户确认。
 - 共享文件变更必须在结果中说明影响哪些角色。
 
+### 文件锁风险等级
+
+| 风险等级 | 判定条件 | 隔离要求 |
+|---|---|---|
+| 低 | 各 Agent 修改文件无交集，且不在同一模块内 | 可以在同一 worktree 内并行 |
+| 中 | Agent 之间无直接共享文件，但有跨模块边界（如 Android 与 Web） | 推荐 worktree 隔离，也可串行 |
+| 高 | 涉及 `contracts/**`、根 `build.gradle.kts`、`docs/*.md`、或同一目录下的多 Agent 修改 | **必须** worktree 隔离或严格串行 |
+
+高风险任务如果选择串行，Leader 必须在任务卡中说明为什么不使用 worktree 隔离。
+
+## Worktree 隔离
+
+当任务卡 `隔离模式` 为 `worktree` 时，子 Agent 在独立 git worktree 中工作，Leader 负责回收合并。
+`worktree` 是隔离能力要求，不绑定具体工具名；如果当前 Codex/Agent 环境提供 `EnterWorktree` 等封装入口，可以使用封装入口，否则使用 `git worktree` 原生命令。
+
+### 使用规则
+
+- Leader 派发前必须为子 Agent 创建或指定独立 worktree，并在任务卡中写明 worktree 路径和分支名。
+- 子 Agent 在 worktree 中修改文件，完成后由 Leader `git merge` 回收。
+- 回收时冲突由 Leader 人工仲裁，必要时请求用户确认。
+- 同一 worktree 内可串行执行多个低风险子任务；不同 worktree 之间完全隔离。
+- 以下场景**必须**使用 worktree 隔离：
+  - 跨角色并行任务涉及共享文件（`contracts/**`、根 `build.gradle.kts`、根 `settings.gradle.kts`）
+  - 两个及以上执行 Agent 并行修改同一模块
+  - 契约稳定后，多个消费端适配任务并行执行
+
+契约变更本身不得与消费端适配并行；只有在契约变更已合入并被 Leader 确认为稳定后，消费端适配任务才可以并行。
+
+### 原生命令模板
+
+如果没有封装入口，Leader 使用以下 git 原生命令创建隔离 worktree：
+
+```bash
+git worktree list
+git worktree add -b codex/<task-slug> ../SuiLearn-worktrees/<task-slug> HEAD
+```
+
+如果分支已经存在：
+
+```bash
+git worktree add ../SuiLearn-worktrees/<task-slug> codex/<task-slug>
+```
+
+回收合并完成后：
+
+```bash
+git worktree remove ../SuiLearn-worktrees/<task-slug>
+git worktree prune
+```
+
+如果当前环境不能创建 sibling worktree，Leader 必须选择以下之一：
+
+- 请求用户授权创建 worktree。
+- 将任务卡改为 `隔离模式: none`，并声明“严格串行”及原因。
+- 停止任务并报告无法满足 worktree 隔离。
+
+### 不需要 worktree 隔离的场景
+
+- 单一角色、单一模块、无共享文件冲突的串行任务
+- 只读探查任务
+- 文件修改范围完全不重叠的低风险并行任务
+
 ## 当前文件归属
 
 | 范围 | 默认 owner | 说明 |
@@ -249,6 +313,17 @@ Leader 每次开始任务前，必须在任务卡中写明子 Agent 策略：
 - Leader 将契约变更交由架构 Agent 处理；涉及产品行为变化时，先交产品 Agent 确认。
 - 契约变更完成后，再派发 Server Backend、Android、Web 或 Content 的实现/适配任务。
 - 不允许实现 Agent 为了本端方便直接改契约并同步修改自己的实现。
+
+### 时序约束：Contracts 先行
+
+契约变更与消费端实现**不得并行执行**。Leader 必须保证以下执行顺序：
+
+1. 架构 Agent **先行、单独**完成契约变更，Leader 确认 merge。
+2. Leader 确认契约稳定后，再派发消费端（Server Backend、Android、Web Frontend、Content）的适配任务。
+3. 消费端适配任务可以并行（使用 worktree 隔离）。
+4. 不允许 "一边改契约一边改实现" —— 契约变更合入之前，消费端任务不得开始写代码。
+
+涉及共享文件（根 `build.gradle.kts`、`settings.gradle.kts` 等）同理：修改任务必须串行，或通过 worktree 隔离后由 Leader 统一 merge。
 
 ## 人工决策点
 
@@ -347,3 +422,27 @@ Leader 给执行 Agent 的上下文应控制在最小必要范围：
 执行 Agent 返回结果时只交付摘要、关键文件、测试结果、假设和阻塞问题，不回传完整思考过程。
 
 如果任务跨越多个回合，Leader 在继续执行前要重新同步 `git status`、相关文档和相关文件，不默认上一回合的上下文仍然准确。
+
+### Leader 上下文分流
+
+Leader 自身不应把所有文档和子 Agent 输出全部注入上下文。分流策略：
+
+| 工作 | 分流目标 | 说明 |
+|---|---|---|
+| 事实同步 | Explore 子 Agent（只读） | 读取 git status、最近 commit、相关文档摘要、代码路径清单、冲突点标注 |
+| 代码审查 | Reviewer 子 Agent | 独立审查需求一致性、边界、质量；Leader 只看 P0/P1 清单 |
+| 测试执行 | Test 子 Agent | 独立跑测试、汇总结果；Leader 只看通过/失败摘要 |
+
+Leader 自身只持有：
+
+- 任务卡
+- 事实摘要（来自 Explore Agent，不超过一屏）
+- 子 Agent 结果摘要（改了什么、测试结果、阻塞问题）
+- P0/P1 问题清单
+
+禁止注入 Leader 上下文的内容：
+
+- 子 Agent 的完整思考过程
+- 完整代码 diff（需要看具体改动时再读取对应文件）
+- 无关角色的文档全文
+- 历史聊天记录

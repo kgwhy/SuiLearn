@@ -21,8 +21,7 @@
 ## 可修改范围
 
 - `docs/tech-selection.md`
-- `docs/architecture*.md`
-- `docs/adr*.md`
+- `docs/architecture.md`
 - `contracts/**`
 - `agents/architect.md`
 

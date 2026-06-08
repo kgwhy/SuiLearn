@@ -27,8 +27,8 @@
 ### 验证命令
 
 修改完成后必须运行（按优先级尝试）：
-1. `./gradlew :apps:android:test --no-daemon 2>&1 | tail -20`
-2. 如果在 WSL 且 Gradle 不可用，必须在完成声明中写入：`⚠️ WSL 无 Gradle，未运行 Android 测试。请在 Android Studio 中运行 Run 'Tests in apps.android' 确认。`
+1. `./gradlew :app:test --no-daemon 2>&1 | tail -20`
+2. 如果在 WSL 且 Gradle 不可用，必须在完成声明中写入：`⚠️ WSL 无 Gradle，未运行 Android 测试。请在 Android Studio 中运行 :app:test 确认。`
 
 ### 完成声明格式
 

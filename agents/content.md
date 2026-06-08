@@ -18,14 +18,10 @@
 
 ## 可修改范围
 
-当前题库目录尚未创建。后续创建后，内容 Agent 默认负责：
-
-- 题库源文件。
+- `apps/android/src/main/assets/question_pack_java_interview.json` 等题库源文件。
 - 题库审校记录。
 - 题库内容规范。
 - 知识点标签规范。
-
-具体目录形成后，应在本文件中补充明确路径。
 
 ## 输出要求
 

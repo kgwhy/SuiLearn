@@ -1,5 +1,7 @@
 # 随心学 SuiLearn 产品需求文档（初版）
 
+> **本文档为历史讨论记录，不作为实现依据。当前规格以 `docs/product-requirements.md` 为准。**
+
 ## 1. 产品定位
 
 随心学 SuiLearn 是一款 Android 学习 App，第一版先做成一个无需登录、开箱即用、能刷题也能主动探索知识的 Java 八股学习工具。
