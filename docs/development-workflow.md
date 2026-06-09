@@ -61,7 +61,12 @@ Leader 不依赖长对话记忆来判断项目事实。每次开始开发任务�
 - 灵感背景：`docs/chat.md`，只读参考，不直接当作已确认需求
 - 相关代码、测试、错误日志和 CodeGraph 查询结果
 
-同步后，Leader 需要在任务卡中写明“上下文来源”。如果上下文来源之间冲突，先列为决策点，不直接选择其中一方实现。
+同步后，Leader 需要在任务卡中写明“上下文来源”和本次变更基线 `base_ref`。默认 `base_ref` 为任务开始时的 `HEAD`；如果当前工作区已有未提交改动，Leader 必须判断这些改动是否属于本任务：
+
+- 属于本任务：在任务卡中说明会一并纳入本次审查。
+- 不属于本任务：在任务卡中列为“既有改动”，本次不得回退或覆盖；必要时只按本次锁定文件继续。
+
+如果上下文来源之间冲突，先列为决策点，不直接选择其中一方实现。
 
 ## 外部记忆规则
 
@@ -108,7 +113,9 @@ Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/p
 任务名称：
 背景：
 上下文来源：
+base_ref：
 文档输入包：
+  Target Stage:
   Current Spec:
   Approved Proposal:
   Architecture:
@@ -118,6 +125,7 @@ Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/p
 归属角色：
 子 Agent 策略：
 隔离模式：none / worktree
+锁记录：严格串行 / .agents/locks/<task-id>.json / 无
 可修改文件：
 禁止修改文件：
 依赖任务：
@@ -125,19 +133,22 @@ Leader 派发引用 `docs/proposals/*.md` 的实现任务前，必须按 `docs/p
 需要用户确认：
 实现要求：
 测试要求：
+审查 diff：
 审查重点：
 完成定义：
 ```
 
-如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、文档输入包、隔离模式、可修改文件、禁止修改文件、完成定义。
+如果任务很小，可以压缩任务卡，但必须保留：目标、归属角色、`base_ref`、文档输入包、隔离模式、锁定文件、可修改文件、禁止修改文件、测试要求、完成定义。
 
 文档输入包规则：
 
+- `Target Stage` 必须写明本次实现针对哪个阶段或版本，例如“第一版 Android 本地闭环”“第二版 Web 知识库工作台”“流程文档维护”。当 `docs/product-requirements.md` 同时包含多阶段能力时，执行 Agent 只能实现 `Target Stage` 覆盖的范围。
 - `Current Spec` 必须列出当前实现依据，例如 `docs/product-requirements.md` 的相关章节。
 - `Approved Proposal` 只允许列出状态为 `Approved` 的 `docs/proposals/*.md`；如果没有，写“无”。
 - `Architecture` 列出相关架构文档，例如 `docs/architecture.md` 或 `contracts/**`。
 - `Tech Constraints` 列出相关技术约束，例如 `docs/tech-selection.md`。
 - `Excluded Docs` 列出本任务不得当作实现依据的材料，例如 `docs/chat.md`、`Draft Proposal` 或历史 diff。
+- `审查 diff` 必须写明审查命令，例如 `git diff <base_ref> --stat`、`git diff <base_ref> -- <locked-files>` 或“只读审查，无代码 diff”。不得默认使用 `HEAD~1` 代表本次任务改动。
 
 ## 子 Agent 调用决策
 
@@ -211,9 +222,37 @@ Leader 每次开始任务前，必须在任务卡中写明子 Agent 策略：
 
 - 同一时刻，一个文件只能被一个任务锁定。
 - 涉及共享文件时，任务必须串行执行。
+- Leader 必须在任务卡中列出锁定文件或锁定目录。并行任务必须使用锁记录；串行任务可写“严格串行”，但仍要列出文件范围。
 - 如果实现过程中发现必须修改未授权文件，执行 Agent 停止扩大修改，向 Leader 返回“越界申请”。
 - Leader 判断越界是否合理；必要时重新拆任务或请求用户确认。
 - 共享文件变更必须在结果中说明影响哪些角色。
+
+### 锁记录格式
+
+当存在并行任务、worktree 隔离或多 Agent 协作时，Leader 应创建轻量锁记录。推荐路径为 `.agents/locks/<task-id>.json`；如果当前任务没有并行风险，可以不创建文件，但必须在任务卡中声明“严格串行”。
+
+锁记录最少包含：
+
+```json
+{
+  "task_id": "short-task-name",
+  "owner": "Android Agent",
+  "base_ref": "HEAD 或 commit sha",
+  "mode": "serial | worktree",
+  "status": "active | released",
+  "locked_paths": [
+    "apps/android/src/main/java/com/suilearn/feature/home/**"
+  ],
+  "created_at": "YYYY-MM-DD"
+}
+```
+
+规则：
+
+- 创建新锁前，Leader 先检查现有 `active` 锁是否与 `locked_paths` 重叠。
+- 任务完成、回滚或取消后，Leader 将锁状态改为 `released`，或在最终汇总中说明未创建持久锁记录的原因。
+- 共享文件、契约文件或根构建文件的锁必须写到任务卡；并行时必须写入锁记录。
+- 锁记录只用于协作协调，不替代 Git diff、测试和审查。
 
 ### 文件锁风险等级
 
@@ -387,6 +426,7 @@ Leader 汇总阻塞问题后统一向用户确认，再继续派发执行任务�
 
 审查 Agent 每次至少检查：
 
+- 是否使用任务卡指定的 `base_ref` 和 `审查 diff` 获取实际改动文件；不得用 `HEAD~1` 推断本次改动。
 - 是否符合 `docs/product-requirements.md`。
 - 如果任务引用了 `docs/proposals/**`，该 Proposal 是否为 `Approved`，且实现后是否需要合并回当前规格文档。
 - 如果本次实现完成了 Proposal 的全部范围，是否已把稳定结论合并回当前规格，并将 Proposal 状态更新为 `Implemented`，或明确记录未完成项。
@@ -398,6 +438,21 @@ Leader 汇总阻塞问题后统一向用户确认，再继续派发执行任务�
 - 是否破坏现有用户流程。
 
 审查结论必须给出严重级别、文件位置、影响、建议修复和负责 Agent。
+
+### 测试命令选择
+
+任务卡中的测试要求必须写成当前环境可执行的命令，不只写概念性测试名称。
+
+推荐命令：
+
+| 范围 | Windows / PowerShell | Unix shell |
+|---|---|---|
+| Android 单元测试 | `.\gradlew.bat :app:testDebugUnitTest --no-daemon` | `./gradlew :app:testDebugUnitTest --no-daemon` |
+| Android 构建 | `.\gradlew.bat :app:assembleDebug --no-daemon` | `./gradlew :app:assembleDebug --no-daemon` |
+| Backend 测试 | `mvn -f services/api/pom.xml test -q` | `mvn -f services/api/pom.xml test -q` |
+| Web 构建 | `npm --prefix apps/web run build` | `npm --prefix apps/web run build` |
+
+文档-only、流程-only、只读探查或只读审查任务可以将测试要求写为“不适用”，但必须说明原因，并至少执行 `git diff <base_ref> --stat` 做文件范围核对。
 
 ## 完成定义
 

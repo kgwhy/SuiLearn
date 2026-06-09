@@ -13,7 +13,7 @@
 SuiLearn 文档按“当前规格 + 变更提案 + Git 历史”组织。本节只做入口索引，具体规则见对应文档：
 
 - 当前规格：`docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md`。
-- 变更提案规则：`docs/proposals/README.md`。
+- 变更提案规则：`docs/proposals/README.md`。Proposal 按变更意图组织，同一变更同时影响 PRD、架构、技术基线或契约时，使用同一个 Proposal 的不同影响分区。
 - 变更提案模板：`docs/proposals/_template.md`。
 - 多 Agent 执行流程：`docs/development-workflow.md`。
 

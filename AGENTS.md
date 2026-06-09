@@ -9,15 +9,22 @@
 1. **角色加载**：读取 `agents/<你的角色>.md`，确认本次修改在「可修改范围」内。
 2. **边界检查**：将计划修改的文件列表写入回复，逐条与角色文件「文件归属」对比。
    若任一文件不在允许范围内 → 停止，报告越界，等待用户确认。
-3. **Worktree 检查**：若 Leader 任务卡要求 `隔离模式: worktree`，必须进入独立 git worktree。
+3. **变更基线**：修改前记录本次任务的 diff 基线，优先使用当前 `HEAD`；若 Leader 任务卡指定 `base_ref`，以任务卡为准。
+   审查、文件核对和回滚判断必须基于该基线，不得默认使用 `HEAD~1` 代表本次改动。
+4. **文件锁检查**：若任务卡指定锁记录，先检查锁记录中是否已有同一文件或目录被其他进行中任务占用。
+   无锁记录机制时，Leader 必须在任务卡中声明“严格串行”，并列出本次锁定文件。
+5. **Worktree 检查**：若 Leader 任务卡要求 `隔离模式: worktree`，必须进入独立 git worktree。
    可使用项目或环境提供的封装入口；若无封装入口，则使用 `git worktree` 原生命令。
    若当前环境无法创建 worktree，Leader 必须改为严格串行并说明原因，或停止等待用户确认。
    禁止在 Leader 的 worktree 中越界修改属于其他 Agent 的文件。
    共享文件（`contracts/**`、根 `build.gradle.kts`、`docs/*.md`）在并行任务中必须 worktree 隔离。
-4. **基线测试**：修改业务代码前，先运行该模块的测试命令并报告结果。
-   - Android: `./gradlew :app:test --no-daemon 2>&1 | tail -5`
-   - Backend: `mvn -f services/api/pom.xml test -q 2>&1 | tail -5`
-   若测试环境不可用（WSL 无 Gradle/Maven），必须在回复中**显式说明**，不得静默跳过。
+6. **基线测试**：修改业务代码前，先运行该模块的测试命令并报告结果。
+   - Android（Windows/PowerShell）: `.\gradlew.bat :app:testDebugUnitTest --no-daemon`
+   - Android（Unix shell）: `./gradlew :app:testDebugUnitTest --no-daemon`
+   - Backend: `mvn -f services/api/pom.xml test -q`
+   - Web: `npm --prefix apps/web run build`
+   文档-only、流程-only 或只读审查任务可不跑模块测试，但必须在回复中说明“不适用”的原因。
+   若测试环境不可用（缺 Gradle/Maven/Node 或依赖无法下载），必须在回复中**显式说明**，不得静默跳过。
 
 ### 门禁 B：修改中（实时自检）
 
@@ -27,8 +34,8 @@
 
 ### 门禁 C：完成前（声明「完成」前执行，顺序不可跳过）
 
-1. **运行测试**：再次运行该模块测试命令。输出测试结果原文，不得概括为「全部通过」。
-2. **文件范围核对**：执行 `git diff --stat`，与角色文件「可修改范围」逐条比对。
+1. **运行测试**：再次运行该模块测试命令。输出测试结果原文，不得概括为「全部通过」。文档-only、流程-only 或只读审查任务可写明不适用原因。
+2. **文件范围核对**：执行 `git diff <base_ref> --stat`；若未设置 `base_ref`，使用 `git diff --stat`。将结果与角色文件「可修改范围」逐条比对。
 3. **越界报告**：如果有任何文件本次修改了但不在允许范围，必须报告并解释。
 4. **完成声明格式**：
    ```

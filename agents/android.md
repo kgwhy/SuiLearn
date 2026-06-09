@@ -26,9 +26,11 @@
 
 ### 验证命令
 
-修改完成后必须运行（按优先级尝试）：
-1. `./gradlew :app:test --no-daemon 2>&1 | tail -20`
-2. 如果在 WSL 且 Gradle 不可用，必须在完成声明中写入：`⚠️ WSL 无 Gradle，未运行 Android 测试。请在 Android Studio 中运行 :app:test 确认。`
+修改完成后必须运行（按当前环境选择）：
+1. Windows / PowerShell：`.\gradlew.bat :app:testDebugUnitTest --no-daemon`
+2. Unix shell：`./gradlew :app:testDebugUnitTest --no-daemon`
+3. 如需构建验证，再运行：Windows / PowerShell `.\gradlew.bat :app:assembleDebug --no-daemon`；Unix shell `./gradlew :app:assembleDebug --no-daemon`
+4. 如果 Gradle 不可用，必须在完成声明中写入：`⚠️ Gradle 不可用，未运行 Android 测试。请在 Android Studio 中运行 :app:testDebugUnitTest 确认。`
 
 ### 完成声明格式
 
@@ -36,7 +38,7 @@
 ```
 ✅ Android Agent 完成
 📝 本次修改: <逐个文件路径>
-🧪 测试结果: <粘贴 ./gradlew test 输出原文，或说明 WSL 不可用>
+🧪 测试结果: <粘贴 Gradle 测试输出原文，或说明 Gradle 不可用>
 📋 文件核对: apps/android 下 N 个文件，全部在允许范围
 🔍 自我审查: 无阻塞问题 / [P1] xxx
 ```

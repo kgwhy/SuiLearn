@@ -8,12 +8,13 @@
 
 | 改动文件路径 | 自动运行 |
 |-------------|---------|
-| `apps/android/src/main/java/com/suilearn/data/**` | `./gradlew :app:test` 全部 Android 单元测试 |
-| `apps/android/src/main/java/com/suilearn/feature/**` | 对应 feature 的 ViewModel 测试 + Compose UI 测试 |
-| `apps/android/src/main/java/com/suilearn/core/**` | 对应 core 模块的单元测试 |
+| `apps/android/src/main/java/com/suilearn/data/**` | Android 单元测试：Windows / PowerShell `.\gradlew.bat :app:testDebugUnitTest --no-daemon`；Unix shell `./gradlew :app:testDebugUnitTest --no-daemon` |
+| `apps/android/src/main/java/com/suilearn/feature/**` | Android 单元测试：Windows / PowerShell `.\gradlew.bat :app:testDebugUnitTest --no-daemon`；如需 UI 回归，追加 `.\gradlew.bat :app:connectedDebugAndroidTest --no-daemon`；Unix shell 使用对应 `./gradlew` 命令 |
+| `apps/android/src/main/kotlin/com/suilearn/core/**` | Android 单元测试：Windows / PowerShell `.\gradlew.bat :app:testDebugUnitTest --no-daemon`；Unix shell `./gradlew :app:testDebugUnitTest --no-daemon` |
 | `services/api/src/main/java/com/suilearn/api/service/**` | `mvn -f services/api/pom.xml test` 全部后端测试 |
 | `services/api/src/main/java/com/suilearn/api/controller/**` | 对应 Controller 的集成测试 |
 | `contracts/**` | OpenAPI 校验 + 契约与实现一致性检查 |
+| `apps/web/**` | `npm --prefix apps/web run build` |
 
 ### 测试输出格式
 
@@ -35,12 +36,12 @@
 🚦 阻塞等级: P0 阻塞 / P1 需修复 / 可合并
 ```
 
-### WSL 环境降级
+### 构建工具不可用时降级
 
-若 `./gradlew` 和 `mvn` 均不可用（WSL 环境常见），不得静默跳过。必须：
-1. 在报告中标注：`⚠️ WSL 无构建工具，以下为手动测试清单`
+若 Gradle、Maven 或 Node 不可用，不得静默跳过。必须：
+1. 在报告中标注：`⚠️ 构建工具不可用，以下为手动测试清单`
 2. 列出具体的手动验证步骤（打开 App → 点击 X → 预期看到 Y）
-3. 声明：`请在 Android Studio / IntelliJ 中运行测试后回复结果`
+3. 声明需要用户或对应 Agent 在 Android Studio / IntelliJ / Web 本地环境中运行的具体命令
 
 ## 负责
 
