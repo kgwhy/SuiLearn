@@ -37,6 +37,8 @@ class PracticeViewModel(
 
     private val _uiState = MutableStateFlow(PracticeUiState())
     val uiState: StateFlow<PracticeUiState> = _uiState.asStateFlow()
+    private val answerSnapshots = mutableMapOf<String, AnswerSnapshot>()
+    private var snapshotSessionId: String? = null
 
     fun onEvent(event: PracticeEvent) {
         when (event) {
@@ -49,6 +51,7 @@ class PracticeViewModel(
             )
             is PracticeEvent.ReviewShortAnswer -> reviewShortAnswer(event.review, event.durationMs)
             PracticeEvent.ToggleFavorite -> toggleFavorite()
+            PracticeEvent.PreviousQuestion -> previousQuestion()
             PracticeEvent.NextQuestion -> nextQuestion()
         }
     }
@@ -64,6 +67,7 @@ class PracticeViewModel(
                 updateMessage("无法开始练习。")
                 return@launch
             }
+            resetAnswerSnapshotsForSession(practiceState.session.sessionId)
             _uiState.update { it.copy(practiceState = practiceState, message = null) }
             dependencies.notifyDataChanged()
         }
@@ -80,6 +84,7 @@ class PracticeViewModel(
                 updateMessage("题目不存在或已弃用。")
                 return@launch
             }
+            resetAnswerSnapshotsForSession(practiceState.session.sessionId)
             _uiState.update { it.copy(practiceState = practiceState, message = null) }
             dependencies.notifyDataChanged()
         }
@@ -107,6 +112,7 @@ class PracticeViewModel(
             val practiceState = withContext(Dispatchers.IO) {
                 session?.let { toPracticeState(it) }
             }
+            practiceState?.let { resetAnswerSnapshotsForSession(it.session.sessionId) }
             _uiState.update { it.copy(practiceState = practiceState, message = null) }
         }
     }
@@ -122,6 +128,13 @@ class PracticeViewModel(
 
         viewModelScope.launch {
             if (practiceState.question.type == QuestionType.SHORT_ANSWER) {
+                answerSnapshots[practiceState.question.questionId] = AnswerSnapshot(
+                    selectedAnswers = emptySet(),
+                    shortAnswerText = answer.joinToString("\n"),
+                    submitted = true,
+                    isCorrect = null,
+                    showExplanation = true,
+                )
                 _uiState.update { current ->
                     current.copy(
                         practiceState = current.practiceState?.copy(
@@ -149,9 +162,17 @@ class PracticeViewModel(
 
             when (result) {
                 is AppResult.Success -> {
+                    answerSnapshots[practiceState.question.questionId] = AnswerSnapshot(
+                        selectedAnswers = answer.toSet(),
+                        shortAnswerText = "",
+                        submitted = true,
+                        isCorrect = result.data.isCorrect,
+                        showExplanation = true,
+                    )
                     _uiState.update { current ->
                         current.copy(
                             practiceState = current.practiceState?.copy(
+                                selectedAnswers = answer.toSet(),
                                 submitted = true,
                                 isCorrect = result.data.isCorrect,
                                 isFavorite = result.data.isFavorite,
@@ -203,6 +224,13 @@ class PracticeViewModel(
 
             when (result) {
                 is AppResult.Success -> {
+                    answerSnapshots[practiceState.question.questionId] = AnswerSnapshot(
+                        selectedAnswers = emptySet(),
+                        shortAnswerText = practiceState.shortAnswerText,
+                        submitted = true,
+                        isCorrect = result.data.review == ShortAnswerReview.PASSED,
+                        showExplanation = true,
+                    )
                     _uiState.update { current ->
                         current.copy(
                             practiceState = current.practiceState?.copy(
@@ -249,16 +277,45 @@ class PracticeViewModel(
                 } else {
                     val nextSession = current.session.copy(currentIndex = nextIndex)
                     dependencies.practiceSessionRepository.update(nextSession)
-                    PracticeQuestionState(
-                        session = nextSession,
-                        question = nextQuestion,
-                        index = nextIndex,
-                        total = current.total,
-                        isFavorite = dependencies.favoriteRepository.isFavorite(nextQuestion.questionId),
-                    )
+                    toPracticeState(nextSession, nextQuestion, nextIndex, current.total)
                 }
             }
             _uiState.update { it.copy(practiceState = nextState, message = null) }
+            dependencies.notifyDataChanged()
+        }
+    }
+
+    private fun previousQuestion() {
+        val current = _uiState.value.practiceState ?: return
+        if (current.loading) return
+        if (current.index == 0) {
+            updateMessage("已经是第一题。")
+            return
+        }
+
+        viewModelScope.launch {
+            val previousState = withContext(Dispatchers.IO) {
+                val previousIndex = current.index - 1
+                val previousQuestionId = current.session.questionIds.getOrNull(previousIndex)
+                val previousQuestion = if (previousQuestionId == null) {
+                    null
+                } else {
+                    dependencies.questionRepository.getQuestion(previousQuestionId)
+                }
+                if (previousQuestion == null) {
+                    null
+                } else {
+                    val previousSession = current.session.copy(currentIndex = previousIndex)
+                    dependencies.practiceSessionRepository.update(previousSession)
+                    toPracticeState(previousSession, previousQuestion, previousIndex, current.total)
+                }
+            }
+            _uiState.update { currentState ->
+                currentState.copy(
+                    practiceState = previousState ?: currentState.practiceState,
+                    message = null,
+                )
+            }
             dependencies.notifyDataChanged()
         }
     }
@@ -282,17 +339,46 @@ class PracticeViewModel(
     private suspend fun toPracticeState(session: PracticeSession): PracticeQuestionState? {
         val questionId = session.questionIds.getOrNull(session.currentIndex) ?: return null
         val question = dependencies.questionRepository.getQuestion(questionId) ?: return null
-        return PracticeQuestionState(
+        return toPracticeState(
             session = session,
             question = question,
             index = session.currentIndex,
             total = session.questionIds.size,
+        )
+    }
+
+    private suspend fun toPracticeState(
+        session: PracticeSession,
+        question: com.suilearn.core.model.Question,
+        index: Int,
+        total: Int,
+    ): PracticeQuestionState {
+        val baseState = PracticeQuestionState(
+            session = session,
+            question = question,
+            index = index,
+            total = total,
             isFavorite = dependencies.favoriteRepository.isFavorite(question.questionId),
+        )
+        val snapshot = answerSnapshots[question.questionId] ?: return baseState
+        return baseState.copy(
+            selectedAnswers = snapshot.selectedAnswers,
+            shortAnswerText = snapshot.shortAnswerText,
+            submitted = snapshot.submitted,
+            isCorrect = snapshot.isCorrect,
+            showExplanation = snapshot.showExplanation,
         )
     }
 
     private fun updateMessage(message: String?) {
         _uiState.update { it.copy(message = message) }
+    }
+
+    private fun resetAnswerSnapshotsForSession(sessionId: String) {
+        if (snapshotSessionId != sessionId) {
+            answerSnapshots.clear()
+            snapshotSessionId = sessionId
+        }
     }
 
     private suspend fun hasAnyResumableQuestion(session: PracticeSession): Boolean {
@@ -304,3 +390,11 @@ class PracticeViewModel(
         return false
     }
 }
+
+private data class AnswerSnapshot(
+    val selectedAnswers: Set<String>,
+    val shortAnswerText: String,
+    val submitted: Boolean,
+    val isCorrect: Boolean?,
+    val showExplanation: Boolean,
+)

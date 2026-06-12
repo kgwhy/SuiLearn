@@ -49,9 +49,13 @@ fun PracticeScreen(
     var showFinishDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(practiceState?.question?.questionId) {
-        selectedAnswers = emptySet()
-        shortAnswer = ""
-        shortAnswerReview = null
+        selectedAnswers = practiceState?.selectedAnswers.orEmpty()
+        shortAnswer = practiceState?.shortAnswerText.orEmpty()
+        shortAnswerReview = when (practiceState?.isCorrect) {
+            true -> ShortAnswerReview.PASSED
+            false -> ShortAnswerReview.NOT_PASSED
+            null -> null
+        }
     }
 
     if (showFinishDialog) {
@@ -205,7 +209,7 @@ fun PracticeScreen(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
                             val answer = when (question.type) {
@@ -227,18 +231,31 @@ fun PracticeScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("提交")
                     }
-                    OutlinedButton(
-                        onClick = {
-                            if (submitted) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = {
                                 selectedAnswers = emptySet()
                                 shortAnswer = ""
                                 shortAnswerReview = null
-                                practiceViewModel.onEvent(PracticeEvent.NextQuestion)
-                            }
-                        },
-                        enabled = submitted && (question.type != QuestionType.SHORT_ANSWER || practiceState.isCorrect != null),
-                    ) {
-                        Text("下一题")
+                                practiceViewModel.onEvent(PracticeEvent.PreviousQuestion)
+                            },
+                            enabled = practiceState.index > 0 && !practiceState.loading,
+                        ) {
+                            Text("上一题")
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (submitted) {
+                                    selectedAnswers = emptySet()
+                                    shortAnswer = ""
+                                    shortAnswerReview = null
+                                    practiceViewModel.onEvent(PracticeEvent.NextQuestion)
+                                }
+                            },
+                            enabled = submitted && (question.type != QuestionType.SHORT_ANSWER || practiceState.isCorrect != null),
+                        ) {
+                            Text("下一题")
+                        }
                     }
                 }
             }

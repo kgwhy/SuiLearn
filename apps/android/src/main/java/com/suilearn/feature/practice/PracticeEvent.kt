@@ -29,5 +29,7 @@ sealed interface PracticeEvent {
 
     object ToggleFavorite : PracticeEvent
 
+    object PreviousQuestion : PracticeEvent
+
     object NextQuestion : PracticeEvent
 }

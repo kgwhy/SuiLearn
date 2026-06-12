@@ -24,7 +24,7 @@ SuiLearn 当前采用三端渐进路线：
 | 范围 | 定位 | 技术选择 |
 |---|---|---|
 | Android App | 本地学习闭环，以及轻量消费 AI/知识库能力 | Native Android、Kotlin、Jetpack Compose、Room |
-| Java Backend | AI 生成、知识库、资料导入、RAG、语义搜索和任务状态 | Java、Spring Boot、JPA、PostgreSQL、OpenAI-compatible Provider |
+| Java Backend | AI 生成、知识库、资料导入、RAG、语义搜索和任务状态 | Java、Spring Boot、JPA、PostgreSQL、OpenAI-compatible Provider、Spring AI adapter 边界 |
 | Web Frontend | 知识库工作台，承载资料导入、生成确认、搜索和问答 | React、TypeScript、Vite |
 | Contracts | 跨端 API 单点真相 | OpenAPI |
 
@@ -97,12 +97,16 @@ Android 约束：
 | 目标数据库 | PostgreSQL |
 | 向量检索 | pgvector 优先，当前可用 Fake Embedding / 关键词检索兜底 |
 | AI Provider | 业务层依赖 `AiProvider`；实现包括 Fake 和 OpenAI-compatible |
+| Spring AI | 预留 1.0.x 稳定线；首轮只建立 SuiLearn port 与 `ai/infrastructure/springai/**` adapter 边界，不启用 starter |
 | 测试 | Spring Boot Test / JUnit |
 
 Backend 约束：
 
 - 后端 Java source/target 目标基线为 21；当前工程配置升级需由 Backend 任务修改 `services/api/pom.xml` 的 `java.version` 并运行测试确认。
 - 业务层不得直接依赖具体 AI 厂商 SDK；必须通过 `AiProvider` 边界。
+- 业务模块不得直接 import Spring AI 类型，例如 `ChatClient`、`ChatModel`、`EmbeddingModel`、`VectorStore`、`Advisor` 或 Tool Calling 类型。
+- Spring AI 相关代码只允许位于 `services/api/src/main/java/com/suilearn/api/ai/infrastructure/springai/**`。
+- 当前阶段不新增 Spring AI Maven 依赖；真正替换 OpenAI-compatible Provider 或启用 Spring AI starter 时，必须由架构 Agent 更新本文、修改 `services/api/pom.xml` 并运行后端测试。
 - Provider 状态接口只能暴露脱敏配置，例如 base URL、模型名、超时、重试和 API key 环境变量名。
 - 资料导入、embedding、生成内容必须有任务状态或可追踪结果，避免不可解释的后台副作用。
 - RAG 回答必须受知识库或资料范围约束；证据不足时表达不确定。
@@ -182,5 +186,6 @@ Contracts 约束：
 |---|---|
 | AGP / Kotlin / Compose / Room | `.\gradlew.bat :app:testDebugUnitTest --no-daemon` + `.\gradlew.bat :app:assembleDebug --no-daemon` |
 | Java / Spring Boot / JPA | `mvn -f services/api/pom.xml test -q` |
+| Spring AI starter / model adapter | `mvn -f services/api/pom.xml test -q`，并检查业务模块无 Spring AI 类型 import |
 | React / TypeScript / Vite | `npm --prefix apps/web run build` |
 | OpenAPI 契约 | 契约 diff 审查 + Backend/Web/Android 相关适配测试 |

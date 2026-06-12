@@ -2,9 +2,14 @@ package com.suilearn.api.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.ai.AiProvider;
@@ -16,8 +21,13 @@ import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.dto.UpdateKnowledgePointRequest;
+import com.suilearn.api.generation.application.GeneratedContentService;
+import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
+import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
 import com.suilearn.api.material.DefaultMaterialChunker;
 import com.suilearn.api.material.TextMaterialParser;
+import com.suilearn.api.material.application.MaterialImportService;
 import com.suilearn.api.model.AiNoteType;
 import com.suilearn.api.model.AiProviderType;
 import com.suilearn.api.model.EmbeddingStatus;
@@ -33,9 +43,14 @@ import com.suilearn.api.model.SourceType;
 import com.suilearn.api.model.TaskKind;
 import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.persistence.SuiLearnV2Store;
+import com.suilearn.api.pack.application.LearningPackService;
 import com.suilearn.api.retrieval.FakeEmbeddingProvider;
 import com.suilearn.api.retrieval.KeywordRetriever;
 import com.suilearn.api.retrieval.Retriever;
+import com.suilearn.api.service.internal.SuiLearnV2Workflow;
+import com.suilearn.api.source.application.SourceService;
+import com.suilearn.api.task.application.TaskExecutor;
+import com.suilearn.api.task.application.TaskService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -63,8 +78,35 @@ class SuiLearnV2ServiceTest {
     @Autowired
     private AiProviderStatusService providerStatusService;
 
+    @Autowired
+    private KnowledgeBaseService knowledgeBaseService;
+
+    @Autowired
+    private MaterialImportService materialImportService;
+
+    @Autowired
+    private KnowledgePointService knowledgePointService;
+
+    @Autowired
+    private GeneratedContentService generatedContentService;
+
+    @Autowired
+    private LearningPackService learningPackService;
+
     @SpyBean
     private SuiLearnV2Store store;
+
+    @SpyBean
+    private SuiLearnV2Workflow workflow;
+
+    @SpyBean
+    private SourceService sourceService;
+
+    @SpyBean
+    private TaskExecutor taskExecutor;
+
+    @SpyBean
+    private TaskService taskService;
 
     @Autowired
     private Clock clock;
@@ -79,7 +121,7 @@ class SuiLearnV2ServiceTest {
 
     @AfterEach
     void clearStoreSpy() {
-        clearInvocations(store);
+        clearInvocations(store, workflow, sourceService, taskExecutor, taskService);
     }
 
     @Test
@@ -218,6 +260,57 @@ class SuiLearnV2ServiceTest {
         assertThatThrownBy(() -> service.ask("HashMap collision", null, null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("scope");
+    }
+
+    @Test
+    void knowledgeBaseApplicationServiceDoesNotProxyWorkflowForDetails() {
+        var kb = knowledgeBaseService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        clearInvocations(workflow);
+
+        var detail = knowledgeBaseService.getKnowledgeBaseDetail(kb.id());
+
+        assertThat(detail.id()).isEqualTo(kb.id());
+        assertThat(detail.materialCount()).isZero();
+        assertThat(detail.knowledgePointCount()).isZero();
+        verifyNoInteractions(workflow);
+    }
+
+    @Test
+    void controllerFacingApplicationServicesDoNotProxyWorkflow() {
+        var kb = knowledgeBaseService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        clearInvocations(workflow);
+
+        var material = materialImportService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+        var extraction = knowledgePointService.extractKnowledgePoints(material.id());
+        var point = extraction.knowledgePoints().get(0);
+        var updatedPoint = knowledgePointService.updateKnowledgePoint(
+            point.id(),
+            new UpdateKnowledgePointRequest("HashMap", "Java collection map")
+        );
+        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+        var draft = generatedContentService.generateQuestion(generateQuestionRequest(
+            kb.id(),
+            sourceRef,
+            "java-collections",
+            "Java Collections",
+            List.of(updatedPoint.id())
+        ));
+        var saved = generatedContentService.reviewGeneratedContent(draft.id(), saveRequest(null, null, null));
+        generatedContentService.deleteGeneratedContent(draft.id());
+        var pack = learningPackService.resolve(kb.id());
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.READY);
+        assertThat(knowledgePointService.listKnowledgePoints(kb.id())).extracting("id").contains(updatedPoint.id());
+        assertThat(generatedContentService.listGeneratedContents(GeneratedContentStatus.DELETED))
+            .extracting("id")
+            .contains(saved.id());
+        assertThat(pack.knowledgeBaseId()).isEqualTo(kb.id());
+        verifyNoInteractions(workflow);
     }
 
     @Test
@@ -606,6 +699,50 @@ class SuiLearnV2ServiceTest {
     }
 
     @Test
+    void importMaterialRunsThroughTaskExecutorTemplate() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        clearInvocations(taskExecutor, taskService);
+
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets.\nCollision handling uses linked lists."
+        ));
+        service.getTaskStatus(material.importTaskId());
+
+        verify(taskService).createTask(
+            eq(TaskKind.MATERIAL_IMPORT),
+            eq(kb.id()),
+            isNull(),
+            isNull(),
+            isNull(),
+            eq("UPLOADED")
+        );
+        verify(taskService).createTask(
+            eq(TaskKind.EMBEDDING),
+            eq(kb.id()),
+            eq(material.id()),
+            isNull(),
+            eq("fake-embedding-v1"),
+            eq("INDEXING")
+        );
+        verify(taskExecutor).runManagedTask(
+            argThat(task -> task.kind() == TaskKind.MATERIAL_IMPORT),
+            eq("UPLOADED"),
+            any(),
+            any()
+        );
+        verify(taskExecutor).runManagedTask(
+            argThat(task -> task.kind() == TaskKind.EMBEDDING),
+            eq("INDEXING"),
+            any(),
+            any()
+        );
+        verify(taskService).getTaskStatus(material.importTaskId());
+    }
+
+    @Test
     void importMaterialFailureStoresFailedTaskAndMaterialError() {
         var failingService = new SuiLearnV2Service(
             new FakeAiProvider(),
@@ -671,6 +808,34 @@ class SuiLearnV2ServiceTest {
                 assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
                 assertThat(task.resultRef().id()).isEqualTo(suggestion.id());
             });
+    }
+
+    @Test
+    void aiGenerationDelegatesSourceNormalizationToSourceService() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+        var sourceRef = new SourceRef(SourceType.MATERIAL, material.id(), null, null, null, null, false, null);
+        clearInvocations(sourceService);
+
+        var question = service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, null));
+
+        assertThat(question.sourceRefs()).singleElement()
+            .satisfies(normalized -> {
+                assertThat(normalized.knowledgeBaseId()).isEqualTo(kb.id());
+                assertThat(normalized.materialId()).isEqualTo(material.id());
+                assertThat(normalized.title()).isEqualTo(material.title());
+            });
+        verify(sourceService).normalize(eq(kb.id()), eq(List.of(sourceRef)));
+        verify(sourceService).ensureUsable(argThat(refs ->
+            refs.size() == 1
+                && kb.id().equals(refs.get(0).knowledgeBaseId())
+                && material.id().equals(refs.get(0).materialId())
+        ));
     }
 
     @Test

@@ -4,6 +4,10 @@ import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
+import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
+import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
+import com.suilearn.api.material.application.MaterialImportService;
+import com.suilearn.api.material.application.MaterialQueryService;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
 import com.suilearn.api.model.KnowledgeBase;
@@ -16,7 +20,6 @@ import com.suilearn.api.model.MaterialDetail;
 import com.suilearn.api.model.MaterialMetadata;
 import com.suilearn.api.model.MaterialSourceType;
 import com.suilearn.api.model.QuestionSummary;
-import com.suilearn.api.service.SuiLearnV2Service;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.MediaType;
@@ -35,25 +38,36 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/v2")
 public class KnowledgeBaseController {
-    private final SuiLearnV2Service service;
+    private final KnowledgeBaseService knowledgeBaseService;
+    private final KnowledgePointService knowledgePointService;
+    private final MaterialImportService materialImportService;
+    private final MaterialQueryService materialQueryService;
 
-    public KnowledgeBaseController(SuiLearnV2Service service) {
-        this.service = service;
+    public KnowledgeBaseController(
+        KnowledgeBaseService knowledgeBaseService,
+        MaterialImportService materialImportService,
+        MaterialQueryService materialQueryService,
+        KnowledgePointService knowledgePointService
+    ) {
+        this.knowledgeBaseService = knowledgeBaseService;
+        this.materialImportService = materialImportService;
+        this.materialQueryService = materialQueryService;
+        this.knowledgePointService = knowledgePointService;
     }
 
     @GetMapping("/knowledge-bases")
     List<KnowledgeBase> listKnowledgeBases() {
-        return service.listKnowledgeBases();
+        return knowledgeBaseService.listKnowledgeBases();
     }
 
     @PostMapping("/knowledge-bases")
     KnowledgeBase createKnowledgeBase(@Valid @RequestBody CreateKnowledgeBaseRequest request) {
-        return service.createKnowledgeBase(request);
+        return knowledgeBaseService.createKnowledgeBase(request);
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}")
     KnowledgeBaseDetail getKnowledgeBase(@PathVariable String knowledgeBaseId) {
-        return service.getKnowledgeBaseDetail(knowledgeBaseId);
+        return knowledgeBaseService.getKnowledgeBaseDetail(knowledgeBaseId);
     }
 
     @PatchMapping("/knowledge-bases/{knowledgeBaseId}")
@@ -61,28 +75,28 @@ public class KnowledgeBaseController {
         @PathVariable String knowledgeBaseId,
         @Valid @RequestBody RenameKnowledgeBaseRequest request
     ) {
-        return service.renameKnowledgeBase(knowledgeBaseId, request);
+        return knowledgeBaseService.renameKnowledgeBase(knowledgeBaseId, request);
     }
 
     @DeleteMapping("/knowledge-bases/{knowledgeBaseId}")
     ResponseEntity<Void> deleteKnowledgeBase(@PathVariable String knowledgeBaseId) {
-        service.deleteKnowledgeBase(knowledgeBaseId);
+        knowledgeBaseService.deleteKnowledgeBase(knowledgeBaseId);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/questions")
     List<QuestionSummary> listQuestions(@PathVariable String knowledgeBaseId) {
-        return service.listQuestions(knowledgeBaseId);
+        return knowledgeBaseService.listQuestions(knowledgeBaseId);
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/statistics")
     KnowledgeBaseStatistics getStatistics(@PathVariable String knowledgeBaseId) {
-        return service.getStatistics(knowledgeBaseId);
+        return knowledgeBaseService.getStatistics(knowledgeBaseId);
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/materials")
     List<MaterialMetadata> listMaterials(@PathVariable String knowledgeBaseId) {
-        return service.listMaterials(knowledgeBaseId).stream()
+        return materialQueryService.listMaterials(knowledgeBaseId).stream()
             .map(KnowledgeBaseController::toMaterialMetadata)
             .toList();
     }
@@ -92,7 +106,7 @@ public class KnowledgeBaseController {
         @PathVariable String knowledgeBaseId,
         @Valid @RequestBody ImportMaterialRequest request
     ) {
-        return toMaterialMetadata(service.importMaterial(knowledgeBaseId, request));
+        return toMaterialMetadata(materialImportService.importMaterial(knowledgeBaseId, request));
     }
 
     @PostMapping(value = "/knowledge-bases/{knowledgeBaseId}/materials", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -104,7 +118,7 @@ public class KnowledgeBaseController {
         @RequestParam String content,
         @RequestParam(required = false) MultipartFile file
     ) {
-        return toMaterialMetadata(service.importMaterial(
+        return toMaterialMetadata(materialImportService.importMaterial(
             knowledgeBaseId,
             new ImportMaterialRequest(title, fileName, sourceType, content)
         ));
@@ -112,7 +126,7 @@ public class KnowledgeBaseController {
 
     @GetMapping("/materials/{materialId}")
     MaterialDetail getMaterial(@PathVariable String materialId) {
-        return service.getMaterialDetail(materialId);
+        return materialQueryService.getMaterialDetail(materialId);
     }
 
     @DeleteMapping("/materials/{materialId}")
@@ -121,17 +135,17 @@ public class KnowledgeBaseController {
         @RequestParam(required = false) DeletedMaterialSavedContentPolicy savedContentPolicy,
         @RequestParam(required = false) DeletedMaterialPendingContentPolicy pendingContentPolicy
     ) {
-        return service.deleteMaterial(materialId, savedContentPolicy, pendingContentPolicy);
+        return materialQueryService.deleteMaterial(materialId, savedContentPolicy, pendingContentPolicy);
     }
 
     @PostMapping("/materials/{materialId}/extract-knowledge-points")
     KnowledgePointExtractionResult extractKnowledgePoints(@PathVariable String materialId) {
-        return service.extractKnowledgePoints(materialId);
+        return knowledgePointService.extractKnowledgePoints(materialId);
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/knowledge-points")
     List<KnowledgePoint> listKnowledgePoints(@PathVariable String knowledgeBaseId) {
-        return service.listKnowledgePoints(knowledgeBaseId);
+        return knowledgePointService.listKnowledgePoints(knowledgeBaseId);
     }
 
     @PatchMapping("/knowledge-points/{knowledgePointId}")
@@ -139,12 +153,12 @@ public class KnowledgeBaseController {
         @PathVariable String knowledgePointId,
         @Valid @RequestBody UpdateKnowledgePointRequest request
     ) {
-        return service.updateKnowledgePoint(knowledgePointId, request);
+        return knowledgePointService.updateKnowledgePoint(knowledgePointId, request);
     }
 
     @DeleteMapping("/knowledge-points/{knowledgePointId}")
     ResponseEntity<Void> deleteKnowledgePoint(@PathVariable String knowledgePointId) {
-        service.deleteKnowledgePoint(knowledgePointId);
+        knowledgePointService.deleteKnowledgePoint(knowledgePointId);
         return ResponseEntity.noContent().build();
     }
 

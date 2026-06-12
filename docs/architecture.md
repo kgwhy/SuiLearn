@@ -178,12 +178,19 @@ services/api/src/main/java/com/suilearn/api/
 ├─ config/
 ├─ controller/
 ├─ dto/
+├─ generation/
+├─ knowledgebase/
+├─ knowledgepoint/
 ├─ material/
 ├─ model/
+├─ pack/
 ├─ persistence/
 │  ├─ entity/
 │  └─ repository/
+├─ rag/
 ├─ retrieval/
+├─ search/
+├─ source/
 └─ service/
 ```
 
@@ -194,10 +201,12 @@ services/api/src/main/java/com/suilearn/api/
 | Application entry | `SuiLearnApiApplication.java` | Spring Boot 启动入口 |
 | Controller | `controller/**` | REST API 入参、响应、HTTP 状态和异常边界 |
 | DTO | `dto/**` | 请求 DTO，避免 Controller 暴露内部 Entity |
-| Service | `service/**` | 业务编排，当前核心为 `SuiLearnV2Service` |
+| Application Service | `<module>/application/**` | 按领域承载用例边界，例如知识库、资料、知识点、生成内容、RAG、搜索和任务 |
 | Domain model | `model/**` | 服务端领域模型、状态枚举、结果模型 |
-| Persistence | `persistence/**` | JPA Entity、Repository、`SuiLearnV2Store` |
-| AI | `ai/**` | `AiProvider` 抽象、Fake Provider、OpenAI-compatible Provider |
+| Module Infrastructure | `<module>/infrastructure/**` | 按聚合承载 Store / adapter 边界，供 Application Service 访问持久化或外部能力 |
+| Compatibility | `service/SuiLearnV2Service`、`service/internal/SuiLearnV2Workflow`、`persistence/SuiLearnV2Store` | V2 兼容 facade 和底层兼容持久化 facade，供旧入口留存，不作为新增业务入口 |
+| Persistence | `persistence/**` | JPA Entity、Repository 和兼容持久化 facade |
+| AI | `ai/**` | SuiLearn AI port、Fake Provider、OpenAI-compatible Provider、Spring AI adapter 边界 |
 | Retrieval | `retrieval/**` | 检索接口、关键词检索、Embedding Provider |
 | Material | `material/**` | 资料解析、切片 |
 | Config | `config/**` | CORS、AI Provider、应用配置 |
@@ -205,23 +214,72 @@ services/api/src/main/java/com/suilearn/api/
 规则：
 
 - Controller 不写业务规则，只做 HTTP 边界和参数转发。
-- Service 负责编排业务流程、校验跨实体规则、生成任务和返回领域结果。
+- Application Service 负责编排业务流程、校验跨实体规则、生成任务和返回领域结果。
 - Persistence 层负责 Entity 与数据库访问，不把 JPA Entity 直接暴露给 Controller 或 Web。
 - AI 生成、RAG、embedding 和检索都必须经由明确接口，业务层不直接依赖厂商 SDK。
+- `SuiLearnV2Service` 只保留为兼容 facade；新增 Controller 依赖应指向对应领域 Application Service。
+- `SuiLearnV2Workflow` 仅随 `SuiLearnV2Service` 兼容 facade 留存；`SuiLearnV2Store` 是底层兼容持久化 facade，后续新增逻辑不得继续扩展为总管类。
+- 新增业务不得直接依赖兼容 facade；业务编排必须进入模块 Application Service，持久化访问必须进入模块 `infrastructure` Store / adapter。
+- Application Service 不得直接注入或 import `SuiLearnV2Store`；如需访问旧持久化能力，必须通过本模块 Store / adapter 包装。
+- 长任务状态创建、启动、成功、失败和查询统一进入 `task` 模块；业务流程通过 `TaskService` / `TaskExecutor` 表达任务生命周期。
+- `SourceRef` 标准化、可用性校验、引用构造和资料删除影响标记统一进入 `source` 模块。
+
+### 3.1.1 Backend 模块边界
+
+当前后端采用模块化单体，模块内优先使用统一边界：
+
+```text
+<module>/
+├─ api/               Controller / API DTO mapper（按需）
+├─ application/       UseCase / Application Service
+├─ domain/            领域模型、状态、策略、契约
+└─ infrastructure/    Store、Repository Adapter、外部适配
+```
+
+当前模块职责：
+
+| 模块 | 职责 |
+|---|---|
+| `knowledgebase` | 知识库 CRUD、详情、统计和知识库内问题查询边界；通过 `KnowledgeBaseStore` 访问知识库聚合 |
+| `material` | 资料导入、资料查询、删除策略和 chunk 存取边界；导入流程使用 `TaskExecutor` 管理导入和 embedding 任务 |
+| `knowledgepoint` | 知识点抽取、查询、编辑和删除边界；通过 `KnowledgePointStore` 访问知识点聚合 |
+| `generation` | 生成内容草稿、审核、保存、丢弃、AI 笔记和题型契约边界；通过 `GeneratedContentStore`、`QuestionStore`、`AiNoteStore` 协作 |
+| `rag` | 资料问答、证据约束和不确定性表达边界；只通过检索接口读取证据 |
+| `search` | 关键词 / 语义搜索入口边界；查询范围必须由知识库或资料约束 |
+| `task` | 长任务状态查询、执行模板和任务持久化边界 |
+| `source` | `SourceRef` 标准化、来源可用性、引用构造和删除影响规则边界 |
+| `pack` | `LearningPack` 服务层抽象；当前通过 `packId == knowledgeBaseId` 适配现有知识库 |
+| `ai` | SuiLearn 自有 AI port 与基础设施 adapter，业务模块不得直接依赖厂商 SDK 或 Spring AI 类型 |
+
+依赖方向：
+
+```text
+controller -> <module>.application -> domain / port
+application -> <module>.infrastructure Store / adapter
+infrastructure -> JPA repository / external implementation
+```
+
+首轮保持 `/api/v2/*` HTTP 契约和 DB schema 不变。
 
 ### 3.2 Backend Controller 边界
 
 当前主要 Controller：
 
-| Controller | 职责 |
-|---|---|
-| `KnowledgeBaseController` | 知识库 CRUD、资料导入、资料详情、知识点、题目和统计 |
-| `AiGenerationController` | AI 生成题、解释、复习建议、生成内容审核、AI 笔记保存 |
-| `RagController` | 知识库或资料范围内问答 |
-| `SearchController` | 语义/关键词搜索入口 |
-| `TaskController` | 任务状态查询 |
-| `AiProviderController` | AI Provider 脱敏状态 |
-| `ApiExceptionHandler` | API 异常统一响应 |
+| Controller | 依赖边界 | 职责 |
+|---|---|---|
+| `KnowledgeBaseController` | `KnowledgeBaseService`、`MaterialImportService`、`MaterialQueryService`、`KnowledgePointService` | 知识库 CRUD、资料导入、资料详情、知识点、题目和统计 |
+| `AiGenerationController` | `GeneratedContentService` | AI 生成题、解释、复习建议、生成内容审核、AI 笔记保存 |
+| `RagController` | `RagService` | 知识库或资料范围内问答 |
+| `SearchController` | `SearchService` | 语义/关键词搜索入口 |
+| `TaskController` | `TaskService` | 任务状态查询 |
+| `AiProviderController` | `AiProviderStatusService` | AI Provider 脱敏状态 |
+| `ApiExceptionHandler` | Spring MVC exception boundary | API 异常统一响应 |
+
+规则：
+
+- Controller 不直接依赖 `SuiLearnV2Service` 或 `SuiLearnV2Workflow`。
+- Controller 不直接依赖 JPA repository、JPA Entity 或 `SuiLearnV2Store`。
+- 新增 `/api/v2/*` 端点时，先选择或创建对应模块 Application Service，再由 Controller 转发。
 
 ### 3.3 Backend 持久化模型
 
@@ -246,23 +304,26 @@ KnowledgeBase
 - `GeneratedContent` 在用户确认前不得进入正式题库。
 - `TaskStatus` 记录资料导入、embedding、生成等任务状态，避免不可追踪副作用。
 - 删除资料时，待确认内容和已保存内容的处理策略必须显式表达。
+- 模块 Application Service 通过本模块 `infrastructure` Store / adapter 访问持久化；不得直接注入 `SuiLearnV2Store`。
+- `SuiLearnV2Store` 只作为底层兼容持久化 facade 被模块 Store / adapter 或兼容层使用，后续新增聚合访问优先补充对应模块 Store 方法。
+- Entity/domain mapper 优先归属模块 `infrastructure` 边界；不新增全局大 mapper 包。
 
 ### 3.4 AI 与 RAG 边界
 
 AI Provider 边界：
 
 ```text
-Service
-  -> AiProvider
-     -> FakeAiProvider
-     -> OpenAiCompatibleAiProvider
+Generation / KnowledgePoint Application Service
+  -> AiProvider or SuiLearn AI Port
+     -> FakeAiProvider / OpenAiCompatibleAiProvider
+     -> ai/infrastructure/springai adapter（预留）
 ```
 
 检索边界：
 
 ```text
 RagController / SearchController
-  -> SuiLearnV2Service
+  -> RagService / SearchService
   -> Retriever
      -> KeywordRetriever
      -> EmbeddingProvider
@@ -272,6 +333,8 @@ RagController / SearchController
 
 - Fake Provider 用于默认开发和测试流程。
 - 真实 Provider 只作为基础设施适配，不让业务层感知具体厂商。
+- Spring AI 只允许出现在 `ai/infrastructure/springai/**`，业务模块只能依赖 `ChatPort`、`EmbeddingPort`、`StructuredGenerationPort`、`RetrievalPort` 等 SuiLearn 自有端口。
+- 首轮只定义 Chat、Structured Output、Embedding 的 adapter 边界；VectorStore、Advisor 和 Tool Calling 后续单独确认。
 - Provider 状态接口只能返回脱敏信息。
 - RAG 必须受 `knowledgeBaseId` 或 `materialId` 范围约束。
 - 回答需要返回来源引用；证据不足时表达不确定。
@@ -352,8 +415,8 @@ Android assets JSON
 Web App
   -> api.ts
   -> Backend Controller
-  -> SuiLearnV2Service
-  -> Persistence / AI / Retrieval / Material
+  -> Module Application Service
+  -> Module Store / AI Port / Retrieval / Material
   -> Backend Response
   -> Web UI
 ```
@@ -419,6 +482,12 @@ Architecture Agent updates contracts
 | Contracts | `contracts/**` diff 审查 | API 兼容性、字段语义、消费端适配范围 |
 
 文档-only 架构调整不需要运行模块测试，但必须执行 diff/stat 检查并说明原因。
+
+后端模块边界需要自动化保护：
+
+- `ApplicationStoreBoundaryTest` 检查模块 `application` 包不得直接引用 `SuiLearnV2Store`。
+- 后端回归测试应覆盖 `TaskService` / `TaskExecutor` 的任务生命周期委托，以及 `SourceService` 的来源标准化和删除影响规则。
+- Spring AI adapter 真正启用前，应继续通过源码扫描或架构测试确认业务模块没有直接 import Spring AI 类型。
 
 ## 9. 变更规则
 

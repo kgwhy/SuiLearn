@@ -2,7 +2,7 @@ package com.suilearn.api.controller;
 
 import com.suilearn.api.dto.AskQuestionRequest;
 import com.suilearn.api.model.RagAnswer;
-import com.suilearn.api.service.SuiLearnV2Service;
+import com.suilearn.api.rag.application.RagService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,14 +12,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v2/rag")
 public class RagController {
-    private final SuiLearnV2Service service;
+    private final RagService ragService;
 
-    public RagController(SuiLearnV2Service service) {
-        this.service = service;
+    public RagController(RagService ragService) {
+        this.ragService = ragService;
     }
 
     @PostMapping("/ask")
     RagAnswer ask(@Valid @RequestBody AskQuestionRequest request) {
-        return service.ask(request.question(), request.knowledgeBaseId(), request.materialId());
+        return ragService.ask(request.question(), request.knowledgeBaseId(), request.materialId());
     }
 }

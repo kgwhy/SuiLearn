@@ -5,11 +5,11 @@ import com.suilearn.api.dto.GenerateQuestionRequest;
 import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.generation.application.GeneratedContentService;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
 import com.suilearn.api.model.SavedAiNote;
-import com.suilearn.api.service.SuiLearnV2Service;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -26,37 +26,37 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v2/ai")
 public class AiGenerationController {
-    private final SuiLearnV2Service service;
+    private final GeneratedContentService generatedContentService;
 
-    public AiGenerationController(SuiLearnV2Service service) {
-        this.service = service;
+    public AiGenerationController(GeneratedContentService generatedContentService) {
+        this.generatedContentService = generatedContentService;
     }
 
     @PostMapping("/generated-questions")
     GeneratedQuestionDraft generateQuestion(@Valid @RequestBody GenerateQuestionRequest request) {
-        return service.generateQuestion(request);
+        return generatedContentService.generateQuestion(request);
     }
 
     @PostMapping("/knowledge-point-explanations")
     AiNoteDraft generateExplanation(@Valid @RequestBody GenerateExplanationRequest request) {
-        return service.generateExplanation(request);
+        return generatedContentService.generateExplanation(request);
     }
 
     @PostMapping("/review-suggestions")
     AiNoteDraft generateReviewSuggestion(@Valid @RequestBody GenerateReviewSuggestionRequest request) {
-        return service.generateReviewSuggestion(request);
+        return generatedContentService.generateReviewSuggestion(request);
     }
 
     @PostMapping("/notes")
     SavedAiNote saveAiNote(@Valid @RequestBody SaveAiNoteRequest request) {
-        return service.saveAiNote(request);
+        return generatedContentService.saveAiNote(request);
     }
 
     @GetMapping("/generated-contents")
     List<GeneratedQuestionDraft> listGeneratedContents(
         @RequestParam(required = false) GeneratedContentStatus status
     ) {
-        return service.listGeneratedContents(status);
+        return generatedContentService.listGeneratedContents(status);
     }
 
     @PatchMapping("/generated-contents/{generatedContentId}")
@@ -64,12 +64,12 @@ public class AiGenerationController {
         @PathVariable String generatedContentId,
         @Valid @RequestBody ReviewGeneratedContentRequest request
     ) {
-        return service.reviewGeneratedContent(generatedContentId, request);
+        return generatedContentService.reviewGeneratedContent(generatedContentId, request);
     }
 
     @DeleteMapping("/generated-contents/{generatedContentId}")
     ResponseEntity<Void> deleteGeneratedContent(@PathVariable String generatedContentId) {
-        service.deleteGeneratedContent(generatedContentId);
+        generatedContentService.deleteGeneratedContent(generatedContentId);
         return ResponseEntity.noContent().build();
     }
 }
