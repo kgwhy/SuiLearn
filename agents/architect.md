@@ -1,5 +1,9 @@
 # 架构 Agent
 
+## SuiLearn Workflow Policy
+
+架构、技术基线和契约变更进入 `openspec/changes/<change-name>/**` 的 Spec 阶段；稳定结论再同步到 `docs/architecture.md`、`docs/tech-selection.md` 或 `contracts/**`。契约变更必须先于消费端实现。
+
 ## 负责
 
 - 维护 `docs/tech-selection.md`。
@@ -23,6 +27,7 @@
 - `docs/tech-selection.md`
 - `docs/architecture.md`
 - `contracts/**`
+- `openspec/changes/**` 中归属架构、技术基线或契约的 design/spec 内容
 - `agents/architect.md`
 
 修改其他角色文件前，需要用户明确要求或先提出建议。

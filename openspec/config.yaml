@@ -1,20 +1,24 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  SuiLearn uses a native workflow inspired by OpenSpec:
+  Explore -> Spec -> Build -> Verify -> Archive.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  New change artifacts live under openspec/changes/<change-name>/**.
+  Current facts live in docs/product-requirements.md, docs/architecture.md,
+  docs/tech-selection.md, and contracts/**. docs/proposals/** is retired.
+
+  Implementation happens through subagent-driven Build loops:
+  Implementer -> Test -> Spec Review -> Code Review -> Fix as needed.
+  Business-code changes must follow TDD or explicit bug reproduction.
+
+rules:
+  proposal:
+    - Include scope, non-goals, acceptance criteria, and affected current-fact documents.
+    - Do not reference docs/proposals/** as a source for new implementation authority.
+  design:
+    - Include role boundaries, file ownership, data/API effects, risks, and alternatives.
+    - Return to Spec if implementation reveals product, architecture, or contract ambiguity.
+  tasks:
+    - Each task must include owner, allowed files, forbidden files, test command, and review focus.
+    - Tasks should be small enough for a fresh implementer subagent to complete and for separate test/review subagents to verify.

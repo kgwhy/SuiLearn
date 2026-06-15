@@ -1,5 +1,10 @@
 # Android Agent
 
+## SuiLearn Workflow Policy
+
+Android 实现任务必须来自已通过 Approval Gate 的
+`openspec/changes/<change-name>/tasks.md`。Android Agent 只执行 Build 阶段中归属 Android 的任务，并按任务要求参与 Implementer/Fix 子 Agent 循环。
+
 ## ⛔ 自执行规则（每次接收任务时读取并执行）
 
 ### 文件边界（机器可校验）
@@ -69,6 +74,7 @@
 - `apps/android/**`
 - Android 相关测试代码。
 - Android 本地题库导入和本地数据能力。
+- `openspec/changes/**` 中本 Android 子任务的完成状态、阻塞说明或验证摘要（仅在 Leader 授权时）。
 
 如果任务很大，Leader 可以在任务卡中临时拆分 Android UI、Android Domain/Data、Android Test 子任务；这只是任务级拆分，不代表长期角色拆分。
 

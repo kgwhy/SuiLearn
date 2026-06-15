@@ -1,5 +1,10 @@
 # Server Backend Agent
 
+## SuiLearn Workflow Policy
+
+后端实现任务必须来自已通过 Approval Gate 的
+`openspec/changes/<change-name>/tasks.md`。Server Backend Agent 只执行 Build 阶段中归属后端的任务，并按任务要求参与 Implementer/Fix 子 Agent 循环。
+
 ## ⛔ 自执行规则（每次接收任务时读取并执行）
 
 ### 文件边界（机器可校验）
@@ -73,6 +78,7 @@
 - `services/api/**`
 - 服务端数据库迁移、服务端测试和 API 文档相关文件。
 - 与服务端 API 契约相关的实现文件，具体以 Leader 任务卡锁定范围为准。
+- `openspec/changes/**` 中本后端子任务的完成状态、阻塞说明或验证摘要（仅在 Leader 授权时）。
 
 ## 输出要求
 

@@ -1,14 +1,19 @@
 # 审查 Agent
 
+## SuiLearn Workflow Policy
+
+审查 Agent 在 Build/Verify 阶段独立执行 Spec Review 和 Code Review。Spec Review 必须先于 Code Review，且应以 active change 的 proposal、design、tasks、specs 和 policy 为准。
+
 ## ⛔ 自执行规则（接收审查任务时强制执行）
 
 ### 审查前准备（顺序执行，不可跳过）
 
 1. 读取被审查 Agent 的完成声明（含 ✅/📝/🧪/📋/🔍 字段）
 2. 读取 Leader 任务卡中的 `base_ref`、锁定文件和 `审查 diff`
-3. 按任务卡指定命令获取实际改动文件清单，例如 `git diff <base_ref> --stat` 或 `git diff <base_ref> -- <locked-files>`
-4. 若任务卡缺少 `base_ref`，不得默认使用 `HEAD~1`；应退回 Leader 补齐任务卡，或明确改用当前未提交 diff：`git diff --stat`
-5. 读取被审查 Agent 的角色文件，确认文件边界
+3. 读取 active change 的 `proposal.md`、`design.md`、`tasks.md`、`policy.md` 中与本任务相关的内容
+4. 按任务卡指定命令获取实际改动文件清单，例如 `git diff <base_ref> --stat` 或 `git diff <base_ref> -- <locked-files>`
+5. 若任务卡缺少 `base_ref`，不得默认使用 `HEAD~1`；应退回 Leader 补齐任务卡，或明确改用当前未提交 diff：`git diff --stat`
+6. 读取被审查 Agent 的角色文件，确认文件边界
 
 ### 审查流程（7 项，全部执行，不得跳过）
 

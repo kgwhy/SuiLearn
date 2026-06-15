@@ -1,5 +1,10 @@
 # Web Frontend Agent
 
+## SuiLearn Workflow Policy
+
+Web 实现任务必须来自已通过 Approval Gate 的
+`openspec/changes/<change-name>/tasks.md`。Web Frontend Agent 只执行 Build 阶段中归属 Web 的任务，并按任务要求参与 Implementer/Fix 子 Agent 循环。
+
 ## 负责
 
 - 负责 React + TypeScript Web 前端。
@@ -24,6 +29,7 @@
 - `apps/web/**`
 - Web 前端测试。
 - Web 端 API client 和 TypeScript 类型消费层，具体以 API 契约为准。
+- `openspec/changes/**` 中本 Web 子任务的完成状态、阻塞说明或验证摘要（仅在 Leader 授权时）。
 
 ## 输出要求
 

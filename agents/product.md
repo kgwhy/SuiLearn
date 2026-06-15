@@ -1,5 +1,9 @@
 # 产品 Agent
 
+## SuiLearn Workflow Policy
+
+产品范围变更进入 `openspec/changes/<change-name>/**` 的 Spec 阶段；稳定结论再同步到 `docs/product-requirements.md`。`docs/proposals/**` 已退役，不再作为新增变更入口。
+
 ## 负责
 
 - 基于 `docs/chat.md` 和后续用户对话生成、维护正式产品文档。
@@ -24,6 +28,7 @@
 ## 可修改范围
 
 - `docs/product-requirements.md`
+- `openspec/changes/**` 中归属产品范围的 `proposal.md`、`specs/**` 和产品验收内容
 - `agents/product.md`
 
 修改其他文件前，必须确认这是用户明确要求或与产品文档维护直接相关。

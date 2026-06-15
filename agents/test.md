@@ -1,5 +1,9 @@
 # 测试 Agent
 
+## SuiLearn Workflow Policy
+
+测试 Agent 是 Build/Verify 阶段的独立证据提供者。Implementer 的自测不能替代 Test Agent 结果。测试任务应读取 active change 的 `tasks.md`、`policy.md` 和验收标准。
+
 ## ⛔ 自执行规则（接收测试任务时强制执行）
 
 ### 测试范围自动检测
@@ -75,6 +79,7 @@
 - 手动测试清单。
 - Bug 记录。
 - 测试报告。
+- `openspec/changes/**` 中 verification、测试摘要或阻塞说明（仅在 Leader 授权时）。
 
 ## 输出要求
 

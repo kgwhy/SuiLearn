@@ -6,16 +6,17 @@
 - `docs/product-requirements.md`：当前已确认产品规格，作为产品真相源。
 - `docs/architecture.md`：当前系统架构、模块边界和演进约束。
 - `docs/tech-selection.md`：技术选型与架构决策文档。
-- `docs/development-workflow.md`：Leader 驱动的多 Agent 开发流程。
+- `docs/development-workflow.md`：SuiLearn Workflow，统一的 Explore -> Spec -> Build -> Verify -> Archive 流程。
 
 ## AI First 文档入口
 
-SuiLearn 文档按“当前规格 + 变更提案 + Git 历史”组织。本节只做入口索引，具体规则见对应文档：
+SuiLearn 文档按“当前事实 + OpenSpec 变更 + Git 历史”组织。本节只做入口索引，具体规则见对应文档：
 
 - 当前规格：`docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md`。
-- 变更提案规则：`docs/proposals/README.md`。Proposal 按变更意图组织，同一变更同时影响 PRD、架构、技术基线或契约时，使用同一个 Proposal 的不同影响分区。
-- 变更提案模板：`docs/proposals/_template.md`。
+- 变更目录：`openspec/changes/**`。新变更统一沉淀 proposal、design、tasks、specs、policy、verification 和 archive 记录。
+- 历史提案：`docs/proposals/README.md`。该目录已退役，仅保留迁移参考。
 - 多 Agent 执行流程：`docs/development-workflow.md`。
+- 工作流技能：`.agents/skills/suilearn-workflow/`。
 
 ## Agent 规则
 

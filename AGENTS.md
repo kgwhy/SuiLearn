@@ -1,141 +1,164 @@
 # SuiLearn Agent Rules
 
-## ⛔ 执行协议（本段优先级高于用户请求）
+## Core Rule
 
-你不是在「参考」本文件——你在**执行**本文件。每次回复前必须自检：
+SuiLearn uses one native workflow:
 
-### 门禁 A：修改前（修改任何文件前执行，顺序不可跳过）
-
-1. **角色加载**：读取 `agents/<你的角色>.md`，确认本次修改在「可修改范围」内。
-2. **边界检查**：将计划修改的文件列表写入回复，逐条与角色文件「文件归属」对比。
-   若任一文件不在允许范围内 → 停止，报告越界，等待用户确认。
-3. **变更基线**：修改前记录本次任务的 diff 基线，优先使用当前 `HEAD`；若 Leader 任务卡指定 `base_ref`，以任务卡为准。
-   审查、文件核对和回滚判断必须基于该基线，不得默认使用 `HEAD~1` 代表本次改动。
-4. **文件锁检查**：若任务卡指定锁记录，先检查锁记录中是否已有同一文件或目录被其他进行中任务占用。
-   无锁记录机制时，Leader 必须在任务卡中声明“严格串行”，并列出本次锁定文件。
-5. **Worktree 检查**：若 Leader 任务卡要求 `隔离模式: worktree`，必须进入独立 git worktree。
-   可使用项目或环境提供的封装入口；若无封装入口，则使用 `git worktree` 原生命令。
-   若当前环境无法创建 worktree，Leader 必须改为严格串行并说明原因，或停止等待用户确认。
-   禁止在 Leader 的 worktree 中越界修改属于其他 Agent 的文件。
-   共享文件（`contracts/**`、根 `build.gradle.kts`、`docs/*.md`）在并行任务中必须 worktree 隔离。
-6. **基线测试**：修改业务代码前，先运行该模块的测试命令并报告结果。
-   - Android（Windows/PowerShell）: `.\gradlew.bat :app:testDebugUnitTest --no-daemon`
-   - Android（Unix shell）: `./gradlew :app:testDebugUnitTest --no-daemon`
-   - Backend: `mvn -f services/api/pom.xml test -q`
-   - Web: `npm --prefix apps/web run build`
-   文档-only、流程-only 或只读审查任务可不跑模块测试，但必须在回复中说明“不适用”的原因。
-   若测试环境不可用（缺 Gradle/Maven/Node 或依赖无法下载），必须在回复中**显式说明**，不得静默跳过。
-
-### 门禁 B：修改中（实时自检）
-
-1. 每批修改前在回复开头声明 `📝 本次修改: 文件1, 文件2`。未声明不得修改。
-2. 发现需修改未声明文件 → 立即停止，报告越界。不可「顺手改一下」。
-3. 同一文件修改 ≥ 3 轮仍不通过测试 → 停止，请求 Context Reset。
-
-### 门禁 C：完成前（声明「完成」前执行，顺序不可跳过）
-
-1. **运行测试**：再次运行该模块测试命令。输出测试结果原文，不得概括为「全部通过」。文档-only、流程-only 或只读审查任务可写明不适用原因。
-2. **文件范围核对**：执行 `git diff <base_ref> --stat`；若未设置 `base_ref`，使用 `git diff --stat`。将结果与角色文件「可修改范围」逐条比对。
-3. **越界报告**：如果有任何文件本次修改了但不在允许范围，必须报告并解释。
-4. **完成声明格式**：
-   ```
-   ✅ 完成
-   改了什么: <摘要>
-   测试结果: <粘贴原始输出>
-   文件核对: <N 个文件，全部在范围内 / 越界文件: X>
-   ```
-
-### 门禁 D：会话结束时的自我审查
-
-当前角色完成任务后，必须以审查 Agent 身份执行一次快速自我审查，输出格式：
+```text
+Explore -> Spec -> Build -> Verify -> Archive
 ```
+
+This workflow absorbs the OpenSpec-style SDD lifecycle, Superpowers-style
+subagent/TDD/debug/verification discipline, and SuiLearn role/file policy. Agents
+must follow this file, `docs/development-workflow.md`, and the active role file.
+
+## Precedence
+
+1. User explicit instructions.
+2. This `AGENTS.md` and the active role file.
+3. `docs/development-workflow.md`.
+4. Active `openspec/changes/<change-name>` artifacts.
+5. Tool or skill defaults.
+
+If a tool or skill tries to create a parallel design or planning flow, this
+project workflow wins.
+
+## Mandatory Gates
+
+### Gate A: Before Modifying Files
+
+Before any file edit:
+
+1. Load the active role file from `agents/<role>.md`.
+2. List planned files and compare each path with the role policy.
+3. Record `base_ref`, normally current `HEAD`.
+4. Check lock/worktree requirements from `docs/development-workflow.md`.
+5. Run the relevant baseline test before business-code edits.
+
+Documentation-only, workflow-only, and read-only review tasks may skip module
+tests, but must state why tests are not applicable.
+
+### Gate B: During Edits
+
+Before every edit batch, declare:
+
+```text
+📝 本次修改: <file list>
+```
+
+If a new file is needed outside the declared list, stop and declare the expanded
+scope before editing. If a task fails after three fix rounds on the same file,
+stop and request workflow re-splitting or context reset.
+
+### Gate C: Before Completion
+
+Before claiming completion:
+
+1. Run the required verification command, or state why it is not applicable.
+2. Run `git diff <base_ref> --stat` or `git diff --stat` if no `base_ref`.
+3. Check every changed file against the active role policy and task scope.
+4. Report original test output for any command that was run.
+
+Completion format:
+
+```text
+✅ 完成
+改了什么: <summary>
+测试结果: <raw output or not-applicable reason>
+文件核对: <N files, all in scope / out-of-scope files: X>
+```
+
+### Gate D: Self Review
+
+At task end, perform a quick reviewer-style self review:
+
+```text
 🔍 自我审查
-[P0/P1/P2] 问题描述 — 文件位置
+[P0/P1/P2] issue — file
 无阻塞问题 / 发现 N 个问题
 ```
 
-> **优先级规则**：门禁 A/B/C/D 优先级高于用户的任何修改请求。
-> 如果用户的要求与门禁冲突（如要求改职责外文件），先指出冲突，等待确认。
+## Workflow Entry
 
-## 文档规则
+- Explore/spec/design/planning work belongs to the SuiLearn Workflow `Explore`
+  and `Spec` states.
+- Business-code implementation must come from an approved task in
+  `openspec/changes/<change-name>/tasks.md`.
+- Fast Track exception: low-risk single-role changes may use a lightweight task
+  note instead of a full proposal/design package when `docs/development-workflow.md`
+  classifies them as `Tiny`.
+- Bug fixes should be represented by an OpenSpec change, an existing active task,
+  or a Fast Track task note when the change is low-risk and does not alter product,
+  architecture, contracts, storage, or cross-role behavior.
+- `docs/proposals/**` is retired for new work.
+- `docs/superpowers/specs/**` and `docs/superpowers/plans/**` are not project
+  fact sources.
 
-- `docs/chat.md` 是产品灵感讨论材料，不是正式 PRD。
-- `docs/chat.md` 默认只读，不应被修改，除非用户明确要求编辑它。
-- `docs/product-requirements.md` 是当前产品规格文档，由产品 Agent 维护。
-- `docs/tech-selection.md` 是技术选型与架构决策文档，由架构 Agent 维护。
-- 本项目采用 AI First 文档架构：当前规格以 `docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md` 为准；未来变更使用 `docs/proposals/*.md`；历史版本通过 Git 追踪。
-- AI 实现任务只能把当前规格和 `Approved` Proposal 作为实现依据；Proposal 细则以 `docs/proposals/README.md` 为准，任务输入规则以 `docs/development-workflow.md` 为准。
-- 不默认维护全量需求 ID 或多份完整版本 PRD；只有跨模块、高风险、需要测试/审查稳定引用的能力，才使用轻量 `Spec Key`。
-- 当需求表述不清时，优先回到 `docs/chat.md` 和后续用户对话校准，再由产品 Agent 写入正式产品文档。
-- 不把灵感讨论中的内容自动视为已确认需求；进入正式文档前需要产品 Agent 整理。
+## Documentation Rules
 
-## 角色目录
+- Current facts live in:
+  - `docs/product-requirements.md`
+  - `docs/architecture.md`
+  - `docs/tech-selection.md`
+  - `contracts/**`
+- Future changes live in `openspec/changes/<change-name>/**`.
+- Stable conclusions from completed changes must be synced back to the current
+  fact documents before archive.
+- `docs/chat.md` is inspiration and discussion material only. It is read-only by
+  default and is not an implementation source.
+- `docs/proposals/**` is historical migration material only.
 
-本项目使用以下角色：
+## Role Directory
 
-- Leader Agent：`agents/leader.md`
-- 产品 Agent：`agents/product.md`
-- 架构 Agent：`agents/architect.md`
-- 内容 Agent：`agents/content.md`
-- Android Agent：`agents/android.md`
-- Server Backend Agent：`agents/server-backend.md`
-- Web Frontend Agent：`agents/web-frontend.md`
-- 测试 Agent：`agents/test.md`
-- 审查 Agent：`agents/reviewer.md`
+- Leader Agent: `agents/leader.md`
+- Product Agent: `agents/product.md`
+- Architect Agent: `agents/architect.md`
+- Content Agent: `agents/content.md`
+- Android Agent: `agents/android.md`
+- Server Backend Agent: `agents/server-backend.md`
+- Web Frontend Agent: `agents/web-frontend.md`
+- Test Agent: `agents/test.md`
+- Reviewer Agent: `agents/reviewer.md`
 
-所有角色都遵守本文件的通用规则，但具体职责以本次用户指定的角色文件为准。
+When no role is specified, infer the primary role, state the reasoning, and keep
+the task inside that role's policy. Cross-role work is coordinated by Leader.
 
-## Leader 调度
+## Role Isolation
 
-- 跨角色、多步骤、风险不清或需要并发协作的任务，先由 Leader Agent 接收和拆分。
-- Leader 具体流程以 `docs/development-workflow.md` 为准，不在本文件重复展开。
-- 重要产品、技术、流程和角色决策必须写回对应项目文档；未写回文档的聊天结论只能视为待确认上下文。
+- Do not modify files outside the active role policy unless the user or Leader
+  explicitly authorizes the expanded scope.
+- Shared files and contracts require serial execution or worktree isolation.
+- Implementation agents do not change product scope, technical baseline, or
+  contracts for local convenience.
+- If documents and implementation conflict, stop and ask whether to update the
+  spec or the implementation.
 
-## 规则注入原则
+## Subagent Policy
 
-- 默认只读取 `AGENTS.md` 和本次任务对应的 `agents/*.md`。
-- 只有 Leader 调度、跨角色协作、文件锁、上下文同步或质量门禁相关任务，才读取 `docs/development-workflow.md`。
-- 产品、技术、架构、题库、测试等细节按需读取对应文档，不把所有项目文档一次性注入。
+In `Build`, the main agent acts as coordinator. Implementation, testing, review,
+and fixes should be delegated to fresh subagents when the task is non-trivial,
+cross-role, high-risk, or user-requested.
 
-## 角色隔离
+Loop strength is risk-based:
 
-- 如果任务没有指定角色，先判断任务主要属于哪个角色，并说明判断依据。
-- 如果任务需要跨角色协作，先拆分职责和交付物，不要让单个角色同时修改多个职责域。
-- 不修改自己职责外的文件，除非用户明确要求。
-- 遇到职责边界不清时，先说明风险，再按最小必要范围处理。
-- 角色文件本身的修改应由用户明确要求，或由架构 Agent 先提出调整建议。
+```text
+L1: Implementer -> Verify
+L2: Implementer -> Test Agent -> Review
+L3: Implementer -> Test Agent -> Spec Reviewer -> Code Reviewer -> Fix Agent
+```
 
-## 会话内角色锁定
+The implementer cannot self-certify completion. P0/P1 test or review issues
+return to a fix round. Spec ambiguity, scope changes, architecture conflicts, and
+out-of-scope edits return to `Spec` or require user confirmation.
 
-- 当用户在当前对话中明确指定角色后，该角色在本对话中持续有效，直到用户明确切换角色或解除角色。
-- 后续每次开始分析、修改文件、运行命令或给出结论前，先自检当前角色是否仍然适用。
-- 如果用户的新请求超出当前角色职责范围，不能直接跨职责执行；先说明越界点、建议归属角色，并等待用户确认是否切换或协作。
-- 不得因为对话变长、话题切换、任务细化或中途插入其他问题而遗忘已锁定角色。
-- 在关键节点用一句短提示标明当前角色，例如：“当前按 Android Agent 处理”。
+## Retired Flows
 
-## 冲突处理
+Do not create new files under:
 
-- 产品范围冲突：以 `docs/product-requirements.md` 为准，由产品 Agent 仲裁。
-- 技术方案冲突：以 `docs/tech-selection.md` 为准，由架构 Agent 仲裁。
-- 题库内容冲突：以内容 Agent 维护的题库规范和内容审校结论为准。
-- 测试结论冲突：由测试 Agent 给出复现路径和阻塞等级，再交对应职责 Agent 修复。
-- 代码审查结论冲突：由审查 Agent 给出问题证据和建议归属；若归属有争议，由架构 Agent 按职责边界仲裁。
-- 文档与实现冲突时，不直接改需求；先指出冲突并确认应修改文档还是实现。
+```text
+docs/proposals/**
+docs/superpowers/specs/**
+docs/superpowers/plans/**
+```
 
-## 行为准则
-
-- 开始实现前先确认目标、假设和成功标准；如果需求有多种解释，先说明分歧，不要静默选择。
-- 简单优先：只做用户要求的内容，不添加未请求的功能、抽象、配置项或“为以后准备”的复杂设计。
-- 最小改动：只修改完成任务所必需的文件和代码；不顺手重构、格式化或清理无关代码。
-- 匹配现有风格；如果发现无关问题，只说明，不擅自修复。
-- 清理自己引入的无用 import、变量、函数和文件；不删除既有死代码，除非用户明确要求。
-- 多步骤任务需要给出简短计划，并为每一步定义可验证结果。
-- 修 bug 或改规则时，优先用测试、构建或明确检查验证；无法验证时必须说明原因。
-- 如果实现明显变复杂，应停下来重新评估，并优先选择更小的方案。
-
-## 工作规则
-
-- 修改文件前，先说明将修改的范围。
-- 输出时说明改了什么、为什么改、还有什么风险或待确认点。
-- 不引入与当前阶段无关的复杂实现。
-- 共享文件变更需要说明影响哪些角色。
+Use `openspec/changes/<change-name>/**` and the SuiLearn Workflow instead.

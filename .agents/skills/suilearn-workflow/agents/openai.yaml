@@ -1,0 +1,4 @@
+interface:
+  display_name: "SuiLearn Workflow"
+  short_description: "Run SuiLearn's OpenSpec-native, subagent-driven workflow"
+  default_prompt: "Use SuiLearn Workflow to plan, build, test, review, and archive this change."
