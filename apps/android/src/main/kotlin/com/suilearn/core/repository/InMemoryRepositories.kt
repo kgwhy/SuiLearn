@@ -53,6 +53,14 @@ class InMemoryStudyPackRepository : StudyPackRepository {
         categories.clear()
         items.forEach { categories[it.categoryId] = it }
     }
+
+    override suspend fun upsertCategory(item: Category) {
+        categories[item.categoryId] = item
+    }
+
+    override suspend fun upsertKnowledgePoint(item: KnowledgePoint) {
+        knowledgePoints[item.knowledgePointId] = item
+    }
 }
 
 class InMemoryQuestionRepository : QuestionRepository {
@@ -88,6 +96,10 @@ class InMemoryQuestionRepository : QuestionRepository {
                 knowledgePointIds = item.knowledgePointIds,
             )
         }
+    }
+
+    override suspend fun upsertQuestion(question: Question) {
+        questions[question.questionId] = question
     }
 }
 

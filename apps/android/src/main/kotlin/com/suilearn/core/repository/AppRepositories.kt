@@ -29,12 +29,15 @@ interface StudyPackRepository {
     suspend fun listCategories(): List<com.suilearn.core.model.Category>
     suspend fun replaceCategories(items: List<com.suilearn.core.model.Category>)
     suspend fun replaceKnowledgePoints(items: List<KnowledgePoint>)
+    suspend fun upsertCategory(item: com.suilearn.core.model.Category)
+    suspend fun upsertKnowledgePoint(item: KnowledgePoint)
 }
 
 interface QuestionRepository {
     suspend fun listQuestions(): List<Question>
     suspend fun getQuestion(questionId: String): Question?
     suspend fun replaceAll(pack: QuestionPack)
+    suspend fun upsertQuestion(question: Question)
 }
 
 interface AnswerRecordRepository {

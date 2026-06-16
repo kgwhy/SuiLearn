@@ -4,7 +4,7 @@
 
 本文是 SuiLearn 当前代码结构、模块边界、数据流和契约关系的真相源，由架构 Agent 维护。
 
-本文只描述当前最新约定，不保留历史版本设计。旧架构、废弃方案和历史取舍通过 Git 历史追溯；未来架构变更先进入 `docs/proposals/*.md`，批准并实现后再合并回本文。
+本文只描述当前最新约定，不保留历史版本设计。旧架构、废弃方案和历史取舍通过 Git 历史追溯；未来架构变更先进入 `openspec/changes/<change-name>/**`，批准并实现后再将稳定结论合并回本文。
 
 本文回答：
 
@@ -497,7 +497,7 @@ Architecture Agent updates contracts
 - 改技术栈、版本、依赖或升级规则时，更新 `docs/tech-selection.md`。
 - 改产品行为、验收标准或阶段范围时，先交产品 Agent 更新 `docs/product-requirements.md`。
 - 改 API 字段或跨端模型时，先更新 `contracts/**`，再派发消费端适配。
-- 不把聊天里的临时判断当成稳定架构，除非已经写回本文或 Approved Proposal。
+- 不把聊天里的临时判断当成稳定架构，除非已经写回本文或已批准的 `openspec/changes/<change-name>/**`。
 
 ## 10. 当前开放风险
 

@@ -9,12 +9,14 @@ import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.AiNoteType;
 import com.suilearn.api.model.AiProviderType;
+import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
 import com.suilearn.api.model.EmbeddingStatus;
@@ -524,6 +526,17 @@ public class SuiLearnV2Workflow {
     public KnowledgeBaseStatistics getStatistics(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
         var questionCount = countSavedQuestions(knowledgeBaseId);
+        var answerRecords = store.listAnswerRecords(knowledgeBaseId);
+        var answeredQuestionCount = (int) answerRecords.stream().map(AnswerRecord::questionId).distinct().count();
+        var answerCount = answerRecords.size();
+        var correctRate = answerCount == 0
+            ? null
+            : answerRecords.stream().filter(AnswerRecord::correct).count() / (double) answerCount;
+        var wrongQuestionIds = answerRecords.stream()
+            .filter(record -> !record.correct())
+            .map(AnswerRecord::questionId)
+            .distinct()
+            .toList();
         var activeMaterials = store.listMaterials(knowledgeBaseId).stream()
             .filter(material -> material.status() != MaterialStatus.DELETED)
             .toList();
@@ -538,15 +551,59 @@ public class SuiLearnV2Workflow {
                 .filter(content -> content.status() == GeneratedContentStatus.PENDING_REVIEW)
                 .count(),
             countAiNotes(knowledgeBaseId),
-            0,
-            0,
-            null,
-            0,
-            store.listKnowledgePoints(knowledgeBaseId).stream()
-                .map(KnowledgePoint::id)
+            answeredQuestionCount,
+            answerCount,
+            correctRate,
+            wrongQuestionIds.size(),
+            store.listQuestions(knowledgeBaseId).stream()
+                .filter(question -> wrongQuestionIds.contains(question.id()))
+                .flatMap(question -> question.knowledgePointIds().stream())
+                .distinct()
                 .limit(3)
                 .toList()
         );
+    }
+
+    public AnswerRecord submitAnswer(String knowledgeBaseId, SubmitAnswerRequest request) {
+        requireKnowledgeBase(knowledgeBaseId);
+        var question = store.listQuestions(knowledgeBaseId).stream()
+            .filter(candidate -> candidate.id().equals(request.questionId()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Question not found in knowledge base: " + request.questionId()));
+        var record = store.saveAnswerRecord(new AnswerRecord(
+            newId("answer"),
+            knowledgeBaseId,
+            question.id(),
+            request.userAnswer(),
+            request.correct(),
+            Math.max(0, request.durationMs()),
+            clock.instant()
+        ));
+        refreshQuestionStats(question);
+        return record;
+    }
+
+    private void refreshQuestionStats(QuestionSummary question) {
+        var records = store.listAnswerRecordsByQuestion(question.id());
+        var answeredCount = records.size();
+        var correctRate = answeredCount == 0
+            ? 0.0
+            : records.stream().filter(AnswerRecord::correct).count() / (double) answeredCount;
+        store.saveQuestion(new QuestionSummary(
+            question.id(),
+            question.knowledgeBaseId(),
+            question.questionType(),
+            question.stem(),
+            question.categoryId(),
+            question.categoryName(),
+            question.difficulty(),
+            question.knowledgePointIds(),
+            answeredCount,
+            correctRate,
+            question.sourceRefs(),
+            question.createdAt(),
+            question.savedAt()
+        ));
     }
 
     public AiNoteDraft generateExplanation(GenerateExplanationRequest request) {
@@ -762,8 +819,18 @@ public class SuiLearnV2Workflow {
     }
 
     public List<SearchResult> search(String query, String knowledgeBaseId, String materialId) {
+        return search(query, knowledgeBaseId, materialId, Retriever.RetrievalRequest.DEFAULT_LIMIT);
+    }
+
+    public List<SearchResult> search(String query, String knowledgeBaseId, String materialId, Integer limit) {
         var scope = requireSearchScope(knowledgeBaseId, materialId);
-        return retriever.search(new Retriever.RetrievalRequest(query, scope.knowledgeBaseId(), scope.materialId()));
+        var effectiveLimit = limit == null ? Retriever.RetrievalRequest.DEFAULT_LIMIT : limit;
+        return retriever.search(new Retriever.RetrievalRequest(
+            query,
+            scope.knowledgeBaseId(),
+            scope.materialId(),
+            effectiveLimit
+        ));
     }
 
     public RagAnswer ask(String question, String knowledgeBaseId, String materialId) {

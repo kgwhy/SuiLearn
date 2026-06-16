@@ -21,8 +21,9 @@ public class SearchController {
     List<SearchResult> search(
         @RequestParam("q") String query,
         @RequestParam(required = false) String knowledgeBaseId,
-        @RequestParam(required = false) String materialId
+        @RequestParam(required = false) String materialId,
+        @RequestParam(required = false) Integer limit
     ) {
-        return searchService.search(query, knowledgeBaseId, materialId);
+        return searchService.search(query, knowledgeBaseId, materialId, limit);
     }
 }

@@ -15,7 +15,15 @@ data class GeneratedQuestionDraft(
     val knowledgeBaseId: String,
     val generationTaskId: String?,
     val status: String,
+    val questionType: String,
+    val categoryId: String,
+    val categoryName: String,
+    val knowledgePointIds: List<String>,
     val stem: String,
+    val options: List<String>,
+    val answer: List<String>,
+    val explanation: String,
+    val savedQuestionId: String?,
 )
 
 data class TaskStatus(

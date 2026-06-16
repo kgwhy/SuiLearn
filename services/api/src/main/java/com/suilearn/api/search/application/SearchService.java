@@ -21,8 +21,18 @@ public class SearchService {
     }
 
     public List<SearchResult> search(String query, String knowledgeBaseId, String materialId) {
+        return search(query, knowledgeBaseId, materialId, Retriever.RetrievalRequest.DEFAULT_LIMIT);
+    }
+
+    public List<SearchResult> search(String query, String knowledgeBaseId, String materialId, Integer limit) {
         var scope = requireSearchScope(knowledgeBaseId, materialId);
-        return retriever.search(new Retriever.RetrievalRequest(query, scope.knowledgeBaseId(), scope.materialId()));
+        var effectiveLimit = limit == null ? Retriever.RetrievalRequest.DEFAULT_LIMIT : limit;
+        return retriever.search(new Retriever.RetrievalRequest(
+            query,
+            scope.knowledgeBaseId(),
+            scope.materialId(),
+            effectiveLimit
+        ));
     }
 
     private SearchScope requireSearchScope(String knowledgeBaseId, String materialId) {

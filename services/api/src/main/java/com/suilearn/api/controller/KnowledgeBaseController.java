@@ -3,11 +3,13 @@ package com.suilearn.api.controller;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
+import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
 import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
 import com.suilearn.api.material.application.MaterialImportService;
 import com.suilearn.api.material.application.MaterialQueryService;
+import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
 import com.suilearn.api.model.KnowledgeBase;
@@ -92,6 +94,14 @@ public class KnowledgeBaseController {
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/statistics")
     KnowledgeBaseStatistics getStatistics(@PathVariable String knowledgeBaseId) {
         return knowledgeBaseService.getStatistics(knowledgeBaseId);
+    }
+
+    @PostMapping("/knowledge-bases/{knowledgeBaseId}/answers")
+    AnswerRecord submitAnswer(
+        @PathVariable String knowledgeBaseId,
+        @Valid @RequestBody SubmitAnswerRequest request
+    ) {
+        return knowledgeBaseService.submitAnswer(knowledgeBaseId, request);
     }
 
     @GetMapping("/knowledge-bases/{knowledgeBaseId}/materials")

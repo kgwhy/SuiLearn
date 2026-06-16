@@ -12,7 +12,20 @@ public interface Retriever {
     record RetrievalRequest(
         String query,
         String knowledgeBaseId,
-        String materialId
+        String materialId,
+        int limit
     ) {
+        public static final int DEFAULT_LIMIT = 10;
+        public static final int MAX_LIMIT = 50;
+
+        public RetrievalRequest(String query, String knowledgeBaseId, String materialId) {
+            this(query, knowledgeBaseId, materialId, DEFAULT_LIMIT);
+        }
+
+        public RetrievalRequest {
+            if (limit < 1 || limit > MAX_LIMIT) {
+                throw new IllegalArgumentException("Search limit must be between 1 and " + MAX_LIMIT);
+            }
+        }
     }
 }

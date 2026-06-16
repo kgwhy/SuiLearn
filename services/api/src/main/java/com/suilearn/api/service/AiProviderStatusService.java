@@ -40,7 +40,7 @@ public class AiProviderStatusService {
         return new AiProviderStatus(
             AiProviderType.OPENAI_COMPATIBLE,
             configured,
-            false,
+            configured,
             emptyToNull(properties.baseUrl()),
             emptyToNull(properties.chatModel()),
             emptyToNull(properties.embeddingModel()),
@@ -49,7 +49,7 @@ public class AiProviderStatusService {
             properties.timeoutMs(),
             properties.maxRetries(),
             configured
-                ? "OpenAI-compatible adapter is configured, but HTTP calls are not enabled in this MVP"
+                ? "OpenAI-compatible adapter is configured and available for HTTP generation"
                 : "OpenAI-compatible provider is missing baseUrl, apiKey, chatModel, or embeddingModel"
         );
     }

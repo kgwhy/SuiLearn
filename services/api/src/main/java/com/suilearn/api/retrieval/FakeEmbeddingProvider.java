@@ -1,9 +1,11 @@
 package com.suilearn.api.retrieval;
 
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 @Component
+@ConditionalOnProperty(prefix = "suilearn.ai", name = "provider", havingValue = "fake", matchIfMissing = true)
 public class FakeEmbeddingProvider implements EmbeddingProvider {
     @Override
     public Embedding embed(String input) {

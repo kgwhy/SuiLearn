@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.AiNoteType;
 import com.suilearn.api.model.AiProviderType;
+import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
@@ -25,6 +26,7 @@ import com.suilearn.api.model.TaskResultRef;
 import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.persistence.entity.AiNoteDraftEntity;
 import com.suilearn.api.persistence.entity.AiNoteEntity;
+import com.suilearn.api.persistence.entity.AnswerRecordEntity;
 import com.suilearn.api.persistence.entity.GeneratedContentEntity;
 import com.suilearn.api.persistence.entity.KnowledgeBaseEntity;
 import com.suilearn.api.persistence.entity.KnowledgePointEntity;
@@ -34,6 +36,7 @@ import com.suilearn.api.persistence.entity.QuestionEntity;
 import com.suilearn.api.persistence.entity.TaskStatusEntity;
 import com.suilearn.api.persistence.repository.AiNoteDraftJpaRepository;
 import com.suilearn.api.persistence.repository.AiNoteJpaRepository;
+import com.suilearn.api.persistence.repository.AnswerRecordJpaRepository;
 import com.suilearn.api.persistence.repository.GeneratedContentJpaRepository;
 import com.suilearn.api.persistence.repository.KnowledgeBaseJpaRepository;
 import com.suilearn.api.persistence.repository.KnowledgePointJpaRepository;
@@ -63,6 +66,7 @@ public class SuiLearnV2Store {
     private final QuestionJpaRepository questions;
     private final AiNoteDraftJpaRepository aiNoteDrafts;
     private final AiNoteJpaRepository aiNotes;
+    private final AnswerRecordJpaRepository answerRecords;
     private final TaskStatusJpaRepository tasks;
     private final ObjectMapper objectMapper;
 
@@ -75,6 +79,7 @@ public class SuiLearnV2Store {
         QuestionJpaRepository questions,
         AiNoteDraftJpaRepository aiNoteDrafts,
         AiNoteJpaRepository aiNotes,
+        AnswerRecordJpaRepository answerRecords,
         TaskStatusJpaRepository tasks,
         ObjectMapper objectMapper
     ) {
@@ -86,6 +91,7 @@ public class SuiLearnV2Store {
         this.questions = questions;
         this.aiNoteDrafts = aiNoteDrafts;
         this.aiNotes = aiNotes;
+        this.answerRecords = answerRecords;
         this.tasks = tasks;
         this.objectMapper = objectMapper;
     }
@@ -122,6 +128,7 @@ public class SuiLearnV2Store {
         questions.deleteByKnowledgeBaseId(knowledgeBaseId);
         aiNoteDrafts.deleteByKnowledgeBaseId(knowledgeBaseId);
         aiNotes.deleteByKnowledgeBaseId(knowledgeBaseId);
+        answerRecords.deleteByKnowledgeBaseId(knowledgeBaseId);
         tasks.deleteByKnowledgeBaseId(knowledgeBaseId);
         knowledgeBases.deleteById(knowledgeBaseId);
     }
@@ -297,6 +304,26 @@ public class SuiLearnV2Store {
         )));
     }
 
+    public List<AnswerRecord> listAnswerRecords(String knowledgeBaseId) {
+        return answerRecords.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
+    }
+
+    public List<AnswerRecord> listAnswerRecordsByQuestion(String questionId) {
+        return answerRecords.findByQuestionId(questionId).stream().map(this::toModel).toList();
+    }
+
+    public AnswerRecord saveAnswerRecord(AnswerRecord answerRecord) {
+        return toModel(answerRecords.save(new AnswerRecordEntity(
+            answerRecord.id(),
+            answerRecord.knowledgeBaseId(),
+            answerRecord.questionId(),
+            write(answerRecord.userAnswer()),
+            answerRecord.correct(),
+            answerRecord.durationMs(),
+            answerRecord.answeredAt()
+        )));
+    }
+
     public List<AiNoteDraft> listAiNoteDrafts(String knowledgeBaseId) {
         return aiNoteDrafts.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
@@ -378,6 +405,7 @@ public class SuiLearnV2Store {
         questions.deleteAll();
         aiNoteDrafts.deleteAll();
         aiNotes.deleteAll();
+        answerRecords.deleteAll();
         tasks.deleteAll();
         knowledgeBases.deleteAll();
     }
@@ -467,6 +495,18 @@ public class SuiLearnV2Store {
             read(entity.getSourceRefsJson(), SOURCE_REFS),
             entity.getCreatedAt(),
             entity.getSavedAt()
+        );
+    }
+
+    private AnswerRecord toModel(AnswerRecordEntity entity) {
+        return new AnswerRecord(
+            entity.getId(),
+            entity.getKnowledgeBaseId(),
+            entity.getQuestionId(),
+            read(entity.getUserAnswerJson(), STRINGS),
+            entity.isCorrect(),
+            entity.getDurationMs(),
+            entity.getAnsweredAt()
         );
     }
 

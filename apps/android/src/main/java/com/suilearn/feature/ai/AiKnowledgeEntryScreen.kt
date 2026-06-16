@@ -109,7 +109,7 @@ private fun AiKnowledgeHero() {
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
                 Text(
-                    text = "第二版只查看远程状态和待确认结果；本地刷题始终可用。",
+                    text = "第二版可确认远程生成题，并把已保存内容沉淀到本地刷题闭环。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
@@ -189,7 +189,7 @@ private fun GeneratedContentsSection(
 ) {
     AppSectionCard(
         title = "生成题确认",
-        subtitle = "只确认后端状态，不写入本地 Room 正式题库。",
+        subtitle = "保存后会写入本地 Room，复用刷题、搜索、错题和收藏闭环。",
     ) {
         when {
             uiState.isLoading -> LoadingState()

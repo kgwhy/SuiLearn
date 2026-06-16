@@ -9,10 +9,12 @@ import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.AiNoteDraft;
+import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
 import com.suilearn.api.model.GeneratedContentStatus;
@@ -196,8 +198,16 @@ public class SuiLearnV2Service {
         return workflow.getStatistics(knowledgeBaseId);
     }
 
+    public AnswerRecord submitAnswer(String knowledgeBaseId, SubmitAnswerRequest request) {
+        return workflow.submitAnswer(knowledgeBaseId, request);
+    }
+
     public List<SearchResult> search(String query, String knowledgeBaseId, String materialId) {
         return workflow.search(query, knowledgeBaseId, materialId);
+    }
+
+    public List<SearchResult> search(String query, String knowledgeBaseId, String materialId, Integer limit) {
+        return workflow.search(query, knowledgeBaseId, materialId, limit);
     }
 
     public RagAnswer ask(String question, String knowledgeBaseId, String materialId) {

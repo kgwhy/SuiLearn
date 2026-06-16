@@ -5,15 +5,15 @@
 | 文档版本 | v2.4 |
 | 维护角色 | 产品 Agent |
 | 文档定位 | 当前已确认产品规格，作为产品真相源；不是历史需求库 |
-| 文档架构 | AI First：当前规格 + Approved Proposal + Git 历史 + 轻量 Spec Key |
+| 文档架构 | AI First：当前规格 + OpenSpec Change + Git 历史 + 轻量 Spec Key |
 | 模板来源 | `$to-prd` PRD Template，本文件已收敛为 Current Spec 形态 |
 | 主要依据 | 产品灵感讨论材料 + 用户明确要求第一版按最终交付范围呈现 + 用户明确要求第二版覆盖 AI / RAG + 用户明确要求修正首页启动体验 + 用户明确要求对齐 AI First 文档架构 + 用户明确要求刷题时支持返回上一题 |
 
 ## 使用规则
 
 - 本文只记录当前已确认、可作为实现依据的产品规格。
-- 未进入 `Approved` 状态的 `docs/proposals/*.md` 不得作为实现依据写入本文。
-- 已实现的 Proposal 需要把稳定结论合并回本文，再将 Proposal 标记为 `Implemented` 或留下未完成项。
+- 未通过 Approval Gate 的 `openspec/changes/<change-name>/**` 不得作为实现依据写入本文。
+- 已实现的 OpenSpec Change 需要把稳定结论合并回本文，再完成验证与归档记录。
 - 本文不维护多份版本 PRD，不堆叠全量需求 ID；历史版本通过 Git commit 和 `git diff` 追溯。
 - 轻量 `Spec Key` 只用于跨模块、高风险、测试或审查需要稳定引用的能力。
 
@@ -222,8 +222,8 @@
 ## 产品决策
 
 - 当前文档是当前已确认产品规格，作为产品真相源。
-- SuiLearn 采用 AI First 文档架构：当前规格 + Approved Proposal + Git 历史 + 轻量 Spec Key。
-- 后续产品变更先写 Proposal；Proposal 进入 `Approved` 后可作为实现依据；实现完成后把稳定结论合并回当前规格。
+- SuiLearn 采用 AI First 文档架构：当前规格 + OpenSpec Change + Git 历史 + 轻量 Spec Key。
+- 后续产品变更先进入 `openspec/changes/<change-name>/**`；通过 Approval Gate 后可作为实现依据；实现完成后把稳定结论合并回当前规格。
 - 不维护多份完整版本 PRD，不默认建立全量需求 ID；本文不承担历史需求库职责。
 - 只有跨模块、高风险、测试或审查需要稳定引用的能力，才使用轻量 Spec Key。
 - 当前保留的 Spec Key 包括：`SPEC-HOME-PACK-HEADER`、`SPEC-AI-CONTENT-GATE`、`SPEC-KB-BOUNDARY`、`SPEC-RAG-TRACEABILITY`、`SPEC-OFFLINE-CORE`。

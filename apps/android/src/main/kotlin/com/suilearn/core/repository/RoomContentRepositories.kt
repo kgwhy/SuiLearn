@@ -41,6 +41,14 @@ class RoomStudyPackRepository(
     override suspend fun replaceKnowledgePoints(items: List<KnowledgePoint>) {
         studyPackDao.upsertKnowledgePoints(items.map { it.toEntity() })
     }
+
+    override suspend fun upsertCategory(item: Category) {
+        studyPackDao.upsertCategories(listOf(item.toEntity()))
+    }
+
+    override suspend fun upsertKnowledgePoint(item: KnowledgePoint) {
+        studyPackDao.upsertKnowledgePoints(listOf(item.toEntity()))
+    }
 }
 
 class RoomQuestionRepository(
@@ -95,6 +103,46 @@ class RoomQuestionRepository(
                         knowledgePointId = it,
                     )
                 }
+            }
+        )
+    }
+
+    override suspend fun upsertQuestion(question: Question) {
+        questionDao.upsertQuestions(
+            listOf(
+                QuestionEntity(
+                    questionId = question.questionId,
+                    packId = question.packId,
+                    categoryId = question.categoryId,
+                    type = question.type.name,
+                    stem = question.stem,
+                    answer = encodeStringListAsJson(question.answer),
+                    explanation = question.explanation,
+                    difficulty = question.difficulty,
+                    isDeprecated = question.isDeprecated,
+                    sortOrder = question.sortOrder,
+                )
+            )
+        )
+        questionDao.deleteOptions(listOf(question.questionId))
+        questionDao.deleteKnowledgePointRefs(listOf(question.questionId))
+        questionDao.upsertOptions(
+            question.options.mapIndexed { index, option ->
+                QuestionOptionEntity(
+                    optionId = "${question.questionId}_option_${index + 1}",
+                    questionId = question.questionId,
+                    optionKey = option.optionKey,
+                    content = option.content,
+                    sortOrder = index + 1,
+                )
+            }
+        )
+        questionDao.upsertKnowledgePointRefs(
+            question.knowledgePointIds.map {
+                QuestionKnowledgePointEntity(
+                    questionId = question.questionId,
+                    knowledgePointId = it,
+                )
             }
         )
     }

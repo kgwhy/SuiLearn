@@ -21,6 +21,7 @@ import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
+import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.generation.application.GeneratedContentService;
 import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
@@ -47,6 +48,7 @@ import com.suilearn.api.pack.application.LearningPackService;
 import com.suilearn.api.retrieval.FakeEmbeddingProvider;
 import com.suilearn.api.retrieval.KeywordRetriever;
 import com.suilearn.api.retrieval.Retriever;
+import com.suilearn.api.search.application.SearchService;
 import com.suilearn.api.service.internal.SuiLearnV2Workflow;
 import com.suilearn.api.source.application.SourceService;
 import com.suilearn.api.task.application.TaskExecutor;
@@ -92,6 +94,9 @@ class SuiLearnV2ServiceTest {
 
     @Autowired
     private LearningPackService learningPackService;
+
+    @Autowired
+    private SearchService searchService;
 
     @SpyBean
     private SuiLearnV2Store store;
@@ -260,6 +265,42 @@ class SuiLearnV2ServiceTest {
         assertThatThrownBy(() -> service.ask("HashMap collision", null, null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("scope");
+    }
+
+    @Test
+    void searchHonorsContractLimitAndRejectsInvalidBounds() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            """
+                HashMap buckets 01
+                HashMap collision 02
+                HashMap treeify 03
+                HashMap resizing 04
+                HashMap load factor 05
+                HashMap table 06
+                HashMap hash spread 07
+                HashMap linked list 08
+                HashMap red black tree 09
+                HashMap null key 10
+                HashMap iterator 11
+                HashMap fail fast 12
+                """
+        ));
+
+        assertThat(service.search("HashMap", kb.id(), null, 2)).hasSize(2);
+        assertThat(service.search("HashMap", kb.id(), null, null)).hasSize(10);
+        assertThat(service.search("HashMap", kb.id(), null, 1)).hasSize(1);
+        assertThat(service.search("HashMap", kb.id(), null, 50)).hasSize(12);
+        assertThat(searchService.search("HashMap", kb.id(), null, 2)).hasSize(2);
+        assertThatThrownBy(() -> service.search("HashMap", kb.id(), null, 0))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("between 1 and 50");
+        assertThatThrownBy(() -> service.search("HashMap", kb.id(), null, 51))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("between 1 and 50");
     }
 
     @Test
@@ -873,7 +914,10 @@ class SuiLearnV2ServiceTest {
         ));
         var point = service.extractKnowledgePoints(material.id()).knowledgePoints().get(0);
         var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
-        service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, List.of(point.id())));
+        var draft = service.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, List.of(point.id())));
+        var saved = service.reviewGeneratedContent(draft.id(), saveRequest(null, null, null));
+        service.submitAnswer(kb.id(), new SubmitAnswerRequest(saved.savedQuestionId(), List.of("A"), false, 1200));
+        service.submitAnswer(kb.id(), new SubmitAnswerRequest(saved.savedQuestionId(), List.of("A"), true, 900));
         service.saveAiNote(new SaveAiNoteRequest(
             null,
             kb.id(),
@@ -888,10 +932,18 @@ class SuiLearnV2ServiceTest {
         assertThat(statistics.materialCount()).isEqualTo(1);
         assertThat(statistics.readyMaterialCount()).isEqualTo(1);
         assertThat(statistics.knowledgePointCount()).isGreaterThanOrEqualTo(1);
-        assertThat(statistics.pendingGeneratedContentCount()).isEqualTo(1);
+        assertThat(statistics.pendingGeneratedContentCount()).isZero();
         assertThat(statistics.savedAiNoteCount()).isEqualTo(1);
-        assertThat(statistics.answerCount()).isZero();
-        assertThat(statistics.correctRate()).isNull();
+        assertThat(statistics.answeredQuestionCount()).isEqualTo(1);
+        assertThat(statistics.answerCount()).isEqualTo(2);
+        assertThat(statistics.wrongQuestionCount()).isEqualTo(1);
+        assertThat(statistics.correctRate()).isEqualTo(0.5);
+        assertThat(statistics.weakKnowledgePointIds()).contains(point.id());
+        assertThat(service.listQuestions(kb.id())).singleElement()
+            .satisfies(question -> {
+                assertThat(question.answeredCount()).isEqualTo(2);
+                assertThat(question.correctRate()).isEqualTo(0.5);
+            });
     }
 
     @Test
@@ -939,6 +991,22 @@ class SuiLearnV2ServiceTest {
         assertThat(json.has("score")).isTrue();
         assertThat(json.path("score").isNumber()).isTrue();
         assertThat(json.path("score").asDouble()).isEqualTo(result.score());
+    }
+
+    @Test
+    void unrelatedFakeEmbeddingDoesNotCreateRagEvidenceWithoutKeywordMatch() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap buckets collision"
+        ));
+
+        var answer = service.ask("Redis persistence", kb.id(), null);
+
+        assertThat(answer.uncertain()).isTrue();
+        assertThat(answer.evidenceChunks()).isEmpty();
     }
 
     private static GenerateQuestionRequest generateQuestionRequest(

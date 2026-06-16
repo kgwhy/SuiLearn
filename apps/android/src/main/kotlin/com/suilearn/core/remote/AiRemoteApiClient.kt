@@ -98,7 +98,15 @@ class AiRemoteApiClient(
                 knowledgeBaseId = root.requiredString("knowledgeBaseId"),
                 generationTaskId = root.optionalString("generationTaskId"),
                 status = root.requiredString("status"),
+                questionType = root.requiredString("questionType"),
+                categoryId = root.requiredString("categoryId"),
+                categoryName = root.requiredString("categoryName"),
+                knowledgePointIds = root.optionalStringList("knowledgePointIds"),
                 stem = root.requiredString("stem"),
+                options = root.optionalStringList("options"),
+                answer = root.optionalStringList("answer"),
+                explanation = root.requiredString("explanation"),
+                savedQuestionId = root.optionalString("savedQuestionId"),
             )
     }
 }
@@ -271,6 +279,9 @@ private fun Map<String, Any?>.requiredBoolean(key: String): Boolean =
     this[key] as? Boolean ?: throw IllegalArgumentException("Expected boolean for key '$key'.")
 
 private fun Map<String, Any?>.optionalString(key: String): String? = this[key] as? String
+
+private fun Map<String, Any?>.optionalStringList(key: String): List<String> =
+    (this[key] as? List<*>)?.mapNotNull { it as? String }.orEmpty()
 
 private fun Map<String, Any?>.optionalInt(key: String): Int? = when (val value = this[key]) {
     null -> null

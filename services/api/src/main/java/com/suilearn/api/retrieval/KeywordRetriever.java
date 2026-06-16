@@ -10,6 +10,7 @@ import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
 import com.suilearn.api.persistence.SuiLearnV2Store;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
@@ -30,7 +31,7 @@ public class KeywordRetriever implements Retriever {
         if (normalizedQuery.isBlank()) {
             return List.of();
         }
-        embeddingProvider.embed(request.query());
+        var queryEmbedding = embeddingProvider.embed(request.query()).values();
         var results = new ArrayList<SearchResult>();
         store.listKnowledgePoints().stream()
             .filter(point -> matchesScope(point.knowledgeBaseId(), request.knowledgeBaseId()))
@@ -43,7 +44,7 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.KNOWLEDGE_POINT,
                 point.name(),
                 point.description(),
-                1.0,
+                keywordScore(point.name() + " " + point.description(), normalizedQuery),
                 point.knowledgeBaseId(),
                 List.of(point.id()),
                 point.sourceRefs()
@@ -57,13 +58,13 @@ public class KeywordRetriever implements Retriever {
                     && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId())
                     && (request.materialId() == null || request.materialId().equals(material.id()));
             })
-            .filter(chunk -> contains(chunk.content(), normalizedQuery))
+            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuery) || semanticScore(queryEmbedding, chunk) > 0.0)
             .forEach(chunk -> store.findMaterial(chunk.materialId()).ifPresent(material -> results.add(new SearchResult(
                 chunk.id(),
                 SearchResultType.MATERIAL_CHUNK,
                 material.title(),
                 truncate(chunk.content()),
-                1.0,
+                combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk),
                 material.knowledgeBaseId(),
                 List.of(),
                 List.of(chunk.sourceRef())
@@ -77,7 +78,7 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.QUESTION,
                 question.stem(),
                 question.stem(),
-                1.0,
+                keywordScore(question.stem(), normalizedQuery),
                 question.knowledgeBaseId(),
                 question.knowledgePointIds(),
                 question.sourceRefs()
@@ -92,12 +93,15 @@ public class KeywordRetriever implements Retriever {
                 SearchResultType.GENERATED_CONTENT,
                 content.stem(),
                 content.explanation(),
-                1.0,
+                keywordScore(content.stem() + " " + content.explanation(), normalizedQuery),
                 content.knowledgeBaseId(),
                 List.of(),
                 content.sourceRefs()
             )));
-        return results;
+        return results.stream()
+            .sorted(Comparator.comparing(SearchResult::score).reversed())
+            .limit(request.limit())
+            .toList();
     }
 
     @Override
@@ -106,7 +110,7 @@ public class KeywordRetriever implements Retriever {
         if (normalizedQuery.isBlank()) {
             return List.of();
         }
-        embeddingProvider.embed(request.query());
+        var queryEmbedding = embeddingProvider.embed(request.query()).values();
         return store.listChunks().stream()
             .filter(chunk -> chunk.embeddingStatus() == EmbeddingStatus.READY)
             .filter(chunk -> request.materialId() == null || chunk.materialId().equals(request.materialId()))
@@ -116,7 +120,13 @@ public class KeywordRetriever implements Retriever {
                     && material.status() != MaterialStatus.DELETED
                     && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId());
             })
-            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuery))
+            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuery) || semanticScore(queryEmbedding, chunk) > 0.0)
+            .sorted(Comparator.comparing((MaterialChunk chunk) -> combinedScore(
+                chunk.content(),
+                normalizedQuery,
+                queryEmbedding,
+                chunk
+            )).reversed())
             .limit(limit)
             .toList();
     }
@@ -155,6 +165,67 @@ public class KeywordRetriever implements Retriever {
 
     private boolean matchesScope(String valueKnowledgeBaseId, String requestedKnowledgeBaseId) {
         return requestedKnowledgeBaseId == null || requestedKnowledgeBaseId.isBlank() || valueKnowledgeBaseId.equals(requestedKnowledgeBaseId);
+    }
+
+    private double combinedScore(String content, String normalizedQuery, List<Double> queryEmbedding, MaterialChunk chunk) {
+        return clamp(Math.max(keywordScore(content, normalizedQuery), semanticScore(queryEmbedding, chunk)));
+    }
+
+    private double semanticScore(List<Double> queryEmbedding, MaterialChunk chunk) {
+        if (chunk.embeddingModel() == null || "fake-embedding-v1".equals(chunk.embeddingModel())) {
+            return 0.0;
+        }
+        var score = cosine(queryEmbedding, chunk.embedding());
+        return score < 0.35 ? 0.0 : score;
+    }
+
+    private double keywordScore(String content, String normalizedQuery) {
+        if (content == null || normalizedQuery == null || normalizedQuery.isBlank()) {
+            return 0.0;
+        }
+        var normalizedContent = normalize(content);
+        if (normalizedContent.contains(normalizedQuery)) {
+            return 1.0;
+        }
+        var hits = 0;
+        var total = 0;
+        for (var keyword : normalizedQuery.split("\\s+")) {
+            if (!keyword.isBlank()) {
+                total++;
+                if (normalizedContent.contains(keyword)) {
+                    hits++;
+                }
+            }
+        }
+        return total == 0 ? 0.0 : (double) hits / (double) total;
+    }
+
+    private double cosine(List<Double> left, List<Double> right) {
+        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
+            return 0.0;
+        }
+        var size = Math.min(left.size(), right.size());
+        var dot = 0.0;
+        var leftNorm = 0.0;
+        var rightNorm = 0.0;
+        for (var index = 0; index < size; index++) {
+            var leftValue = left.get(index);
+            var rightValue = right.get(index);
+            dot += leftValue * rightValue;
+            leftNorm += leftValue * leftValue;
+            rightNorm += rightValue * rightValue;
+        }
+        if (leftNorm == 0.0 || rightNorm == 0.0) {
+            return 0.0;
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+    }
+
+    private double clamp(double score) {
+        if (Double.isNaN(score) || score < 0.0) {
+            return 0.0;
+        }
+        return Math.min(score, 1.0);
     }
 
     private String normalize(String value) {

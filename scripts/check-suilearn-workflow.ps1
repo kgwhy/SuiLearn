@@ -1,5 +1,6 @@
 param(
-    [string]$BaseRef = ""
+    [string]$BaseRef = "",
+    [string]$ClosingChange = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +48,65 @@ function Test-ActiveChangeExists {
         }
     }
     return $false
+}
+
+function Add-ClosingChangeIssue {
+    param([string]$Message)
+    $script:changed += "Closing change check failed: $Message"
+}
+
+function Test-ClosingChange {
+    param([string]$ChangeName)
+
+    if ([string]::IsNullOrWhiteSpace($ChangeName)) {
+        return
+    }
+
+    $changeRoot = Join-Path "openspec/changes" $ChangeName
+    if (-not (Test-Path $changeRoot)) {
+        Add-ClosingChangeIssue "openspec/changes/$ChangeName does not exist."
+        return
+    }
+
+    $tasks = Join-Path $changeRoot "tasks.md"
+    $verification = Join-Path $changeRoot "verification.md"
+    $archive = Join-Path $changeRoot "archive.md"
+
+    foreach ($required in @($tasks, $verification, $archive)) {
+        if (-not (Test-Path $required)) {
+            Add-ClosingChangeIssue "$required is required before closing a change."
+        }
+    }
+
+    if (Test-Path $verification) {
+        $verificationText = Get-Content -Raw -Encoding UTF8 $verification
+        if ($verificationText -notmatch "(?m)^Status:\s*passed\.?\s*$" -and $verificationText -notmatch "(?m)^\u72b6\u6001\uff1a\s*\u5df2\u901a\u8fc7\u3002?\s*$") {
+            Add-ClosingChangeIssue "verification.md must contain 'Status: passed.' or the Chinese equivalent before completion."
+        }
+        if ($verificationText -match "(?i)\bIn progress\b|Status:\s*open") {
+            Add-ClosingChangeIssue "verification.md still contains an open or in-progress closeout state."
+        }
+    }
+
+    if (Test-Path $archive) {
+        $archiveText = Get-Content -Raw -Encoding UTF8 $archive
+        if ($archiveText -match "(?i)Status:\s*open") {
+            Add-ClosingChangeIssue "archive.md still contains 'Status: open'."
+        }
+        if ($archiveText -notmatch "(?im)^Deferred items:\s*(none|.+)" -and $archiveText -notmatch "(?m)^\u5ef6\u671f\u9879\uff1a\s*(\u65e0|.+)") {
+            Add-ClosingChangeIssue "archive.md must record deferred items, even when the value is 'none' or the Chinese equivalent."
+        }
+        if ($archiveText -notmatch "(?i)review" -and $archiveText -notmatch "\u5ba1\u67e5") {
+            Add-ClosingChangeIssue "archive.md must include a final review summary or review disposition."
+        }
+    }
+
+    if (Test-Path $tasks) {
+        $tasksText = Get-Content -Raw -Encoding UTF8 $tasks
+        if ($tasksText -match "(?i)Status:\s*(open|in progress|pending)") {
+            Add-ClosingChangeIssue "tasks.md still contains an open, in-progress, or pending task status."
+        }
+    }
 }
 
 $protectedChanged = @()
@@ -102,6 +162,8 @@ if ($protectedChanged.Count -gt 0 -and -not (Test-ActiveChangeExists)) {
         $changed += "Protected changed path: $path"
     }
 }
+
+Test-ClosingChange $ClosingChange
 
 if ($changed.Count -gt 0) {
     Write-Output "SuiLearn Workflow policy check failed:"

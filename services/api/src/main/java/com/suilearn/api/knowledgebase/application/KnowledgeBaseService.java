@@ -2,6 +2,8 @@ package com.suilearn.api.knowledgebase.application;
 
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
+import com.suilearn.api.dto.SubmitAnswerRequest;
+import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.KnowledgeBase;
 import com.suilearn.api.model.KnowledgeBaseDetail;
@@ -99,9 +101,40 @@ public class KnowledgeBaseService {
         return questions.list(knowledgeBaseId);
     }
 
+    public AnswerRecord submitAnswer(String knowledgeBaseId, SubmitAnswerRequest request) {
+        requireKnowledgeBase(knowledgeBaseId);
+        var question = questions.list(knowledgeBaseId).stream()
+            .filter(candidate -> candidate.id().equals(request.questionId()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Question not found in knowledge base: " + request.questionId()));
+        var record = questions.saveAnswerRecord(new AnswerRecord(
+            newId("answer"),
+            knowledgeBaseId,
+            question.id(),
+            request.userAnswer(),
+            request.correct(),
+            Math.max(0, request.durationMs()),
+            clock.instant()
+        ));
+        refreshQuestionStats(question);
+        return record;
+    }
+
     public KnowledgeBaseStatistics getStatistics(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
-        var questionCount = questions.list(knowledgeBaseId).size();
+        var questionList = questions.list(knowledgeBaseId);
+        var answerRecords = questions.listAnswerRecords(knowledgeBaseId);
+        var questionCount = questionList.size();
+        var answeredQuestionCount = (int) answerRecords.stream().map(AnswerRecord::questionId).distinct().count();
+        var answerCount = answerRecords.size();
+        var correctRate = answerCount == 0
+            ? null
+            : answerRecords.stream().filter(AnswerRecord::correct).count() / (double) answerCount;
+        var wrongQuestionIds = answerRecords.stream()
+            .filter(record -> !record.correct())
+            .map(AnswerRecord::questionId)
+            .distinct()
+            .toList();
         var materials = this.materials.list(knowledgeBaseId).stream()
             .filter(material -> material.status() != MaterialStatus.DELETED)
             .toList();
@@ -116,15 +149,40 @@ public class KnowledgeBaseService {
             knowledgePoints.list(knowledgeBaseId).size(),
             (int) generated.stream().filter(content -> content.status() == GeneratedContentStatus.PENDING_REVIEW).count(),
             aiNotes.listSaved(knowledgeBaseId).size(),
-            0,
-            0,
-            null,
-            0,
-            knowledgePoints.list(knowledgeBaseId).stream()
-                .map(point -> point.id())
+            answeredQuestionCount,
+            answerCount,
+            correctRate,
+            wrongQuestionIds.size(),
+            questionList.stream()
+                .filter(question -> wrongQuestionIds.contains(question.id()))
+                .flatMap(question -> question.knowledgePointIds().stream())
+                .distinct()
                 .limit(3)
                 .toList()
         );
+    }
+
+    private void refreshQuestionStats(QuestionSummary question) {
+        var records = questions.listAnswerRecordsByQuestion(question.id());
+        var answeredCount = records.size();
+        var correctRate = answeredCount == 0
+            ? 0.0
+            : records.stream().filter(AnswerRecord::correct).count() / (double) answeredCount;
+        questions.save(new QuestionSummary(
+            question.id(),
+            question.knowledgeBaseId(),
+            question.questionType(),
+            question.stem(),
+            question.categoryId(),
+            question.categoryName(),
+            question.difficulty(),
+            question.knowledgePointIds(),
+            answeredCount,
+            correctRate,
+            question.sourceRefs(),
+            question.createdAt(),
+            question.savedAt()
+        ));
     }
 
     private KnowledgeBase requireKnowledgeBase(String knowledgeBaseId) {
