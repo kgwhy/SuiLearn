@@ -1,0 +1,42 @@
+# Tasks
+
+## 1. Remove fake/H2 backend baseline
+
+- Status: done
+- Owner: Server Backend Agent + Architect Agent
+- Allowed files:
+  - `openspec/changes/remove-fake-h2-test-tools/**`
+  - `docs/architecture.md`
+  - `docs/tech-selection.md`
+  - `services/api/pom.xml`
+  - `services/api/config/local.properties.example`
+  - `services/api/src/main/resources/application.properties`
+  - `services/api/src/main/java/com/suilearn/api/ai/FakeAiProvider.java`
+  - `services/api/src/main/java/com/suilearn/api/retrieval/FakeEmbeddingProvider.java`
+  - `services/api/src/main/java/com/suilearn/api/config/AppConfig.java`
+  - `services/api/src/main/java/com/suilearn/api/config/SuiLearnAiProperties.java`
+  - `services/api/src/main/java/com/suilearn/api/model/AiProviderType.java`
+  - `services/api/src/main/java/com/suilearn/api/service/AiProviderStatusService.java`
+  - `services/api/src/main/java/com/suilearn/api/retrieval/KeywordRetriever.java`
+  - `services/api/src/main/java/com/suilearn/api/generation/application/GeneratedContentService.java`
+  - `services/api/src/main/java/com/suilearn/api/service/internal/SuiLearnV2Workflow.java`
+  - `services/api/src/test/java/com/suilearn/api/persistence/PostgresLargeObjectTextMigrationTest.java`
+  - `services/api/src/test/java/com/suilearn/api/service/AiProviderStatusServiceTest.java`
+  - `services/api/src/test/java/com/suilearn/api/service/SuiLearnV2ServiceTest.java`
+- Forbidden files:
+  - `apps/android/**`
+  - `apps/web/**`
+  - `contracts/**`
+  - `docs/product-requirements.md`
+  - `docs/proposals/**`
+  - `docs/superpowers/**`
+- Baseline:
+  - `passed`: `mvn -f services/api/pom.xml test -q`
+- Verification:
+  - `mvn -f services/api/pom.xml test-compile -q`
+  - `mvn -f services/api/pom.xml test -q` when PostgreSQL is available
+- Review focus:
+  - No production fake AI/embedding beans remain.
+  - No H2 dependency or H2 datasource default remains.
+  - Tests do not import production fake providers.
+  - Missing real provider config is surfaced clearly.

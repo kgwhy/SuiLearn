@@ -221,7 +221,8 @@ textarea[aria-invalid="true"] {
 .tab-button:hover,
 .kb-item:hover,
 .action-row > button:hover,
-.row-actions button:hover {
+.row-actions button:hover,
+.knowledge-point-chip:hover {
   background: #edf5f3;
   border-color: #c3d8d2;
 }
@@ -554,7 +555,8 @@ textarea[aria-invalid="true"] {
   gap: 8px;
 }
 
-.tag-cloud span {
+.tag-cloud span,
+.knowledge-point-chip {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 9px;
@@ -562,6 +564,49 @@ textarea[aria-invalid="true"] {
   color: var(--muted);
   font-size: 13px;
   font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-point-chip {
+  min-height: 34px;
+  text-align: left;
+}
+
+.knowledge-point-chip.active {
+  color: var(--primary-strong);
+  background: #e6f2ef;
+  border-color: #9fc7bb;
+}
+
+.knowledge-point-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.detail-heading h4 {
+  margin: 0;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-point-detail p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .detail-box,

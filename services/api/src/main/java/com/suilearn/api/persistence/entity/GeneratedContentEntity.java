@@ -1,8 +1,8 @@
 package com.suilearn.api.persistence.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -14,22 +14,22 @@ public class GeneratedContentEntity {
     private String knowledgeBaseId;
     private String generationTaskId;
     private String status;
-    @Lob
+    @Column(columnDefinition = "text")
     private String sourceRefsJson;
     private String sourceType;
     private String sourceId;
     private String questionType;
     private String categoryId;
     private String categoryName;
-    @Lob
+    @Column(columnDefinition = "text")
     private String knowledgePointIdsJson;
-    @Lob
+    @Column(columnDefinition = "text")
     private String stem;
-    @Lob
+    @Column(columnDefinition = "text")
     private String optionsJson;
-    @Lob
+    @Column(columnDefinition = "text")
     private String answerJson;
-    @Lob
+    @Column(columnDefinition = "text")
     private String explanation;
     private String savedQuestionId;
     private Instant savedAt;

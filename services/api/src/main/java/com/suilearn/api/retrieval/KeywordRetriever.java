@@ -17,6 +17,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class KeywordRetriever implements Retriever {
+    private static final double MIN_SEMANTIC_SCORE = 0.35;
+    private static final double MIN_RETRIEVAL_SCORE = 0.15;
+    private static final int EVIDENCE_OVERFETCH_MULTIPLIER = 4;
+
     private final EmbeddingProvider embeddingProvider;
     private final SuiLearnV2Store store;
 
@@ -58,16 +62,17 @@ public class KeywordRetriever implements Retriever {
                     && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId())
                     && (request.materialId() == null || request.materialId().equals(material.id()));
             })
-            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuery) || semanticScore(queryEmbedding, chunk) > 0.0)
-            .forEach(chunk -> store.findMaterial(chunk.materialId()).ifPresent(material -> results.add(new SearchResult(
-                chunk.id(),
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding))
+            .filter(scored -> scored.score() >= MIN_RETRIEVAL_SCORE)
+            .forEach(scored -> store.findMaterial(scored.chunk().materialId()).ifPresent(material -> results.add(new SearchResult(
+                scored.chunk().id(),
                 SearchResultType.MATERIAL_CHUNK,
                 material.title(),
-                truncate(chunk.content()),
-                combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk),
+                truncate(scored.chunk().content()),
+                scored.score(),
                 material.knowledgeBaseId(),
                 List.of(),
-                List.of(chunk.sourceRef())
+                List.of(scored.chunk().sourceRef())
             ))));
         store.listQuestions().stream()
             .filter(question -> matchesScope(question.knowledgeBaseId(), request.knowledgeBaseId()))
@@ -120,13 +125,13 @@ public class KeywordRetriever implements Retriever {
                     && material.status() != MaterialStatus.DELETED
                     && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId());
             })
-            .filter(chunk -> containsAnyKeyword(chunk.content(), normalizedQuery) || semanticScore(queryEmbedding, chunk) > 0.0)
-            .sorted(Comparator.comparing((MaterialChunk chunk) -> combinedScore(
-                chunk.content(),
-                normalizedQuery,
-                queryEmbedding,
-                chunk
-            )).reversed())
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding))
+            .filter(scored -> scored.score() >= MIN_RETRIEVAL_SCORE)
+            .sorted(Comparator.comparing(ScoredChunk::score).reversed())
+            .limit((long) limit * EVIDENCE_OVERFETCH_MULTIPLIER)
+            .collect(() -> new DiversifiedEvidence(limit, request.materialId()), DiversifiedEvidence::add, DiversifiedEvidence::addAll)
+            .chunks()
+            .stream()
             .limit(limit)
             .toList();
     }
@@ -150,8 +155,12 @@ public class KeywordRetriever implements Retriever {
             .orElse(false);
     }
 
+    private ScoredChunk scoredChunk(MaterialChunk chunk, String normalizedQuery, List<Double> queryEmbedding) {
+        return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk));
+    }
+
     private boolean containsAnyKeyword(String content, String normalizedQuery) {
-        for (var keyword : normalizedQuery.split("\\s+")) {
+        for (var keyword : keywords(normalizedQuery)) {
             if (!keyword.isBlank() && contains(content, keyword)) {
                 return true;
             }
@@ -168,15 +177,22 @@ public class KeywordRetriever implements Retriever {
     }
 
     private double combinedScore(String content, String normalizedQuery, List<Double> queryEmbedding, MaterialChunk chunk) {
-        return clamp(Math.max(keywordScore(content, normalizedQuery), semanticScore(queryEmbedding, chunk)));
+        var keywordScore = keywordScore(content, normalizedQuery);
+        var semanticScore = semanticScore(queryEmbedding, chunk);
+        if (keywordScore == 0.0 && semanticScore == 0.0) {
+            return 0.0;
+        }
+        var coverageScore = coverageScore(content, normalizedQuery);
+        var compactnessScore = compactnessScore(content);
+        return clamp((semanticScore * 0.55) + (keywordScore * 0.30) + (coverageScore * 0.10) + (compactnessScore * 0.05));
     }
 
     private double semanticScore(List<Double> queryEmbedding, MaterialChunk chunk) {
-        if (chunk.embeddingModel() == null || "fake-embedding-v1".equals(chunk.embeddingModel())) {
+        if (chunk.embeddingModel() == null) {
             return 0.0;
         }
         var score = cosine(queryEmbedding, chunk.embedding());
-        return score < 0.35 ? 0.0 : score;
+        return score < MIN_SEMANTIC_SCORE ? 0.0 : score;
     }
 
     private double keywordScore(String content, String normalizedQuery) {
@@ -189,7 +205,7 @@ public class KeywordRetriever implements Retriever {
         }
         var hits = 0;
         var total = 0;
-        for (var keyword : normalizedQuery.split("\\s+")) {
+        for (var keyword : keywords(normalizedQuery)) {
             if (!keyword.isBlank()) {
                 total++;
                 if (normalizedContent.contains(keyword)) {
@@ -198,6 +214,44 @@ public class KeywordRetriever implements Retriever {
             }
         }
         return total == 0 ? 0.0 : (double) hits / (double) total;
+    }
+
+    private double coverageScore(String content, String normalizedQuery) {
+        if (content == null || normalizedQuery == null || normalizedQuery.isBlank()) {
+            return 0.0;
+        }
+        var normalizedContent = normalize(content);
+        var hits = 0;
+        var total = 0;
+        for (var keyword : keywords(normalizedQuery)) {
+            if (!keyword.isBlank()) {
+                total++;
+                if (normalizedContent.contains(keyword)) {
+                    hits++;
+                }
+            }
+        }
+        return total == 0 ? 0.0 : (double) hits / (double) total;
+    }
+
+    private double compactnessScore(String content) {
+        if (content == null || content.isBlank()) {
+            return 0.0;
+        }
+        var length = content.length();
+        if (length <= 600) {
+            return 1.0;
+        }
+        return Math.max(0.0, 1.0 - ((double) (length - 600) / 1200.0));
+    }
+
+    private List<String> keywords(String normalizedQuery) {
+        if (normalizedQuery == null || normalizedQuery.isBlank()) {
+            return List.of();
+        }
+        return List.of(normalizedQuery.split("[^\\p{L}\\p{N}]+")).stream()
+            .filter(keyword -> !keyword.isBlank())
+            .toList();
     }
 
     private double cosine(List<Double> left, List<Double> right) {
@@ -237,5 +291,52 @@ public class KeywordRetriever implements Retriever {
             return value;
         }
         return value.substring(0, 160);
+    }
+
+    private record ScoredChunk(MaterialChunk chunk, double score) {
+    }
+
+    private static class DiversifiedEvidence {
+        private final int limit;
+        private final boolean strictMaterialScope;
+        private final List<ScoredChunk> selected = new ArrayList<>();
+        private final List<ScoredChunk> deferred = new ArrayList<>();
+
+        private DiversifiedEvidence(int limit, String materialId) {
+            this.limit = limit;
+            this.strictMaterialScope = materialId != null && !materialId.isBlank();
+        }
+
+        private void add(ScoredChunk candidate) {
+            if (selected.size() >= limit) {
+                return;
+            }
+            if (strictMaterialScope || selected.stream().noneMatch(existing -> sameMaterial(existing, candidate))) {
+                selected.add(candidate);
+                return;
+            }
+            deferred.add(candidate);
+        }
+
+        private void addAll(DiversifiedEvidence other) {
+            other.selected.forEach(this::add);
+            other.deferred.forEach(this::add);
+        }
+
+        private List<MaterialChunk> chunks() {
+            if (selected.size() < limit) {
+                for (var candidate : deferred) {
+                    if (selected.size() >= limit) {
+                        break;
+                    }
+                    selected.add(candidate);
+                }
+            }
+            return selected.stream().map(ScoredChunk::chunk).toList();
+        }
+
+        private boolean sameMaterial(ScoredChunk left, ScoredChunk right) {
+            return left.chunk().materialId().equals(right.chunk().materialId());
+        }
     }
 }

@@ -61,6 +61,7 @@ export function App() {
   const [materials, setMaterials] = useState<MaterialMetadata[]>([]);
   const [materialDetail, setMaterialDetail] = useState<MaterialDetail | null>(null);
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
+  const [selectedKnowledgePointId, setSelectedKnowledgePointId] = useState("");
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [drafts, setDrafts] = useState<GeneratedQuestionDraft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState("");
@@ -99,6 +100,7 @@ export function App() {
   const [searchForm, setSearchForm] = useState({ query: "HashMap", question: "HashMap 如何处理哈希冲突？" });
 
   const selectedKnowledgeBase = knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ?? null;
+  const selectedKnowledgePoint = knowledgePoints.find((item) => item.id === selectedKnowledgePointId) ?? null;
   const visibleDrafts = useMemo(
     () => drafts.filter((draft) => contentFilter === "ALL" || draft.status === contentFilter),
     [contentFilter, drafts]
@@ -139,6 +141,12 @@ export function App() {
       setGenerationForm((current) => ({ ...current, sourceId: firstMaterialId }));
     }
   }, [generationForm.sourceId, materials]);
+
+  useEffect(() => {
+    if (selectedKnowledgePointId && !knowledgePoints.some((item) => item.id === selectedKnowledgePointId)) {
+      setSelectedKnowledgePointId("");
+    }
+  }, [knowledgePoints, selectedKnowledgePointId]);
 
   async function run<T>(task: () => Promise<T>, success?: string): Promise<T | null> {
     setLoading(true);
@@ -188,6 +196,7 @@ export function App() {
       setMaterials([]);
       setMaterialDetail(null);
       setKnowledgePoints([]);
+      setSelectedKnowledgePointId("");
       setQuestions([]);
       setDrafts([]);
     } else if (!nextSelectedId || !bases.some((item) => item.id === nextSelectedId)) {
@@ -322,7 +331,7 @@ export function App() {
     );
     if (!material) return;
     setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: material.id }));
-    await loadWorkbench();
+    await extractKnowledgePoints(material.id);
   }
 
   async function openMaterial(materialId: string) {
@@ -333,8 +342,15 @@ export function App() {
   }
 
   async function extractKnowledgePoints(materialId: string) {
-    await run(() => api.extractKnowledgePoints(materialId), "知识点已提取");
+    const extraction = await run(() => api.extractKnowledgePoints(materialId), "知识点已提取");
+    const firstExtracted = extraction?.knowledgePoints[0];
+    if (firstExtracted) setSelectedKnowledgePointId(firstExtracted.id);
     await loadWorkbench();
+  }
+
+  function openKnowledgePoint(knowledgePointId: string) {
+    setSelectedKnowledgePointId(knowledgePointId);
+    setSection("overview");
   }
 
   async function deleteMaterial(materialId: string) {
@@ -633,12 +649,14 @@ export function App() {
             statistics={statistics}
             materials={materials}
             knowledgePoints={knowledgePoints}
+            selectedKnowledgePoint={selectedKnowledgePoint}
             questions={questions}
             drafts={drafts}
             aiProviderStatus={aiProviderStatus}
             aiProviderError={aiProviderError}
             providerLoading={providerLoading}
             loading={loading}
+            openKnowledgePoint={openKnowledgePoint}
             goToMaterials={() => setSection("materials")}
             goToGenerate={() => setSection("generate")}
           />
@@ -653,6 +671,7 @@ export function App() {
             materials={materials}
             materialDetail={materialDetail}
             openMaterial={openMaterial}
+            openKnowledgePoint={openKnowledgePoint}
             extractKnowledgePoints={extractKnowledgePoints}
             deleteMaterial={deleteMaterial}
             taskStatuses={taskStatuses}
@@ -772,12 +791,14 @@ function OverviewPanel({
   statistics,
   materials,
   knowledgePoints,
+  selectedKnowledgePoint,
   questions,
   drafts,
   aiProviderStatus,
   aiProviderError,
   providerLoading,
   loading,
+  openKnowledgePoint,
   goToMaterials,
   goToGenerate
 }: {
@@ -785,12 +806,14 @@ function OverviewPanel({
   statistics: KnowledgeBaseStatistics | null;
   materials: MaterialMetadata[];
   knowledgePoints: KnowledgePoint[];
+  selectedKnowledgePoint: KnowledgePoint | null;
   questions: QuestionSummary[];
   drafts: GeneratedQuestionDraft[];
   aiProviderStatus: AiProviderStatus | null;
   aiProviderError: string;
   providerLoading: boolean;
   loading: boolean;
+  openKnowledgePoint: (id: string) => void;
   goToMaterials: () => void;
   goToGenerate: () => void;
 }) {
@@ -846,7 +869,14 @@ function OverviewPanel({
           <Database size={18} />
         </div>
         <div className="tag-cloud">
-          {knowledgePoints.slice(0, 12).map((item) => <span key={item.id}>{item.name}</span>)}
+          {knowledgePoints.slice(0, 12).map((item) => (
+            <KnowledgePointChip
+              key={item.id}
+              point={item}
+              active={selectedKnowledgePoint?.id === item.id}
+              onOpen={openKnowledgePoint}
+            />
+          ))}
           {!loading && knowledgePoints.length === 0 && (
             <EmptyState
               compact
@@ -858,6 +888,7 @@ function OverviewPanel({
             />
           )}
         </div>
+        {selectedKnowledgePoint && <KnowledgePointDetail point={selectedKnowledgePoint} />}
       </div>
       <div className="panel">
         <div className="panel-heading">
@@ -890,6 +921,7 @@ function MaterialsPanel(props: {
   materials: MaterialMetadata[];
   materialDetail: MaterialDetail | null;
   openMaterial: (id: string) => Promise<void>;
+  openKnowledgePoint: (id: string) => void;
   extractKnowledgePoints: (id: string) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
   taskStatuses: TaskStatusMap;
@@ -1038,7 +1070,9 @@ function MaterialsPanel(props: {
               {(props.materialDetail.chunks ?? []).length === 0 && <EmptyLine label="还没有返回可检索片段" />}
             </div>
             <div className="tag-cloud">
-              {(props.materialDetail.extractedKnowledgePoints ?? []).map((item) => <span key={item.id}>{item.name}</span>)}
+              {(props.materialDetail.extractedKnowledgePoints ?? []).map((item) => (
+                <KnowledgePointChip key={item.id} point={item} onOpen={props.openKnowledgePoint} />
+              ))}
               {(props.materialDetail.extractedKnowledgePoints ?? []).length === 0 && (
                 <EmptyLine label="这份资料还没有提取知识点" />
               )}
@@ -1413,6 +1447,44 @@ function sourceRefForKnowledgePoint(point: KnowledgePoint): SourceRef {
 
 function sourceRefLabel(ref: SourceRef) {
   return ref.deleted ? "来源已删除" : ref.title ?? ref.id;
+}
+
+function KnowledgePointChip({
+  point,
+  active = false,
+  onOpen
+}: {
+  point: KnowledgePoint;
+  active?: boolean;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`knowledge-point-chip${active ? " active" : ""}`}
+      onClick={() => onOpen(point.id)}
+    >
+      {point.name}
+    </button>
+  );
+}
+
+function KnowledgePointDetail({ point }: { point: KnowledgePoint }) {
+  return (
+    <div className="knowledge-point-detail">
+      <div className="detail-heading">
+        <h4>{point.name}</h4>
+        <StatusPill label="知识点" />
+      </div>
+      <p>{point.description || "暂无描述"}</p>
+      <div className="result-meta">
+        {point.sourceMaterialId && <span>资料 {shortId(point.sourceMaterialId)}</span>}
+        {(point.sourceRefs ?? []).slice(0, 3).map((ref) => (
+          <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ProviderStatusCard({

@@ -93,6 +93,7 @@ Review 闭环: <无发现 / 已修复 Pn / 已延期到 change id>
   - `docs/tech-selection.md`
   - `contracts/**`
 - 未来变更位于 `openspec/changes/<change-name>/**`。
+- `openspec/changes/**` 下的 Spec 产物统一使用中文编写，包括 `proposal.md`、`design.md`、`tasks.md`、`policy.md`、`verification.md`、`archive.md` 和 `specs/**`；仅代码标识、命令、路径、API 字段和必要英文术语保留原文。
 - 已完成变更的稳定结论必须在归档前同步回当前事实文档。
 - `docs/chat.md` 仅作为灵感和讨论材料，默认只读，不是实现依据。
 - `docs/proposals/**` 仅作为历史迁移材料。

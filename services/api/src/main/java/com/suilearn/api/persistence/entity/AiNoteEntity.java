@@ -1,8 +1,8 @@
 package com.suilearn.api.persistence.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -14,9 +14,9 @@ public class AiNoteEntity {
     private String knowledgeBaseId;
     private String type;
     private String title;
-    @Lob
+    @Column(columnDefinition = "text")
     private String content;
-    @Lob
+    @Column(columnDefinition = "text")
     private String sourceRefsJson;
     private Instant savedAt;
 

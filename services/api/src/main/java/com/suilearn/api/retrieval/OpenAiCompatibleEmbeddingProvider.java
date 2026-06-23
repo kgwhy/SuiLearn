@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,7 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     private final ObjectMapper objectMapper;
     private final SuiLearnAiProperties properties;
 
+    @Autowired
     public OpenAiCompatibleEmbeddingProvider(SuiLearnAiProperties properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, HttpClient.newBuilder()
             .connectTimeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))

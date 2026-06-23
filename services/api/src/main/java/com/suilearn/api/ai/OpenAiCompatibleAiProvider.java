@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -30,6 +31,7 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
     private final ObjectMapper objectMapper;
     private final SuiLearnAiProperties properties;
 
+    @Autowired
     public OpenAiCompatibleAiProvider(SuiLearnAiProperties properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, HttpClient.newBuilder()
             .connectTimeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
@@ -77,6 +79,24 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             strings(root.path("answer"), List.of()),
             requiredText(root, "explanation")
         );
+    }
+
+    @Override
+    public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
+        var root = completeJson("""
+            Return a JSON object with field knowledgePoints.
+            knowledgePoints must be an array of objects with fields: name, description.
+            Extract only real study concepts, APIs, patterns, or pitfalls that are supported by the source excerpts.
+            Do not return sentence fragments, headings without concept value, punctuation-only text, or duplicate names.
+        """, payload()
+            .putValue("task", "extract_knowledge_points")
+            .putValue("knowledgeBaseId", prompt.knowledgeBaseId())
+            .putValue("materialId", prompt.materialId())
+            .putValue("materialTitle", prompt.materialTitle())
+            .putValue("maxKnowledgePoints", prompt.maxKnowledgePoints())
+            .putValue("sourceRefs", sourceRefs(prompt.evidenceRefs()))
+            .toMap());
+        return knowledgePoints(root.path("knowledgePoints"), prompt.maxKnowledgePoints());
     }
 
     @Override
@@ -196,6 +216,24 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
                 values.add(value.asText());
             }
         });
+        return values;
+    }
+
+    private List<GeneratedKnowledgePoint> knowledgePoints(JsonNode node, int maxKnowledgePoints) {
+        if (!node.isArray()) {
+            return List.of();
+        }
+        var values = new ArrayList<GeneratedKnowledgePoint>();
+        for (var value : node) {
+            var name = value.path("name").asText("");
+            var description = value.path("description").asText("");
+            if (!name.isBlank()) {
+                values.add(new GeneratedKnowledgePoint(name, description));
+            }
+            if (values.size() >= maxKnowledgePoints) {
+                break;
+            }
+        }
         return values;
     }
 

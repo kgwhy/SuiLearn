@@ -69,6 +69,12 @@ openspec/changes/<change-name>/
   archive.md
 ```
 
+语言规则：
+
+- `openspec/changes/**` 下的 Spec 产物统一使用中文编写。
+- 适用文件包括 `proposal.md`、`design.md`、`tasks.md`、`policy.md`、`verification.md`、`archive.md` 和 `specs/**`。
+- 代码标识、命令、路径、API 字段、错误码和必须保留语义的英文术语可以保留原文。
+
 各等级最低产物：
 
 - `Tiny`：`tasks.md` 和 `policy.md`。

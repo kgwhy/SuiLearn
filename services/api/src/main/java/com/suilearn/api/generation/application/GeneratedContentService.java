@@ -456,13 +456,11 @@ public class GeneratedContentService {
     }
 
     private AiProviderType aiProviderType() {
-        return aiProvider.getClass().getSimpleName().contains("OpenAiCompatible")
-            ? AiProviderType.OPENAI_COMPATIBLE
-            : AiProviderType.FAKE;
+        return AiProviderType.OPENAI_COMPATIBLE;
     }
 
     private String chatModelName() {
-        return aiProviderType() == AiProviderType.FAKE ? "fake-chat-v1" : "openai-compatible-chat";
+        return "openai-compatible-chat";
     }
 
     private String newId(String prefix) {

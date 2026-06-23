@@ -1,8 +1,8 @@
 package com.suilearn.api.persistence.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -13,16 +13,16 @@ public class QuestionEntity {
     private String id;
     private String knowledgeBaseId;
     private String questionType;
-    @Lob
+    @Column(columnDefinition = "text")
     private String stem;
     private String categoryId;
     private String categoryName;
     private Integer difficulty;
-    @Lob
+    @Column(columnDefinition = "text")
     private String knowledgePointIdsJson;
     private int answeredCount;
     private double correctRate;
-    @Lob
+    @Column(columnDefinition = "text")
     private String sourceRefsJson;
     private Instant createdAt;
     private Instant savedAt;

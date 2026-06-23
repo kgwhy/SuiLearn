@@ -11,6 +11,7 @@ import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
 import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
+import com.suilearn.api.knowledgepoint.application.KnowledgePointCandidateExtractor;
 import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.AiNoteDraft;
@@ -51,7 +52,9 @@ import com.suilearn.api.task.application.TaskExecutor;
 import com.suilearn.api.task.application.TaskService;
 import java.time.Clock;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Service;
@@ -60,6 +63,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class SuiLearnV2Workflow {
+    private static final int MAX_EXTRACTED_POINTS = 16;
+    private static final int MAX_EVIDENCE_CHUNKS = 8;
+    private static final String KNOWLEDGE_POINT_EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
+
     private final AiProvider aiProvider;
     private final Clock clock;
     private final EmbeddingProvider embeddingProvider;
@@ -374,19 +381,23 @@ public class SuiLearnV2Workflow {
             TaskKind.KNOWLEDGE_POINT_EXTRACTION,
             material.knowledgeBaseId(),
             material.id(),
-            null,
-            null,
+            aiProviderType(),
+            chatModelName(),
             "EXTRACTING"
         ), "EXTRACTING");
-        var candidates = extractCandidateTerms(material.content());
+        var evidence = extractionEvidence(material);
+        var candidates = extractCandidateTerms(material, evidence);
+        var sourceRefs = evidence.isEmpty()
+            ? List.of(sourceService.materialSourceRef(material))
+            : evidence.stream().map(MaterialChunk::sourceRef).toList();
         var extracted = candidates.stream()
-            .map(term -> new KnowledgePoint(
+            .map(candidate -> new KnowledgePoint(
                 newId("kp"),
                 material.knowledgeBaseId(),
-                term,
-                "从资料《" + material.title() + "》中提取的候选知识点。",
+                candidate.name(),
+                candidate.description(),
                 material.id(),
-                List.of(sourceService.materialSourceRef(material))
+                sourceRefs
             ))
             .toList();
         extracted.forEach(store::saveKnowledgePoint);
@@ -997,13 +1008,87 @@ public class SuiLearnV2Workflow {
         );
     }
 
-    private List<String> extractCandidateTerms(String content) {
-        return List.of(content.split("[,，。；;、\\s]+")).stream()
-            .map(String::trim)
-            .filter(term -> term.length() >= 2 && term.length() <= 32)
-            .distinct()
-            .limit(8)
-            .toList();
+    private List<ExtractedKnowledgePointCandidate> extractCandidateTerms(
+        LearningMaterial material,
+        List<MaterialChunk> evidence
+    ) {
+        var generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+            material.knowledgeBaseId(),
+            material.id(),
+            material.title(),
+            evidence.stream().map(MaterialChunk::sourceRef).toList(),
+            MAX_EXTRACTED_POINTS
+        ));
+        var candidates = new LinkedHashMap<String, ExtractedKnowledgePointCandidate>();
+        if (generated != null) {
+            for (var point : generated) {
+                addKnowledgePointCandidate(candidates, point.name(), point.description(), material.title());
+            }
+        }
+        if (candidates.isEmpty()) {
+            for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
+                addKnowledgePointCandidate(candidates, term, null, material.title());
+            }
+        }
+        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+    }
+
+    private List<MaterialChunk> extractionEvidence(LearningMaterial material) {
+        var retrieved = retriever.retrieveEvidence(
+            new Retriever.RetrievalRequest(
+                KNOWLEDGE_POINT_EXTRACTION_QUERY,
+                material.knowledgeBaseId(),
+                material.id()
+            ),
+            MAX_EVIDENCE_CHUNKS
+        );
+        var byId = new LinkedHashMap<String, MaterialChunk>();
+        retrieved.stream()
+            .filter(chunk -> material.id().equals(chunk.materialId()))
+            .forEach(chunk -> byId.putIfAbsent(chunk.id(), chunk));
+        store.listChunksByMaterial(material.id()).stream()
+            .limit(MAX_EVIDENCE_CHUNKS)
+            .forEach(chunk -> byId.putIfAbsent(chunk.id(), chunk));
+        return byId.values().stream().limit(MAX_EVIDENCE_CHUNKS).toList();
+    }
+
+    private void addKnowledgePointCandidate(
+        LinkedHashMap<String, ExtractedKnowledgePointCandidate> candidates,
+        String rawName,
+        String rawDescription,
+        String materialTitle
+    ) {
+        if (candidates.size() >= MAX_EXTRACTED_POINTS) {
+            return;
+        }
+        var name = sanitizeKnowledgePointName(rawName);
+        if (!isUsableKnowledgePointName(name)) {
+            return;
+        }
+        var description = rawDescription == null || rawDescription.isBlank()
+            ? "基于资料《" + materialTitle + "》的证据片段提炼。"
+            : rawDescription.trim();
+        candidates.putIfAbsent(normalizeKnowledgePointKey(name), new ExtractedKnowledgePointCandidate(name, description));
+    }
+
+    private String sanitizeKnowledgePointName(String rawName) {
+        return rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
+    }
+
+    private boolean isUsableKnowledgePointName(String name) {
+        return name.length() >= 2
+            && name.length() <= 32
+            && name.codePoints().anyMatch(codePoint ->
+                Character.isLetterOrDigit(codePoint) || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN
+            )
+            && !name.matches("[-_=~—–]+")
+            && !name.matches(".*[。！？!?；;，,、].*")
+            && !name.contains("——")
+            && !name.contains("--");
+    }
+
+    private String normalizeKnowledgePointKey(String term) {
+        return term.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private GeneratedQuestionDraft updateGeneratedStatus(GeneratedQuestionDraft existing, GeneratedContentStatus status) {
@@ -1161,17 +1246,18 @@ public class SuiLearnV2Workflow {
     }
 
     private AiProviderType aiProviderType() {
-        return aiProvider.getClass().getSimpleName().contains("OpenAiCompatible")
-            ? AiProviderType.OPENAI_COMPATIBLE
-            : AiProviderType.FAKE;
+        return AiProviderType.OPENAI_COMPATIBLE;
     }
 
     private String chatModelName() {
-        return aiProviderType() == AiProviderType.FAKE ? "fake-chat-v1" : "openai-compatible-chat";
+        return "openai-compatible-chat";
     }
 
     private String newId(String prefix) {
         return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record ExtractedKnowledgePointCandidate(String name, String description) {
     }
 }
 

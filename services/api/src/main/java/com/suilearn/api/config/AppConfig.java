@@ -15,7 +15,7 @@ public class AppConfig {
     @Bean
     SuiLearnAiProperties suiLearnAiProperties(Environment environment) {
         return new SuiLearnAiProperties(
-            environment.getProperty("suilearn.ai.provider", "fake"),
+            environment.getProperty("suilearn.ai.provider", "openai-compatible"),
             environment.getProperty("suilearn.ai.base-url", ""),
             environment.getProperty("suilearn.ai.api-key", ""),
             environment.getProperty("suilearn.ai.chat-model", ""),

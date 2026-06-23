@@ -13,7 +13,6 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.ai.AiProvider;
-import com.suilearn.api.ai.FakeAiProvider;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
@@ -25,6 +24,7 @@ import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.generation.application.GeneratedContentService;
 import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
+import com.suilearn.api.knowledgepoint.application.KnowledgePointCandidateExtractor;
 import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
 import com.suilearn.api.material.DefaultMaterialChunker;
 import com.suilearn.api.material.TextMaterialParser;
@@ -45,7 +45,8 @@ import com.suilearn.api.model.TaskKind;
 import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.persistence.SuiLearnV2Store;
 import com.suilearn.api.pack.application.LearningPackService;
-import com.suilearn.api.retrieval.FakeEmbeddingProvider;
+import com.suilearn.api.retrieval.EmbeddingProvider;
+import com.suilearn.api.retrieval.EmbeddingProvider.Embedding;
 import com.suilearn.api.retrieval.KeywordRetriever;
 import com.suilearn.api.retrieval.Retriever;
 import com.suilearn.api.search.application.SearchService;
@@ -69,9 +70,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 
 @SpringBootTest(properties = {
-    "spring.datasource.url=jdbc:h2:mem:suilearn-v2-service-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+    "spring.datasource.url=${SUILEARN_TEST_DB_URL:jdbc:postgresql://localhost:5432/suilearn_test}",
+    "spring.datasource.driver-class-name=org.postgresql.Driver",
+    "spring.datasource.username=${SUILEARN_TEST_DB_USERNAME:suilearn}",
+    "spring.datasource.password=${SUILEARN_TEST_DB_PASSWORD:suilearn_dev_password}",
     "spring.jpa.hibernate.ddl-auto=create-drop",
-    "spring.jpa.show-sql=false"
+    "spring.jpa.show-sql=false",
+    "suilearn.ai.provider=openai-compatible",
+    "suilearn.ai.base-url=https://ai.example.test/v1",
+    "suilearn.ai.api-key=test-api-key",
+    "suilearn.ai.chat-model=test-chat-model",
+    "suilearn.ai.embedding-model=test-embedding-model"
 })
 class SuiLearnV2ServiceTest {
     @Autowired
@@ -489,10 +498,10 @@ class SuiLearnV2ServiceTest {
         ));
 
         var recreatedService = new SuiLearnV2Service(
-            new FakeAiProvider(),
+            new DeterministicAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
-            new FakeEmbeddingProvider(),
+            new DeterministicEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -508,7 +517,7 @@ class SuiLearnV2ServiceTest {
     }
 
     @Test
-    void fakeAiProviderReturnsStableQuestionExplanationAndReviewSuggestion() {
+    void deterministicTestAiProviderReturnsStableQuestionExplanationAndReviewSuggestion() {
         var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
         var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
             "HashMap Notes",
@@ -540,7 +549,7 @@ class SuiLearnV2ServiceTest {
             null
         ));
 
-        assertThat(question.stem()).isEqualTo("Fake AI question about HashMap Notes: which statement is most accurate?");
+        assertThat(question.stem()).isEqualTo("Test AI question about HashMap Notes: which statement is most accurate?");
         assertThat(question.options()).containsExactly(
             "A. It should be checked against the cited source.",
             "B. It ignores source traceability.",
@@ -549,12 +558,12 @@ class SuiLearnV2ServiceTest {
         );
         assertThat(question.answer()).containsExactly("A");
         assertThat(question.explanation()).isEqualTo(
-            "Fake AI explanation: review the cited source for HashMap Notes before saving this generated question."
+            "Test AI explanation: review the cited source for HashMap Notes before saving this generated question."
         );
         assertThat(explanation.title()).isEqualTo(point.name() + " explanation");
-        assertThat(explanation.content()).contains("Fake AI explanation for " + point.name());
+        assertThat(explanation.content()).contains("Test AI explanation for " + point.name());
         assertThat(suggestion.title()).isEqualTo("Weak knowledge point review suggestion");
-        assertThat(suggestion.content()).contains("Fake AI review suggestion");
+        assertThat(suggestion.content()).contains("Test AI review suggestion");
     }
 
     @Test
@@ -563,7 +572,7 @@ class SuiLearnV2ServiceTest {
             new TestAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
-            new FakeEmbeddingProvider(),
+            new DeterministicEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -578,11 +587,18 @@ class SuiLearnV2ServiceTest {
         var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
 
         var draft = customService.generateQuestion(generateQuestionRequest(kb.id(), sourceRef, null, null, null));
+        var extracted = customService.extractKnowledgePoints(material.id());
 
         assertThat(draft.stem()).isEqualTo("Provider replacement question");
         assertThat(draft.options()).containsExactly("A. Custom provider option");
         assertThat(draft.answer()).containsExactly("A");
         assertThat(draft.explanation()).isEqualTo("Provider replacement explanation");
+        assertThat(extracted.knowledgePoints())
+            .singleElement()
+            .satisfies(point -> {
+                assertThat(point.name()).isEqualTo("Provider Concept");
+                assertThat(point.description()).isEqualTo("Provider extraction description");
+            });
     }
 
     @Test
@@ -603,24 +619,24 @@ class SuiLearnV2ServiceTest {
                 chunk -> {
                     assertThat(chunk.content()).isEqualTo("HashMap uses buckets.");
                     assertThat(chunk.embedding()).hasSize(3);
-                    assertThat(chunk.embedding()).startsWith(21.0, 3.0);
+                    assertThat(chunk.embedding()).containsExactly(0.0, 0.0, 0.0);
                     assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
-                    assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                    assertThat(chunk.embeddingModel()).isEqualTo("test-embedding-v1");
                     assertThat(chunk.embeddingDimensions()).isEqualTo(3);
                 },
                 chunk -> {
                     assertThat(chunk.content()).isEqualTo("Collision handling uses linked lists.");
                     assertThat(chunk.embedding()).hasSize(3);
-                    assertThat(chunk.embedding()).startsWith(37.0, 5.0);
+                    assertThat(chunk.embedding()).containsExactly(0.0, 0.0, 0.0);
                     assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
-                    assertThat(chunk.embeddingModel()).isEqualTo("fake-embedding-v1");
+                    assertThat(chunk.embeddingModel()).isEqualTo("test-embedding-v1");
                     assertThat(chunk.embeddingDimensions()).isEqualTo(3);
                 }
             );
         var detailJson = objectMapper.valueToTree(service.getMaterialDetail(material.id()));
         assertThat(detailJson.path("chunks").get(0).has("embedding")).isFalse();
         assertThat(detailJson.path("chunks").get(0).path("embeddingStatus").asText()).isEqualTo("READY");
-        assertThat(detailJson.path("chunks").get(0).path("embeddingModel").asText()).isEqualTo("fake-embedding-v1");
+        assertThat(detailJson.path("chunks").get(0).path("embeddingModel").asText()).isEqualTo("test-embedding-v1");
         assertThat(detailJson.path("chunks").get(0).path("embeddingDimensions").asInt()).isEqualTo(3);
 
         InOrder statusFlow = inOrder(store);
@@ -634,12 +650,12 @@ class SuiLearnV2ServiceTest {
     @Test
     void importMaterialStoresFailedStatusWhenParserFails() {
         var failingService = new SuiLearnV2Service(
-            new FakeAiProvider(),
+            new DeterministicAiProvider(),
             request -> {
                 throw new IllegalStateException("parse failed");
             },
             new DefaultMaterialChunker(),
-            new FakeEmbeddingProvider(),
+            new DeterministicEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -669,10 +685,10 @@ class SuiLearnV2ServiceTest {
     @Test
     void serviceUsesReplaceableRetrieverForSearchAndAsk() {
         var customService = new SuiLearnV2Service(
-            new FakeAiProvider(),
+            new DeterministicAiProvider(),
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
-            new FakeEmbeddingProvider(),
+            new DeterministicEmbeddingProvider(),
             new TestRetriever(),
             clock,
             store
@@ -694,15 +710,15 @@ class SuiLearnV2ServiceTest {
     }
 
     @Test
-    void providerStatusReturnsSanitizedFakeProviderMetadata() {
+    void providerStatusReturnsSanitizedOpenAiCompatibleMetadata() {
         var status = providerStatusService.getStatus();
         var json = objectMapper.valueToTree(status);
 
-        assertThat(status.providerType()).isEqualTo(AiProviderType.FAKE);
+        assertThat(status.providerType()).isEqualTo(AiProviderType.OPENAI_COMPATIBLE);
         assertThat(status.configured()).isTrue();
         assertThat(status.available()).isTrue();
-        assertThat(status.chatModel()).isEqualTo("fake-chat-v1");
-        assertThat(status.embeddingModel()).isEqualTo("fake-embedding-v1");
+        assertThat(status.chatModel()).isEqualTo("test-chat-model");
+        assertThat(status.embeddingModel()).isEqualTo("test-embedding-model");
         assertThat(status.embeddingDimensions()).isEqualTo(3);
         assertThat(json.has("apiKey")).isFalse();
         assertThat(json.has("authorization")).isFalse();
@@ -733,7 +749,7 @@ class SuiLearnV2ServiceTest {
             .satisfies(task -> {
                 assertThat(task.kind()).isEqualTo(TaskKind.EMBEDDING);
                 assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
-                assertThat(task.model()).isEqualTo("fake-embedding-v1");
+                assertThat(task.model()).isEqualTo("test-embedding-v1");
                 assertThat(task.resultRef().type()).isEqualTo("MATERIAL_CHUNKS");
                 assertThat(task.resultRef().count()).isEqualTo(2);
             });
@@ -765,7 +781,7 @@ class SuiLearnV2ServiceTest {
             eq(kb.id()),
             eq(material.id()),
             isNull(),
-            eq("fake-embedding-v1"),
+            eq("test-embedding-v1"),
             eq("INDEXING")
         );
         verify(taskExecutor).runManagedTask(
@@ -786,12 +802,12 @@ class SuiLearnV2ServiceTest {
     @Test
     void importMaterialFailureStoresFailedTaskAndMaterialError() {
         var failingService = new SuiLearnV2Service(
-            new FakeAiProvider(),
+            new DeterministicAiProvider(),
             request -> {
                 throw new IllegalStateException("parse failed before chunking");
             },
             new DefaultMaterialChunker(),
-            new FakeEmbeddingProvider(),
+            new DeterministicEmbeddingProvider(),
             keywordRetriever(),
             clock,
             store
@@ -849,6 +865,42 @@ class SuiLearnV2ServiceTest {
                 assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
                 assertThat(task.resultRef().id()).isEqualTo(suggestion.id());
             });
+    }
+
+    @Test
+    void extractKnowledgePointsFiltersSeparatorsDuplicatesAndSentenceFragments() {
+        var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Java Interview Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            """
+            ---
+            Java Java
+            MySQL mysql
+            在面试里的地位有点特殊——它不像算法题那样只看套路
+            Java基础面试题
+            HashMap equals hashCode String 不可变
+            """
+        ));
+
+        var names = service.extractKnowledgePoints(material.id()).knowledgePoints().stream()
+            .map(point -> point.name())
+            .toList();
+
+        assertThat(names)
+            .contains("Java", "MySQL", "Java基础面试题", "HashMap", "equals", "hashCode", "String")
+            .doesNotContain("---", "mysql");
+        assertThat(names).noneMatch(name -> name.contains("在面试里的地位"));
+        assertThat(names.stream().filter(name -> name.equalsIgnoreCase("java")).toList()).hasSize(1);
+        assertThat(names.stream().filter(name -> name.equalsIgnoreCase("mysql")).toList()).hasSize(1);
+        assertThat(service.listKnowledgePoints(kb.id()))
+            .allSatisfy(point -> assertThat(point.sourceRefs())
+                .allSatisfy(ref -> {
+                    assertThat(ref.type()).isEqualTo(SourceType.MATERIAL_CHUNK);
+                    assertThat(ref.materialId()).isEqualTo(material.id());
+                    assertThat(ref.excerpt()).isNotBlank();
+                }));
     }
 
     @Test
@@ -1009,6 +1061,61 @@ class SuiLearnV2ServiceTest {
         assertThat(answer.evidenceChunks()).isEmpty();
     }
 
+    @Test
+    void searchCanRetrieveMaterialChunksBySemanticSimilarityWithoutKeywordOverlap() {
+        var semanticService = semanticService();
+        var kb = semanticService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Algorithms", "Search notes"));
+        semanticService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Binary Search Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "Binary search halves sorted arrays."
+        ));
+        semanticService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap resolves collisions with buckets."
+        ));
+
+        var results = semanticService.search("ordered lookup technique", kb.id(), null);
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.get(0).type()).isEqualTo(SearchResultType.MATERIAL_CHUNK);
+        assertThat(results.get(0).title()).isEqualTo("Binary Search Notes");
+        assertThat(results.get(0).score()).isGreaterThan(0.5);
+    }
+
+    @Test
+    void ragEvidenceDiversifiesAcrossMaterialsBeforeFillingSameMaterialChunks() {
+        var semanticService = semanticService();
+        var kb = semanticService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Algorithms", "Search notes"));
+        semanticService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Binary Search Deep Dive",
+            null,
+            MaterialSourceType.MARKDOWN,
+            """
+                Binary search halves sorted arrays.
+                Binary search compares the middle element.
+                Binary search narrows the candidate range.
+                """
+        ));
+        var secondMaterial = semanticService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Ordered Lookup Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "Sorted range lookup uses the same divide and conquer idea."
+        ));
+
+        var answer = semanticService.ask("ordered lookup technique", kb.id(), null);
+
+        assertThat(answer.uncertain()).isFalse();
+        assertThat(answer.evidenceChunks()).hasSize(3);
+        assertThat(answer.evidenceChunks())
+            .extracting(MaterialChunk::materialId)
+            .contains(secondMaterial.id());
+    }
+
     private static GenerateQuestionRequest generateQuestionRequest(
         String knowledgeBaseId,
         SourceRef sourceRef,
@@ -1061,7 +1168,20 @@ class SuiLearnV2ServiceTest {
     }
 
     private KeywordRetriever keywordRetriever() {
-        return new KeywordRetriever(new FakeEmbeddingProvider(), store);
+        return new KeywordRetriever(new DeterministicEmbeddingProvider(), store);
+    }
+
+    private SuiLearnV2Service semanticService() {
+        var embeddingProvider = new SemanticTestEmbeddingProvider();
+        return new SuiLearnV2Service(
+            new DeterministicAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            embeddingProvider,
+            new KeywordRetriever(embeddingProvider, store),
+            clock,
+            store
+        );
     }
 
     @TestConfiguration
@@ -1070,6 +1190,123 @@ class SuiLearnV2ServiceTest {
         @Primary
         Clock fixedClock() {
             return Clock.fixed(Instant.parse("2026-05-25T00:00:00Z"), ZoneOffset.UTC);
+        }
+
+        @Bean
+        @Primary
+        AiProvider deterministicAiProvider() {
+            return new DeterministicAiProvider();
+        }
+
+        @Bean
+        @Primary
+        EmbeddingProvider deterministicEmbeddingProvider() {
+            return new DeterministicEmbeddingProvider();
+        }
+    }
+
+    private static class DeterministicAiProvider implements AiProvider {
+        @Override
+        public GeneratedQuestion generateQuestion(QuestionGenerationPrompt prompt) {
+            var topic = prompt.sourceRefs() == null || prompt.sourceRefs().isEmpty()
+                ? "current source"
+                : prompt.sourceRefs().get(0).title();
+            var questionType = prompt.questionType() == null ? QuestionType.SINGLE_CHOICE : prompt.questionType();
+            return new GeneratedQuestion(
+                questionType,
+                prompt.categoryId(),
+                prompt.categoryName(),
+                prompt.knowledgePointIds() == null ? List.of() : prompt.knowledgePointIds(),
+                "Test AI question about " + topic + ": which statement is most accurate?",
+                List.of(
+                    "A. It should be checked against the cited source.",
+                    "B. It ignores source traceability.",
+                    "C. It should replace all existing questions automatically.",
+                    "D. It does not need user review."
+                ),
+                List.of("A"),
+                "Test AI explanation: review the cited source for " + topic
+                    + " before saving this generated question."
+            );
+        }
+
+        @Override
+        public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
+            if (prompt.evidenceRefs() == null || prompt.evidenceRefs().isEmpty()) {
+                return List.of();
+            }
+            return prompt.evidenceRefs().stream()
+                .flatMap(ref -> KnowledgePointCandidateExtractor.extract(ref.excerpt()).stream())
+                .distinct()
+                .limit(prompt.maxKnowledgePoints())
+                .map(name -> new GeneratedKnowledgePoint(
+                    name,
+                    "基于资料《" + prompt.materialTitle() + "》的证据片段提炼。"
+                ))
+                .toList();
+        }
+
+        @Override
+        public GeneratedNote generateKnowledgePointExplanation(KnowledgePointExplanationPrompt prompt) {
+            return new GeneratedNote(
+                prompt.knowledgePointName() + " explanation",
+                "Test AI explanation for " + prompt.knowledgePointName()
+                    + ": focus on the definition, the common pitfall, and one source-backed example."
+            );
+        }
+
+        @Override
+        public GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt) {
+            var weakPointCount = prompt.weakKnowledgePointIds() == null ? 0 : prompt.weakKnowledgePointIds().size();
+            return new GeneratedNote(
+                weakPointCount == 0 ? "Review suggestion" : "Weak knowledge point review suggestion",
+                "Test AI review suggestion: redo related questions, revisit the weakest knowledge points,"
+                    + " and generate one focused practice set before marking the topic as mastered."
+            );
+        }
+    }
+
+    private static class DeterministicEmbeddingProvider implements EmbeddingProvider {
+        @Override
+        public Embedding embed(String input) {
+            return new Embedding(List.of(0.0, 0.0, 0.0));
+        }
+
+        @Override
+        public String model() {
+            return "test-embedding-v1";
+        }
+
+        @Override
+        public int dimensions() {
+            return 3;
+        }
+    }
+
+    private static class SemanticTestEmbeddingProvider implements EmbeddingProvider {
+        @Override
+        public Embedding embed(String input) {
+            var normalized = input == null ? "" : input.toLowerCase();
+            if (normalized.contains("ordered")
+                || normalized.contains("binary")
+                || normalized.contains("sorted")
+                || normalized.contains("divide")) {
+                return new Embedding(List.of(1.0, 0.0, 0.0));
+            }
+            if (normalized.contains("hashmap") || normalized.contains("bucket")) {
+                return new Embedding(List.of(0.0, 1.0, 0.0));
+            }
+            return new Embedding(List.of(0.0, 0.0, 0.0));
+        }
+
+        @Override
+        public String model() {
+            return "semantic-test-embedding-v1";
+        }
+
+        @Override
+        public int dimensions() {
+            return 3;
         }
     }
 
@@ -1086,6 +1323,11 @@ class SuiLearnV2ServiceTest {
                 List.of("A"),
                 "Provider replacement explanation"
             );
+        }
+
+        @Override
+        public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
+            return List.of(new GeneratedKnowledgePoint("Provider Concept", "Provider extraction description"));
         }
 
         @Override

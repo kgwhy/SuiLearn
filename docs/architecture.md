@@ -304,6 +304,7 @@ KnowledgeBase
 - `GeneratedContent` 在用户确认前不得进入正式题库。
 - `TaskStatus` 记录资料导入、embedding、生成等任务状态，避免不可追踪副作用。
 - 删除资料时，待确认内容和已保存内容的处理策略必须显式表达。
+- 后端长文本和 JSON 字符串字段使用普通数据库 `text` 列；旧 PostgreSQL Large Object (`oid`) 列由后端启动迁移转换为 `text`，避免运行时依赖 LOB stream。
 - 模块 Application Service 通过本模块 `infrastructure` Store / adapter 访问持久化；不得直接注入 `SuiLearnV2Store`。
 - `SuiLearnV2Store` 只作为底层兼容持久化 facade 被模块 Store / adapter 或兼容层使用，后续新增聚合访问优先补充对应模块 Store 方法。
 - Entity/domain mapper 优先归属模块 `infrastructure` 边界；不新增全局大 mapper 包。
@@ -315,7 +316,7 @@ AI Provider 边界：
 ```text
 Generation / KnowledgePoint Application Service
   -> AiProvider or SuiLearn AI Port
-     -> FakeAiProvider / OpenAiCompatibleAiProvider
+     -> OpenAiCompatibleAiProvider
      -> ai/infrastructure/springai adapter（预留）
 ```
 
@@ -331,8 +332,8 @@ RagController / SearchController
 
 规则：
 
-- Fake Provider 用于默认开发和测试流程。
-- 真实 Provider 只作为基础设施适配，不让业务层感知具体厂商。
+- OpenAI-compatible Provider 是当前运行时 AI 实现；默认开发和测试流程不得依赖生产替身 Provider。
+- Provider 只作为基础设施适配，不让业务层感知具体厂商。
 - Spring AI 只允许出现在 `ai/infrastructure/springai/**`，业务模块只能依赖 `ChatPort`、`EmbeddingPort`、`StructuredGenerationPort`、`RetrievalPort` 等 SuiLearn 自有端口。
 - 首轮只定义 Chat、Structured Output、Embedding 的 adapter 边界；VectorStore、Advisor 和 Tool Calling 后续单独确认。
 - Provider 状态接口只能返回脱敏信息。
@@ -504,4 +505,4 @@ Architecture Agent updates contracts
 - Android 仍同时使用 `src/main/java` 和 `src/main/kotlin`，短期允许共存；是否统一迁移需单独任务评估。
 - Web 类型当前手写维护，后续若契约变化频繁，可评估从 OpenAPI 生成类型。
 - Backend 当前以单服务承载全部知识库和 AI 能力；当任务处理复杂度上升时，再评估队列或 worker 拆分。
-- pgvector 能力在当前代码中仍有 Fake / 关键词检索兜底，真实向量能力落地时需要补契约、配置和集成验证。
+- pgvector 能力仍需按 PostgreSQL 部署环境验证；关键词检索保留为非语义兜底，真实向量能力落地时需要补契约、配置和集成验证。

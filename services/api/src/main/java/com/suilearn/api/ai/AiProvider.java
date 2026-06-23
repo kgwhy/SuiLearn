@@ -8,6 +8,8 @@ import java.util.List;
 public interface AiProvider {
     GeneratedQuestion generateQuestion(QuestionGenerationPrompt prompt);
 
+    List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt);
+
     GeneratedNote generateKnowledgePointExplanation(KnowledgePointExplanationPrompt prompt);
 
     GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt);
@@ -35,6 +37,15 @@ public interface AiProvider {
     ) {
     }
 
+    record KnowledgePointExtractionPrompt(
+        String knowledgeBaseId,
+        String materialId,
+        String materialTitle,
+        List<SourceRef> evidenceRefs,
+        int maxKnowledgePoints
+    ) {
+    }
+
     record ReviewSuggestionPrompt(
         String knowledgeBaseId,
         List<SourceRef> sourceRefs,
@@ -59,6 +70,12 @@ public interface AiProvider {
     record GeneratedNote(
         String title,
         String content
+    ) {
+    }
+
+    record GeneratedKnowledgePoint(
+        String name,
+        String description
     ) {
     }
 }

@@ -12,9 +12,7 @@ public record SuiLearnAiProperties(
     int maxRetries
 ) {
     public AiProviderType providerType() {
-        return "openai-compatible".equalsIgnoreCase(provider)
-            ? AiProviderType.OPENAI_COMPATIBLE
-            : AiProviderType.FAKE;
+        return AiProviderType.OPENAI_COMPATIBLE;
     }
 
     public boolean hasOpenAiCompatibleConfiguration() {

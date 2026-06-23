@@ -1,40 +1,59 @@
 package com.suilearn.api.knowledgepoint.application;
 
+import com.suilearn.api.ai.AiProvider;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.model.KnowledgePoint;
 import com.suilearn.api.model.KnowledgePointExtractionResult;
 import com.suilearn.api.model.LearningMaterial;
+import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.TaskKind;
 import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.model.TaskResultRef;
 import com.suilearn.api.knowledgebase.infrastructure.KnowledgeBaseStore;
 import com.suilearn.api.knowledgepoint.infrastructure.KnowledgePointStore;
+import com.suilearn.api.material.infrastructure.MaterialChunkStore;
 import com.suilearn.api.material.infrastructure.MaterialStore;
+import com.suilearn.api.retrieval.Retriever;
 import com.suilearn.api.source.application.SourceService;
 import com.suilearn.api.task.application.TaskService;
+import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
 public class KnowledgePointService {
+    private static final int MAX_EXTRACTED_POINTS = 16;
+    private static final int MAX_EVIDENCE_CHUNKS = 8;
+    private static final String EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
+
+    private final AiProvider aiProvider;
     private final KnowledgeBaseStore knowledgeBases;
     private final KnowledgePointStore knowledgePoints;
+    private final MaterialChunkStore materialChunks;
     private final MaterialStore materials;
+    private final Retriever retriever;
     private final SourceService sourceService;
     private final TaskService taskService;
 
     public KnowledgePointService(
+        AiProvider aiProvider,
         KnowledgeBaseStore knowledgeBases,
         MaterialStore materials,
+        MaterialChunkStore materialChunks,
         KnowledgePointStore knowledgePoints,
+        Retriever retriever,
         TaskService taskService,
         SourceService sourceService
     ) {
+        this.aiProvider = aiProvider;
         this.knowledgeBases = knowledgeBases;
         this.knowledgePoints = knowledgePoints;
+        this.materialChunks = materialChunks;
         this.materials = materials;
+        this.retriever = retriever;
         this.sourceService = sourceService;
         this.taskService = taskService;
     }
@@ -49,15 +68,19 @@ public class KnowledgePointService {
             null,
             "EXTRACTING"
         ), "EXTRACTING");
-        var candidates = extractCandidateTerms(material.content());
+        var evidence = extractionEvidence(material);
+        var candidates = extractCandidateTerms(material, evidence);
+        var sourceRefs = evidence.isEmpty()
+            ? List.of(sourceService.materialSourceRef(material))
+            : evidence.stream().map(MaterialChunk::sourceRef).toList();
         var extracted = candidates.stream()
-            .map(term -> new KnowledgePoint(
+            .map(candidate -> new KnowledgePoint(
                 newId("kp"),
                 material.knowledgeBaseId(),
-                term,
-                "从资料《" + material.title() + "》中提取的候选知识点。",
+                candidate.name(),
+                candidate.description(),
                 material.id(),
-                List.of(sourceService.materialSourceRef(material))
+                sourceRefs
             ))
             .toList();
         extracted.forEach(knowledgePoints::save);
@@ -114,16 +137,86 @@ public class KnowledgePointService {
             .orElseThrow(() -> new IllegalArgumentException("Knowledge point not found: " + knowledgePointId));
     }
 
-    private List<String> extractCandidateTerms(String content) {
-        return List.of(content.split("[,，。；;、\\s]+")).stream()
-            .map(String::trim)
-            .filter(term -> term.length() >= 2 && term.length() <= 32)
-            .distinct()
-            .limit(8)
-            .toList();
+    private List<ExtractedCandidate> extractCandidateTerms(LearningMaterial material, List<MaterialChunk> evidence) {
+        var generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+            material.knowledgeBaseId(),
+            material.id(),
+            material.title(),
+            evidence.stream().map(MaterialChunk::sourceRef).toList(),
+            MAX_EXTRACTED_POINTS
+        ));
+        var candidates = new LinkedHashMap<String, ExtractedCandidate>();
+        if (generated != null) {
+            for (var point : generated) {
+                addCandidate(candidates, point.name(), point.description(), material.title());
+            }
+        }
+        if (candidates.isEmpty()) {
+            for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
+                addCandidate(candidates, term, null, material.title());
+            }
+        }
+        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+    }
+
+    private List<MaterialChunk> extractionEvidence(LearningMaterial material) {
+        var retrieved = retriever.retrieveEvidence(
+            new Retriever.RetrievalRequest(EXTRACTION_QUERY, material.knowledgeBaseId(), material.id()),
+            MAX_EVIDENCE_CHUNKS
+        );
+        var byId = new LinkedHashMap<String, MaterialChunk>();
+        retrieved.stream()
+            .filter(chunk -> material.id().equals(chunk.materialId()))
+            .forEach(chunk -> byId.putIfAbsent(chunk.id(), chunk));
+        materialChunks.listByMaterial(material.id()).stream()
+            .limit(MAX_EVIDENCE_CHUNKS)
+            .forEach(chunk -> byId.putIfAbsent(chunk.id(), chunk));
+        return byId.values().stream().limit(MAX_EVIDENCE_CHUNKS).toList();
+    }
+
+    private void addCandidate(
+        LinkedHashMap<String, ExtractedCandidate> candidates,
+        String rawName,
+        String rawDescription,
+        String materialTitle
+    ) {
+        if (candidates.size() >= MAX_EXTRACTED_POINTS) {
+            return;
+        }
+        var name = sanitizeName(rawName);
+        if (!isUsableName(name)) {
+            return;
+        }
+        var description = rawDescription == null || rawDescription.isBlank()
+            ? "基于资料《" + materialTitle + "》的证据片段提炼。"
+            : rawDescription.trim();
+        candidates.putIfAbsent(normalizeKey(name), new ExtractedCandidate(name, description));
+    }
+
+    private String sanitizeName(String rawName) {
+        return rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
+    }
+
+    private boolean isUsableName(String name) {
+        return name.length() >= 2
+            && name.length() <= 32
+            && name.codePoints().anyMatch(codePoint ->
+                Character.isLetterOrDigit(codePoint) || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN
+            )
+            && !name.matches("[-_=~—–]+")
+            && !name.matches(".*[。！？!?；;，,、].*")
+            && !name.contains("——")
+            && !name.contains("--");
+    }
+
+    private String normalizeKey(String term) {
+        return term.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private String newId(String prefix) {
         return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record ExtractedCandidate(String name, String description) {
     }
 }

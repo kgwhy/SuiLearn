@@ -9,16 +9,11 @@ spring.datasource.password=suilearn_dev_password
 spring.jpa.hibernate.ddl-auto=update
 
 # AI provider mode.
-# Current checked-in implementation registers FakeAiProvider by default.
-suilearn.ai.provider=fake
-
-# Real provider template for a future OpenAI-compatible adapter.
 # Keep the key in the SUILEARN_AI_API_KEY environment variable, not in this file.
-#
-# suilearn.ai.provider=openai-compatible
-# suilearn.ai.base-url=https://api.openai.com/v1
-# suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
-# suilearn.ai.chat-model=gpt-4.1-mini
-# suilearn.ai.embedding-model=text-embedding-3-small
-# suilearn.ai.timeout-ms=30000
-# suilearn.ai.max-retries=2
+suilearn.ai.provider=openai-compatible
+suilearn.ai.base-url=https://api.openai.com/v1
+suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
+suilearn.ai.chat-model=gpt-4.1-mini
+suilearn.ai.embedding-model=text-embedding-3-small
+suilearn.ai.timeout-ms=30000
+suilearn.ai.max-retries=2

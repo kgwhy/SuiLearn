@@ -133,14 +133,17 @@ public class SuiLearnV2Store {
         knowledgeBases.deleteById(knowledgeBaseId);
     }
 
+    @Transactional(readOnly = true)
     public List<LearningMaterial> listMaterials() {
         return materials.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<LearningMaterial> listMaterials(String knowledgeBaseId) {
         return materials.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public Optional<LearningMaterial> findMaterial(String id) {
         return materials.findById(id).map(this::toModel);
     }
@@ -203,26 +206,32 @@ public class SuiLearnV2Store {
         return existing.size();
     }
 
+    @Transactional(readOnly = true)
     public List<MaterialChunk> listChunks() {
         return chunks.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<MaterialChunk> listChunksByMaterial(String materialId) {
         return chunks.findByMaterialId(materialId).stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public Optional<MaterialChunk> findChunk(String id) {
         return chunks.findById(id).map(this::toModel);
     }
 
+    @Transactional(readOnly = true)
     public List<KnowledgePoint> listKnowledgePoints() {
         return knowledgePoints.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<KnowledgePoint> listKnowledgePoints(String knowledgeBaseId) {
         return knowledgePoints.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public Optional<KnowledgePoint> findKnowledgePoint(String id) {
         return knowledgePoints.findById(id).map(this::toModel);
     }
@@ -242,10 +251,12 @@ public class SuiLearnV2Store {
         knowledgePoints.deleteById(id);
     }
 
+    @Transactional(readOnly = true)
     public List<GeneratedQuestionDraft> listGeneratedContents() {
         return generatedContents.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public Optional<GeneratedQuestionDraft> findGeneratedContent(String id) {
         return generatedContents.findById(id).map(this::toModel);
     }
@@ -274,10 +285,12 @@ public class SuiLearnV2Store {
         )));
     }
 
+    @Transactional(readOnly = true)
     public List<QuestionSummary> listQuestions() {
         return questions.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<QuestionSummary> listQuestions(String knowledgeBaseId) {
         return questions.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
@@ -304,10 +317,12 @@ public class SuiLearnV2Store {
         )));
     }
 
+    @Transactional(readOnly = true)
     public List<AnswerRecord> listAnswerRecords(String knowledgeBaseId) {
         return answerRecords.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<AnswerRecord> listAnswerRecordsByQuestion(String questionId) {
         return answerRecords.findByQuestionId(questionId).stream().map(this::toModel).toList();
     }
@@ -324,6 +339,7 @@ public class SuiLearnV2Store {
         )));
     }
 
+    @Transactional(readOnly = true)
     public List<AiNoteDraft> listAiNoteDrafts(String knowledgeBaseId) {
         return aiNoteDrafts.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
@@ -341,10 +357,12 @@ public class SuiLearnV2Store {
         )));
     }
 
+    @Transactional(readOnly = true)
     public List<SavedAiNote> listAiNotes() {
         return aiNotes.findAll().stream().map(this::toModel).toList();
     }
 
+    @Transactional(readOnly = true)
     public List<SavedAiNote> listAiNotes(String knowledgeBaseId) {
         return aiNotes.findByKnowledgeBaseId(knowledgeBaseId).stream().map(this::toModel).toList();
     }
@@ -365,10 +383,12 @@ public class SuiLearnV2Store {
         )));
     }
 
+    @Transactional(readOnly = true)
     public Optional<TaskStatus> findTask(String id) {
         return tasks.findById(id).map(this::toModel);
     }
 
+    @Transactional(readOnly = true)
     public List<TaskStatus> listTasks() {
         return tasks.findAll().stream().map(this::toModel).toList();
     }

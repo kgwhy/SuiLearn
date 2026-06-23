@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class AiProviderStatusService {
-    private static final String FAKE_CHAT_MODEL = "fake-chat-v1";
     private static final String API_KEY_ENV_NAME = "SUILEARN_AI_API_KEY";
 
     private final EmbeddingProvider embeddingProvider;
@@ -20,22 +19,6 @@ public class AiProviderStatusService {
     }
 
     public AiProviderStatus getStatus() {
-        if (properties.providerType() == AiProviderType.FAKE) {
-            return new AiProviderStatus(
-                AiProviderType.FAKE,
-                true,
-                true,
-                null,
-                FAKE_CHAT_MODEL,
-                embeddingProvider.model(),
-                embeddingProvider.dimensions(),
-                null,
-                properties.timeoutMs(),
-                properties.maxRetries(),
-                "Fake provider is available for local MVP execution"
-            );
-        }
-
         var configured = properties.hasOpenAiCompatibleConfiguration();
         return new AiProviderStatus(
             AiProviderType.OPENAI_COMPATIBLE,

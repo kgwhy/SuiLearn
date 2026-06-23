@@ -93,10 +93,10 @@ Android 约束：
 | Build | Maven |
 | API | REST + JSON |
 | Persistence | Spring Data JPA |
-| 开发 / 测试数据库 | H2 runtime 可用于测试与本地轻量验证 |
+| 开发 / 测试数据库 | PostgreSQL；本地可使用 `services/api/compose.local.yml` |
 | 目标数据库 | PostgreSQL |
-| 向量检索 | pgvector 优先，当前可用 Fake Embedding / 关键词检索兜底 |
-| AI Provider | 业务层依赖 `AiProvider`；实现包括 Fake 和 OpenAI-compatible |
+| 向量检索 | pgvector / OpenAI-compatible embedding 优先，关键词检索作为无语义命中时的兜底 |
+| AI Provider | 业务层依赖 `AiProvider`；当前运行时实现为 OpenAI-compatible |
 | Spring AI | 预留 1.0.x 稳定线；首轮只建立 SuiLearn port 与 `ai/infrastructure/springai/**` adapter 边界，不启用 starter |
 | 测试 | Spring Boot Test / JUnit |
 

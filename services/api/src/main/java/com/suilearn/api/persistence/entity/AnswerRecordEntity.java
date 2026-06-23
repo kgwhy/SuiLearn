@@ -1,8 +1,8 @@
 package com.suilearn.api.persistence.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -13,7 +13,7 @@ public class AnswerRecordEntity {
     private String id;
     private String knowledgeBaseId;
     private String questionId;
-    @Lob
+    @Column(columnDefinition = "text")
     private String userAnswerJson;
     private boolean correct;
     private long durationMs;
