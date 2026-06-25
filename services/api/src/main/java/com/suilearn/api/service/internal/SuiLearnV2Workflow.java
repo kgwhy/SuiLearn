@@ -205,6 +205,18 @@ public class SuiLearnV2Workflow {
                 materialRef.set(chunking);
                 importExecution.progress(45, "CHUNKING", chunking.id(), null);
                 var chunks = materialChunker.chunk(chunking);
+                if (!embeddingProvider.supportsEmbeddings()) {
+                    store.saveChunks(chunking.id(), chunks.stream().map(this::withoutEmbedding).toList());
+                    var ready = store.saveMaterial(withStatus(chunking, MaterialStatus.READY));
+                    materialRef.set(ready);
+                    importExecution.succeed(
+                        "READY",
+                        new TaskResultRef("MATERIAL", ready.id(), null),
+                        ready.id(),
+                        null
+                    );
+                    return ready;
+                }
                 var embeddingTask = taskService.createTask(
                     TaskKind.EMBEDDING,
                     knowledgeBaseId,
@@ -870,10 +882,17 @@ public class SuiLearnV2Workflow {
         if (citations.isEmpty()) {
             return new RagAnswer("不确定：资料中未找到明确依据。", true, List.of(), List.of(), null);
         }
+        var sourceRefs = citations.stream().map(MaterialChunk::sourceRef).toList();
+        var generated = aiProvider.answerQuestion(new AiProvider.AnswerQuestionPrompt(
+            scopedKnowledgeBaseId,
+            materialId,
+            question,
+            sourceRefs
+        ));
         return new RagAnswer(
-            "根据已导入资料，建议优先查看引用片段并结合原文复核。",
-            false,
-            citations.stream().map(MaterialChunk::sourceRef).toList(),
+            generated.answer(),
+            generated.uncertain(),
+            sourceRefs,
             citations,
             null
         );
@@ -1005,6 +1024,21 @@ public class SuiLearnV2Workflow {
             EmbeddingStatus.READY,
             embeddingProvider.model(),
             embedding.size()
+        );
+    }
+
+    private MaterialChunk withoutEmbedding(MaterialChunk chunk) {
+        return new MaterialChunk(
+            chunk.id(),
+            chunk.knowledgeBaseId(),
+            chunk.materialId(),
+            chunk.content(),
+            chunk.ordinal(),
+            chunk.sourceRef(),
+            null,
+            EmbeddingStatus.TEXT_ONLY,
+            null,
+            null
         );
     }
 

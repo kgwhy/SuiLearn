@@ -132,13 +132,31 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
         return new GeneratedNote(requiredText(root, "title"), requiredText(root, "content"));
     }
 
+    @Override
+    public GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt) {
+        var root = completeJson("""
+            Return a JSON object with fields: answer, uncertain.
+            Answer the user's question using only the provided sourceRefs excerpts.
+            Cite supporting excerpts inline with bracketed numbers like [1], [2], matching the sourceRefs order.
+            If the excerpts do not contain enough evidence, set uncertain to true and start answer with "不确定：".
+            Do not use outside knowledge, do not invent facts, and do not cite sources that are not provided.
+        """, payload()
+            .putValue("task", "answer_question")
+            .putValue("knowledgeBaseId", prompt.knowledgeBaseId())
+            .putValue("materialId", prompt.materialId())
+            .putValue("question", prompt.question())
+            .putValue("sourceRefs", numberedSourceRefs(prompt.sourceRefs()))
+            .toMap());
+        return new GeneratedAnswer(requiredText(root, "answer"), root.path("uncertain").asBoolean(false));
+    }
+
     private JsonNode completeJson(String instruction, Map<String, Object> payload) {
         ensureConfigured();
         var body = requestBody(instruction, payload);
-        var uri = URI.create(normalizeBaseUrl(properties.baseUrl()) + "/chat/completions");
+        var uri = URI.create(normalizeBaseUrl(properties.effectiveChatBaseUrl()) + "/chat/completions");
         var request = HttpRequest.newBuilder(uri)
             .timeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
-            .header("Authorization", "Bearer " + properties.apiKey())
+            .header("Authorization", "Bearer " + properties.effectiveChatApiKey())
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();
@@ -206,6 +224,27 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             .toList();
     }
 
+    private List<Map<String, Object>> numberedSourceRefs(List<SourceRef> sourceRefs) {
+        if (sourceRefs == null) {
+            return List.of();
+        }
+        var values = new ArrayList<Map<String, Object>>();
+        for (var index = 0; index < sourceRefs.size(); index++) {
+            var ref = sourceRefs.get(index);
+            values.add(Map.<String, Object>of(
+                "citationNumber", index + 1,
+                "type", ref.type(),
+                "id", ref.id(),
+                "knowledgeBaseId", valueOrEmpty(ref.knowledgeBaseId()),
+                "title", valueOrEmpty(ref.title()),
+                "materialId", valueOrEmpty(ref.materialId()),
+                "chunkId", valueOrEmpty(ref.chunkId()),
+                "excerpt", valueOrEmpty(ref.excerpt())
+            ));
+        }
+        return values;
+    }
+
     private List<String> strings(JsonNode node, List<String> fallback) {
         if (!node.isArray()) {
             return fallback == null ? List.of() : fallback;
@@ -259,8 +298,8 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
     }
 
     private void ensureConfigured() {
-        if (!properties.hasOpenAiCompatibleConfiguration()) {
-            throw new IllegalStateException("OpenAI-compatible provider is missing baseUrl, apiKey, chatModel, or embeddingModel");
+        if (!properties.hasOpenAiCompatibleChatConfiguration()) {
+            throw new IllegalStateException("OpenAI-compatible provider is missing chat baseUrl, chat apiKey, or chatModel");
         }
     }
 
@@ -269,10 +308,7 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
         while (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
-        if (normalized.endsWith("/v1")) {
-            return normalized;
-        }
-        return normalized + "/v1";
+        return normalized;
     }
 
     private String stripJsonFence(String content) {

@@ -22,7 +22,7 @@ SuiLearn（随心学）是一个面向个人学习者的本地刷题、错题复
 | --- | --- |
 | Android 本地学习 App | 核心本地闭环已实现 |
 | Java 八股学习包 | 已内置第一版 50 道题 |
-| Backend AI / RAG API | MVP 已实现，默认 H2 + Fake AI Provider |
+| Backend AI / RAG API | MVP 已实现，默认 PostgreSQL + OpenAI-compatible Provider |
 | Web 知识库工作台 | MVP 已实现 |
 | 完整 Web 学习端 | 后续规划 |
 | 登录、云同步、多用户 | 当前阶段不做 |
@@ -46,8 +46,8 @@ SuiLearn
 | 模块 | 技术 |
 | --- | --- |
 | Android | Kotlin、Jetpack Compose、Material 3、Navigation Compose、ViewModel、Coroutines、Flow、Room |
-| Backend | Java、Spring Boot、Spring Web、Spring Data JPA、H2、PostgreSQL、pgvector-ready 持久化模型 |
-| AI / RAG | `AiProvider` 抽象，默认 `FakeAiProvider`，预留 OpenAI-compatible Provider 配置 |
+| Backend | Java、Spring Boot、Spring Web、Spring Data JPA、PostgreSQL、pgvector-ready 持久化模型 |
+| AI / RAG | `AiProvider` 抽象，OpenAI-compatible Provider，RAG 与语义检索服务端编排 |
 | Web | React、TypeScript、Vite、lucide-react |
 | 契约 | [contracts/openapi/suilearn-v2.yaml](contracts/openapi/suilearn-v2.yaml) |
 | 测试 | JUnit、AndroidX Test、Robolectric、Spring Boot Test、TypeScript build checks |
@@ -60,7 +60,8 @@ SuiLearn
 - Android Studio 或 Android SDK，用于运行 Android App。
 - Maven，用于运行后端服务。
 - Node.js 和 npm，用于运行 Web 工作台。
-- Docker 仅在本地验证 PostgreSQL / pgvector 时需要。
+- PostgreSQL，用于运行后端 API 和后端集成测试。
+- Docker 可选，用于通过 `services/api/compose.local.yml` 启动本地 PostgreSQL / pgvector。
 
 ### Android App
 
@@ -80,7 +81,23 @@ SuiLearn
 
 ### Backend API
 
-后端默认使用 H2 文件库和 `FakeAiProvider`，不需要数据库服务或 API Key：
+后端默认使用 PostgreSQL 和 OpenAI-compatible Provider。先准备本地配置：
+
+```powershell
+cd services/api
+docker compose -f compose.local.yml up -d
+docker compose -f compose.local.yml exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
+Copy-Item config/local.properties.example config/local.properties
+cd ../..
+```
+
+然后在环境变量中提供真实 API Key：
+
+```powershell
+$env:SUILEARN_AI_API_KEY="你的 API Key"
+```
+
+启动后端：
 
 ```powershell
 mvn -f services/api/pom.xml spring-boot:run
@@ -89,6 +106,9 @@ mvn -f services/api/pom.xml spring-boot:run
 运行后端测试：
 
 ```powershell
+$env:SUILEARN_TEST_DB_URL="jdbc:postgresql://localhost:5432/suilearn_test"
+$env:SUILEARN_TEST_DB_USERNAME="suilearn"
+$env:SUILEARN_TEST_DB_PASSWORD="suilearn_dev_password"
 mvn -f services/api/pom.xml test -q
 ```
 
@@ -116,7 +136,7 @@ npm run build
 
 ## 本地 PostgreSQL / pgvector
 
-普通本地开发使用 H2 即可。需要验证 PostgreSQL 或 pgvector 行为时：
+本地开发和测试默认使用 PostgreSQL。可用 Docker Compose 启动本地数据库：
 
 ```powershell
 cd services/api
@@ -135,19 +155,26 @@ spring.datasource.username=suilearn
 spring.datasource.password=suilearn_dev_password
 ```
 
+也可以用环境变量覆盖：
+
+```powershell
+$env:SUILEARN_DB_URL="jdbc:postgresql://localhost:5432/suilearn"
+$env:SUILEARN_DB_DRIVER="org.postgresql.Driver"
+$env:SUILEARN_DB_USERNAME="suilearn"
+$env:SUILEARN_DB_PASSWORD="suilearn_dev_password"
+```
+
 不要提交真实 API Key、`.env` 文件或 `services/api/config/local.properties`。
 
 ## AI Provider 配置
 
-默认配置：
+默认 Provider 类型：
 
 ```properties
-suilearn.ai.provider=fake
+suilearn.ai.provider=openai-compatible
 ```
 
-`fake` 模式会返回稳定可预测的生成题、解释、复习建议和 embedding，适合本地开发、自动化测试和无密钥的契约联调。
-
-真实 OpenAI-compatible Provider 目前是预留配置，后续接入适配层后可切换：
+OpenAI-compatible Provider 需要配置 base URL、API Key、聊天模型和 embedding 模型。普通单 Provider 配置如下：
 
 ```properties
 suilearn.ai.provider=openai-compatible
@@ -156,6 +183,32 @@ suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
 suilearn.ai.chat-model=gpt-4.1-mini
 suilearn.ai.embedding-model=text-embedding-3-small
 ```
+
+也可以用环境变量覆盖：
+
+```powershell
+$env:SUILEARN_AI_PROVIDER="openai-compatible"
+$env:SUILEARN_AI_BASE_URL="https://api.openai.com/v1"
+$env:SUILEARN_AI_API_KEY="你的 API Key"
+$env:SUILEARN_AI_CHAT_MODEL="gpt-4.1-mini"
+$env:SUILEARN_AI_EMBEDDING_MODEL="text-embedding-3-small"
+```
+
+如果聊天模型和 embedding 模型来自不同服务，可以拆分配置。DeepSeek 当前适合作为聊天 Provider；资料导入、RAG 检索和知识点抽取仍需要一个支持 `/embeddings` 的 OpenAI-compatible 服务：
+
+```properties
+suilearn.ai.provider=openai-compatible
+suilearn.ai.chat-base-url=https://api.deepseek.com
+suilearn.ai.chat-api-key=${SUILEARN_AI_CHAT_API_KEY}
+suilearn.ai.chat-model=deepseek-chat
+suilearn.ai.embedding-base-url=https://api.openai.com/v1
+suilearn.ai.embedding-api-key=${SUILEARN_AI_EMBEDDING_API_KEY}
+suilearn.ai.embedding-model=text-embedding-3-small
+```
+
+DeepSeek 模型名必须使用账号可访问的实际模型，例如 `deepseek-chat`、`deepseek-reasoner` 或官方兼容期内仍可用的模型名。`chat-base-url` 不要写 `/v1`，因为 DeepSeek 官方 OpenAI-compatible base URL 是 `https://api.deepseek.com`。
+
+后端状态接口会返回脱敏后的 Provider 状态，不会暴露 API Key 原文。
 
 ## 常用检查
 

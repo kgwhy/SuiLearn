@@ -1,0 +1,94 @@
+package com.suilearn.api.retrieval;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import com.suilearn.api.model.EmbeddingStatus;
+import com.suilearn.api.model.LearningMaterial;
+import com.suilearn.api.model.MaterialChunk;
+import com.suilearn.api.model.MaterialSourceType;
+import com.suilearn.api.model.MaterialStatus;
+import com.suilearn.api.model.SearchResultType;
+import com.suilearn.api.model.SourceRef;
+import com.suilearn.api.model.SourceType;
+import com.suilearn.api.persistence.SuiLearnV2Store;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.Test;
+
+class KeywordRetrieverTest {
+    @Test
+    void retrievesTextOnlyChunksWithoutCallingEmbeddingProvider() {
+        var store = mock(SuiLearnV2Store.class);
+        var material = material();
+        var chunk = textOnlyChunk();
+        when(store.listKnowledgePoints()).thenReturn(List.of());
+        when(store.listChunks()).thenReturn(List.of(chunk));
+        when(store.listQuestions()).thenReturn(List.of());
+        when(store.listGeneratedContents()).thenReturn(List.of());
+        when(store.findMaterial("mat_1")).thenReturn(Optional.of(material));
+        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store);
+
+        var results = retriever.search(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null));
+        var evidence = retriever.retrieveEvidence(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null), 3);
+
+        assertThat(results).singleElement().satisfies(result -> {
+            assertThat(result.type()).isEqualTo(SearchResultType.MATERIAL_CHUNK);
+            assertThat(result.id()).isEqualTo("chunk_1");
+            assertThat(result.score()).isGreaterThan(0.0);
+        });
+        assertThat(evidence).containsExactly(chunk);
+    }
+
+    private LearningMaterial material() {
+        return new LearningMaterial(
+            "mat_1",
+            "kb_1",
+            "HashMap Notes",
+            MaterialSourceType.MARKDOWN,
+            MaterialStatus.READY,
+            "HashMap uses buckets and handles collision with linked lists.",
+            Instant.parse("2026-05-25T00:00:00Z"),
+            null
+        );
+    }
+
+    private MaterialChunk textOnlyChunk() {
+        return new MaterialChunk(
+            "chunk_1",
+            "kb_1",
+            "mat_1",
+            "HashMap collision handling uses linked lists.",
+            0,
+            new SourceRef(
+                SourceType.MATERIAL_CHUNK,
+                "chunk_1",
+                "kb_1",
+                "HashMap Notes",
+                "mat_1",
+                "chunk_1",
+                false,
+                "HashMap collision handling uses linked lists."
+            ),
+            null,
+            EmbeddingStatus.TEXT_ONLY,
+            null,
+            null
+        );
+    }
+
+    private static class TextOnlyEmbeddingProvider implements EmbeddingProvider {
+        @Override
+        public Embedding embed(String input) {
+            throw new IllegalStateException("embedding should not be called");
+        }
+
+        @Override
+        public boolean supportsEmbeddings() {
+            return false;
+        }
+    }
+}

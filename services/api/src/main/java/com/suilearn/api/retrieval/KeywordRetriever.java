@@ -35,7 +35,7 @@ public class KeywordRetriever implements Retriever {
         if (normalizedQuery.isBlank()) {
             return List.of();
         }
-        var queryEmbedding = embeddingProvider.embed(request.query()).values();
+        var queryEmbedding = queryEmbedding(request.query());
         var results = new ArrayList<SearchResult>();
         store.listKnowledgePoints().stream()
             .filter(point -> matchesScope(point.knowledgeBaseId(), request.knowledgeBaseId()))
@@ -54,7 +54,7 @@ public class KeywordRetriever implements Retriever {
                 point.sourceRefs()
             )));
         store.listChunks().stream()
-            .filter(chunk -> chunk.embeddingStatus() == EmbeddingStatus.READY)
+            .filter(this::isRetrievable)
             .filter(chunk -> {
                 var material = store.findMaterial(chunk.materialId()).orElse(null);
                 return material != null
@@ -115,9 +115,9 @@ public class KeywordRetriever implements Retriever {
         if (normalizedQuery.isBlank()) {
             return List.of();
         }
-        var queryEmbedding = embeddingProvider.embed(request.query()).values();
+        var queryEmbedding = queryEmbedding(request.query());
         return store.listChunks().stream()
-            .filter(chunk -> chunk.embeddingStatus() == EmbeddingStatus.READY)
+            .filter(this::isRetrievable)
             .filter(chunk -> request.materialId() == null || chunk.materialId().equals(request.materialId()))
             .filter(chunk -> {
                 var material = store.findMaterial(chunk.materialId()).orElse(null);
@@ -157,6 +157,18 @@ public class KeywordRetriever implements Retriever {
 
     private ScoredChunk scoredChunk(MaterialChunk chunk, String normalizedQuery, List<Double> queryEmbedding) {
         return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk));
+    }
+
+    private List<Double> queryEmbedding(String query) {
+        if (!embeddingProvider.supportsEmbeddings()) {
+            return List.of();
+        }
+        return embeddingProvider.embed(query).values();
+    }
+
+    private boolean isRetrievable(MaterialChunk chunk) {
+        return chunk.embeddingStatus() == EmbeddingStatus.READY
+            || chunk.embeddingStatus() == EmbeddingStatus.TEXT_ONLY;
     }
 
     private boolean containsAnyKeyword(String content, String normalizedQuery) {

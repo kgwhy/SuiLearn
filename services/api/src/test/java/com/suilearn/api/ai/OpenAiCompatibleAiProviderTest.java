@@ -29,6 +29,8 @@ class OpenAiCompatibleAiProviderTest {
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", this::handleChatCompletion);
+        server.createContext("/embeddings", this::handleEmbedding);
         server.createContext("/v1/chat/completions", this::handleChatCompletion);
         server.createContext("/v1/embeddings", this::handleEmbedding);
         server.start();
@@ -92,6 +94,68 @@ class OpenAiCompatibleAiProviderTest {
         assertThat(embeddingProvider.model()).isEqualTo("test-embedding");
         assertThat(embedding.values()).containsExactly(0.1, 0.2, 0.3);
         assertThat(lastEmbeddingRequest.get()).contains("test-embedding");
+    }
+
+    @Test
+    void preservesVersionPathWhenBaseUrlIncludesIt() {
+        var versionedProperties = new SuiLearnAiProperties(
+            "openai-compatible",
+            "http://127.0.0.1:" + server.getAddress().getPort() + "/v1",
+            "test-key",
+            "test-chat",
+            "test-embedding",
+            5000,
+            0
+        );
+        var aiProvider = new OpenAiCompatibleAiProvider(versionedProperties, objectMapper);
+        var embeddingProvider = new OpenAiCompatibleEmbeddingProvider(versionedProperties, objectMapper);
+
+        var note = aiProvider.generateReviewSuggestion(new AiProvider.ReviewSuggestionPrompt(
+            "kb_1",
+            List.of(sourceRef()),
+            List.of("kp_1"),
+            List.of("q_1"),
+            null
+        ));
+        var embedding = embeddingProvider.embed("HashMap source");
+
+        assertThat(note.title()).isEqualTo("Review HashMap");
+        assertThat(embedding.values()).containsExactly(0.1, 0.2, 0.3);
+    }
+
+    @Test
+    void usesSeparateChatAndEmbeddingConfigurationWhenProvided() {
+        var splitProperties = new SuiLearnAiProperties(
+            "openai-compatible",
+            "",
+            "",
+            "http://127.0.0.1:" + server.getAddress().getPort(),
+            "chat-key",
+            "http://127.0.0.1:" + server.getAddress().getPort() + "/v1",
+            "embedding-key",
+            "test-chat",
+            "test-embedding",
+            5000,
+            0
+        );
+        var aiProvider = new OpenAiCompatibleAiProvider(splitProperties, objectMapper);
+        var embeddingProvider = new OpenAiCompatibleEmbeddingProvider(splitProperties, objectMapper);
+
+        var question = aiProvider.generateQuestion(new AiProvider.QuestionGenerationPrompt(
+            "kb_1",
+            List.of(sourceRef()),
+            SourceType.MATERIAL,
+            "mat_1",
+            QuestionType.SINGLE_CHOICE,
+            "java",
+            "Java",
+            List.of("kp_1"),
+            null
+        ));
+        var embedding = embeddingProvider.embed("HashMap source");
+
+        assertThat(question.stem()).isEqualTo("What does HashMap use for lookup?");
+        assertThat(embedding.values()).containsExactly(0.1, 0.2, 0.3);
     }
 
     private SourceRef sourceRef() {

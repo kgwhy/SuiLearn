@@ -9,7 +9,7 @@ spring.datasource.password=suilearn_dev_password
 spring.jpa.hibernate.ddl-auto=update
 
 # AI provider mode.
-# Keep the key in the SUILEARN_AI_API_KEY environment variable, not in this file.
+# Keep keys in environment variables, not in this file.
 suilearn.ai.provider=openai-compatible
 suilearn.ai.base-url=https://api.openai.com/v1
 suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
@@ -17,3 +17,12 @@ suilearn.ai.chat-model=gpt-4.1-mini
 suilearn.ai.embedding-model=text-embedding-3-small
 suilearn.ai.timeout-ms=30000
 suilearn.ai.max-retries=2
+
+# DeepSeek can be used for chat, but current RAG import/search still needs an
+# embedding endpoint from a provider that supports /embeddings.
+# suilearn.ai.chat-base-url=https://api.deepseek.com
+# suilearn.ai.chat-api-key=${SUILEARN_AI_CHAT_API_KEY}
+# suilearn.ai.chat-model=deepseek-chat
+# suilearn.ai.embedding-base-url=https://api.openai.com/v1
+# suilearn.ai.embedding-api-key=${SUILEARN_AI_EMBEDDING_API_KEY}
+# suilearn.ai.embedding-model=text-embedding-3-small

@@ -14,6 +14,8 @@ public interface AiProvider {
 
     GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt);
 
+    GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt);
+
     record QuestionGenerationPrompt(
         String knowledgeBaseId,
         List<SourceRef> sourceRefs,
@@ -55,6 +57,14 @@ public interface AiProvider {
     ) {
     }
 
+    record AnswerQuestionPrompt(
+        String knowledgeBaseId,
+        String materialId,
+        String question,
+        List<SourceRef> sourceRefs
+    ) {
+    }
+
     record GeneratedQuestion(
         QuestionType questionType,
         String categoryId,
@@ -70,6 +80,12 @@ public interface AiProvider {
     record GeneratedNote(
         String title,
         String content
+    ) {
+    }
+
+    record GeneratedAnswer(
+        String answer,
+        boolean uncertain
     ) {
     }
 

@@ -42,9 +42,9 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     @Override
     public Embedding embed(String input) {
         ensureConfigured();
-        var request = HttpRequest.newBuilder(URI.create(normalizeBaseUrl(properties.baseUrl()) + "/embeddings"))
+        var request = HttpRequest.newBuilder(URI.create(normalizeBaseUrl(properties.effectiveEmbeddingBaseUrl()) + "/embeddings"))
             .timeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
-            .header("Authorization", "Bearer " + properties.apiKey())
+            .header("Authorization", "Bearer " + properties.effectiveEmbeddingApiKey())
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(requestBody(input)))
             .build();
@@ -64,6 +64,11 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
             }
         }
         throw lastFailure == null ? new IllegalStateException("OpenAI-compatible embeddings request failed") : lastFailure;
+    }
+
+    @Override
+    public boolean supportsEmbeddings() {
+        return properties.hasOpenAiCompatibleEmbeddingConfiguration();
     }
 
     @Override
@@ -102,8 +107,8 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     }
 
     private void ensureConfigured() {
-        if (!properties.hasOpenAiCompatibleConfiguration()) {
-            throw new IllegalStateException("OpenAI-compatible provider is missing baseUrl, apiKey, chatModel, or embeddingModel");
+        if (!properties.hasOpenAiCompatibleEmbeddingConfiguration()) {
+            throw new IllegalStateException("OpenAI-compatible provider is missing embedding baseUrl, embedding apiKey, or embeddingModel");
         }
     }
 
@@ -112,9 +117,6 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
         while (normalized.endsWith("/")) {
             normalized = normalized.substring(0, normalized.length() - 1);
         }
-        if (normalized.endsWith("/v1")) {
-            return normalized;
-        }
-        return normalized + "/v1";
+        return normalized;
     }
 }

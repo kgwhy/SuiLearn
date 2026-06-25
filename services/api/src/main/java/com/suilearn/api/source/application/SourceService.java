@@ -160,7 +160,7 @@ public class SourceService {
                 material,
                 chunk.id(),
                 chunk.content(),
-                material.status() == MaterialStatus.DELETED || chunk.embeddingStatus() != EmbeddingStatus.READY
+                material.status() == MaterialStatus.DELETED || !isUsableChunk(chunk)
             );
         }
         return new SourceRef(
@@ -215,6 +215,11 @@ public class SourceService {
         return materials.find(materialId)
             .map(material -> material.status() == MaterialStatus.DELETED)
             .orElse(false);
+    }
+
+    private boolean isUsableChunk(MaterialChunk chunk) {
+        return chunk.embeddingStatus() == EmbeddingStatus.READY
+            || chunk.embeddingStatus() == EmbeddingStatus.TEXT_ONLY;
     }
 
     private String truncate(String value) {

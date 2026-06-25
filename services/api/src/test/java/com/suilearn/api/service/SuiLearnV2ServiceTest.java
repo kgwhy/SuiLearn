@@ -162,6 +162,8 @@ class SuiLearnV2ServiceTest {
 
         var certainAnswer = service.ask("HashMap collision", javaKb.id(), javaMaterial.id());
         assertThat(certainAnswer.uncertain()).isFalse();
+        assertThat(certainAnswer.answer()).contains("Test AI answer");
+        assertThat(certainAnswer.answer()).contains("[1]");
         assertThat(certainAnswer.citations())
             .extracting(SourceRef::knowledgeBaseId)
             .containsOnly(javaKb.id());
@@ -645,6 +647,33 @@ class SuiLearnV2ServiceTest {
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.CHUNKING));
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.INDEXING));
         statusFlow.verify(store).saveMaterial(argThat(saved -> saved.status() == MaterialStatus.READY));
+    }
+
+    @Test
+    void importMaterialCanUseTextOnlyRagWhenEmbeddingsAreUnavailable() {
+        var textOnlyService = textOnlyService();
+        var kb = textOnlyService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        var material = textOnlyService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets.\n\nHashMap collision handling uses linked lists."
+        ));
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.READY);
+        assertThat(material.embeddingTaskId()).isNull();
+        assertThat(textOnlyService.getMaterialDetail(material.id()).chunks())
+            .allSatisfy(chunk -> {
+                assertThat(chunk.embedding()).isNull();
+                assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.TEXT_ONLY);
+                assertThat(chunk.embeddingModel()).isNull();
+                assertThat(chunk.embeddingDimensions()).isNull();
+            });
+        assertThat(textOnlyService.search("HashMap collision", kb.id(), null)).isNotEmpty();
+        var answer = textOnlyService.ask("HashMap collision", kb.id(), material.id());
+        assertThat(answer.uncertain()).isFalse();
+        assertThat(answer.evidenceChunks()).isNotEmpty();
     }
 
     @Test
@@ -1184,6 +1213,19 @@ class SuiLearnV2ServiceTest {
         );
     }
 
+    private SuiLearnV2Service textOnlyService() {
+        var embeddingProvider = new TextOnlyEmbeddingProvider();
+        return new SuiLearnV2Service(
+            new DeterministicAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            embeddingProvider,
+            new KeywordRetriever(embeddingProvider, store),
+            clock,
+            store
+        );
+    }
+
     @TestConfiguration
     static class FixedClockConfig {
         @Bean
@@ -1264,6 +1306,18 @@ class SuiLearnV2ServiceTest {
                     + " and generate one focused practice set before marking the topic as mastered."
             );
         }
+
+        @Override
+        public GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt) {
+            var citationCount = prompt.sourceRefs() == null ? 0 : prompt.sourceRefs().size();
+            if (citationCount == 0) {
+                return new GeneratedAnswer("不确定：资料中没有足够依据。", true);
+            }
+            return new GeneratedAnswer(
+                "Test AI answer: HashMap collision handling should be checked against the retrieved evidence [1].",
+                false
+            );
+        }
     }
 
     private static class DeterministicEmbeddingProvider implements EmbeddingProvider {
@@ -1310,6 +1364,23 @@ class SuiLearnV2ServiceTest {
         }
     }
 
+    private static class TextOnlyEmbeddingProvider implements EmbeddingProvider {
+        @Override
+        public Embedding embed(String input) {
+            throw new IllegalStateException("embedding should not be called");
+        }
+
+        @Override
+        public boolean supportsEmbeddings() {
+            return false;
+        }
+
+        @Override
+        public String model() {
+            return "text-only";
+        }
+    }
+
     private static class TestAiProvider implements AiProvider {
         @Override
         public GeneratedQuestion generateQuestion(QuestionGenerationPrompt prompt) {
@@ -1338,6 +1409,11 @@ class SuiLearnV2ServiceTest {
         @Override
         public GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt) {
             return new GeneratedNote("Provider replacement review note", "Provider replacement review content");
+        }
+
+        @Override
+        public GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt) {
+            return new GeneratedAnswer("Provider replacement answer [1]", false);
         }
     }
 

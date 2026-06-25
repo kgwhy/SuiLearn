@@ -1,5 +1,6 @@
 package com.suilearn.api.rag.application;
 
+import com.suilearn.api.ai.AiProvider;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialStatus;
 import com.suilearn.api.model.RagAnswer;
@@ -11,11 +12,18 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RagService {
+    private final AiProvider aiProvider;
     private final KnowledgeBaseStore knowledgeBases;
     private final MaterialStore materials;
     private final Retriever retriever;
 
-    public RagService(KnowledgeBaseStore knowledgeBases, MaterialStore materials, Retriever retriever) {
+    public RagService(
+        AiProvider aiProvider,
+        KnowledgeBaseStore knowledgeBases,
+        MaterialStore materials,
+        Retriever retriever
+    ) {
+        this.aiProvider = aiProvider;
         this.knowledgeBases = knowledgeBases;
         this.materials = materials;
         this.retriever = retriever;
@@ -48,10 +56,17 @@ public class RagService {
         if (citations.isEmpty()) {
             return new RagAnswer("不确定：资料中未找到明确依据。", true, List.of(), List.of(), null);
         }
+        var sourceRefs = citations.stream().map(MaterialChunk::sourceRef).toList();
+        var generated = aiProvider.answerQuestion(new AiProvider.AnswerQuestionPrompt(
+            scopedKnowledgeBaseId,
+            materialId,
+            question,
+            sourceRefs
+        ));
         return new RagAnswer(
-            "根据已导入资料，建议优先查看引用片段并结合原文复核。",
-            false,
-            citations.stream().map(MaterialChunk::sourceRef).toList(),
+            generated.answer(),
+            generated.uncertain(),
+            sourceRefs,
             citations,
             null
         );

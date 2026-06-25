@@ -20,21 +20,30 @@ public class AiProviderStatusService {
 
     public AiProviderStatus getStatus() {
         var configured = properties.hasOpenAiCompatibleConfiguration();
+        var embeddingsConfigured = embeddingProvider.supportsEmbeddings();
         return new AiProviderStatus(
             AiProviderType.OPENAI_COMPATIBLE,
             configured,
             configured,
-            emptyToNull(properties.baseUrl()),
+            emptyToNull(properties.effectiveChatBaseUrl()),
             emptyToNull(properties.chatModel()),
-            emptyToNull(properties.embeddingModel()),
-            null,
+            embeddingsConfigured ? emptyToNull(properties.embeddingModel()) : null,
+            embeddingsConfigured ? embeddingProvider.dimensions() : 0,
             API_KEY_ENV_NAME,
             properties.timeoutMs(),
             properties.maxRetries(),
-            configured
-                ? "OpenAI-compatible adapter is configured and available for HTTP generation"
-                : "OpenAI-compatible provider is missing baseUrl, apiKey, chatModel, or embeddingModel"
+            statusMessage(configured, embeddingsConfigured)
         );
+    }
+
+    private String statusMessage(boolean configured, boolean embeddingsConfigured) {
+        if (!configured) {
+            return "OpenAI-compatible provider is missing chat baseUrl, apiKey, or chatModel";
+        }
+        if (embeddingsConfigured) {
+            return "OpenAI-compatible adapter is configured for HTTP generation and vector retrieval";
+        }
+        return "OpenAI-compatible adapter is configured for HTTP generation; RAG retrieval will use text-only search";
     }
 
     private String emptyToNull(String value) {
