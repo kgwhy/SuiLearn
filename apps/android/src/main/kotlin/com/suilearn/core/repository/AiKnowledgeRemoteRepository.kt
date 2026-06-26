@@ -1,12 +1,13 @@
 package com.suilearn.core.repository
 
+import com.suilearn.BuildConfig
 import com.suilearn.core.remote.AiProviderStatus
 import com.suilearn.core.remote.AiRemoteApiClient
 import com.suilearn.core.remote.GeneratedQuestionDraft
 import com.suilearn.core.remote.TaskStatus
 
 class AiKnowledgeRemoteRepository(
-    private val client: AiRemoteApiClient = AiRemoteApiClient(),
+    private val client: AiRemoteApiClient = AiRemoteApiClient(baseUrl = BuildConfig.SUILEARN_API_BASE_URL),
 ) {
     suspend fun getProviderStatus(): Result<AiProviderStatus> = runCatching {
         client.getProviderStatus()

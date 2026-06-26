@@ -9,8 +9,8 @@ import kotlinx.coroutines.withContext
 
 class AiRemoteApiClient(
     private val baseUrl: String = DEFAULT_BASE_URL,
-    private val connectTimeoutMs: Int = 3_000,
-    private val readTimeoutMs: Int = 3_000,
+    private val connectTimeoutMs: Int = 10_000,
+    private val readTimeoutMs: Int = 60_000,
 ) {
     suspend fun getProviderStatus(): AiProviderStatus = withContext(Dispatchers.IO) {
         parseProviderStatus(request(path = "/ai/provider-status"))
@@ -72,6 +72,10 @@ class AiRemoteApiClient(
                 embeddingModel = root.optionalString("embeddingModel"),
                 embeddingDimensions = root.optionalInt("embeddingDimensions"),
                 message = root.optionalString("message"),
+                baseUrl = root.optionalString("baseUrl"),
+                apiKeyEnvName = root.optionalString("apiKeyEnvName"),
+                timeoutMs = root.optionalInt("timeoutMs"),
+                maxRetries = root.optionalInt("maxRetries"),
             )
         }
 
@@ -89,6 +93,8 @@ class AiRemoteApiClient(
                 status = root.requiredString("status"),
                 currentStep = root.optionalString("currentStep"),
                 errorMessage = root.optionalString("errorMessage"),
+                progressPercent = root.optionalInt("progressPercent"),
+                errorCode = root.optionalString("errorCode"),
             )
         }
 

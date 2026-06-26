@@ -8,6 +8,10 @@ data class AiProviderStatus(
     val embeddingModel: String?,
     val embeddingDimensions: Int?,
     val message: String?,
+    val baseUrl: String? = null,
+    val apiKeyEnvName: String? = null,
+    val timeoutMs: Int? = null,
+    val maxRetries: Int? = null,
 )
 
 data class GeneratedQuestionDraft(
@@ -32,4 +36,6 @@ data class TaskStatus(
     val status: String,
     val currentStep: String?,
     val errorMessage: String?,
+    val progressPercent: Int? = null,
+    val errorCode: String? = null,
 )

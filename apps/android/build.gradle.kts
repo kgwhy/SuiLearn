@@ -17,6 +17,14 @@ val localProperties = Properties().apply {
 fun signingValue(key: String): String? =
     localProperties.getProperty(key) ?: providers.environmentVariable(key).orNull
 
+// Backend API base URL. Override via local.properties (suilearn.api.base-url) or the
+// SUILEARN_API_BASE_URL env var. Defaults to the Android emulator loopback for local dev;
+// real devices and production must point this at a reachable (https) host.
+val apiBaseUrl: String =
+    localProperties.getProperty("suilearn.api.base-url")
+        ?: providers.environmentVariable("SUILEARN_API_BASE_URL").orNull
+        ?: "http://10.0.2.2:8080/api/v2"
+
 val releaseStoreFile = signingValue("SUILEARN_RELEASE_STORE_FILE")
 val hasReleaseSigning =
     releaseStoreFile != null &&
@@ -36,6 +44,8 @@ android {
         versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "SUILEARN_API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     signingConfigs {
@@ -75,6 +85,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

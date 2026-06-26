@@ -579,7 +579,7 @@ components:
           format: date-time
     KnowledgeBaseStatistics:
       type: object
-      required: [knowledgeBaseId, questionCount, answeredQuestionCount, answerCount, wrongQuestionCount]
+      required: [knowledgeBaseId, questionCount, materialCount, readyMaterialCount, knowledgePointCount, pendingGeneratedContentCount, savedAiNoteCount, answeredQuestionCount, answerCount, wrongQuestionCount]
       description: >
         Lightweight learning statistics for the knowledge base detail page. Values must be
         derived from saved questions and answer records; if no answer records exist, counts
@@ -590,6 +590,21 @@ components:
         questionCount:
           type: integer
           description: Saved formal questions in the knowledge base.
+        materialCount:
+          type: integer
+          description: Learning materials imported into the knowledge base (excluding deleted).
+        readyMaterialCount:
+          type: integer
+          description: Materials that have finished parsing and indexing and are ready for retrieval.
+        knowledgePointCount:
+          type: integer
+          description: Knowledge points extracted or curated in the knowledge base.
+        pendingGeneratedContentCount:
+          type: integer
+          description: AI-generated drafts currently awaiting user review (PENDING_REVIEW).
+        savedAiNoteCount:
+          type: integer
+          description: AI notes saved into the knowledge base.
         answeredQuestionCount:
           type: integer
           description: Distinct saved questions with at least one answer record.
@@ -1151,6 +1166,25 @@ components:
             $ref: "#/components/schemas/MaterialChunk"
         savedAiNoteId:
           type: string
+        statements:
+          type: array
+          description: >
+            Answer decomposed into individual statements, each carrying the citation indices
+            (into the citations array) that support it. Empty when the answer is not decomposed.
+          items:
+            $ref: "#/components/schemas/RagStatement"
+    RagStatement:
+      type: object
+      required: [text, citations]
+      description: A single answer statement paired with the citation indices that back it.
+      properties:
+        text:
+          type: string
+        citations:
+          type: array
+          description: Zero-based indices into the RagAnswer.citations array supporting this statement.
+          items:
+            type: integer
     MaterialSourceType:
       type: string
       enum: [MARKDOWN, TXT, PDF]
