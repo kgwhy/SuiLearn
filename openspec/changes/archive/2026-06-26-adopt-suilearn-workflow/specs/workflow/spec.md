@@ -59,7 +59,7 @@ The project MUST NOT create new change authority under `docs/proposals/**`, `doc
 - **THEN** workflow policy verification SHALL fail until the file is removed or moved to the active change home
 
 ### Requirement: Protected Change Detection
-Workflow policy verification SHOULD detect implementation or current-fact changes that lack an active OpenSpec change.
+Workflow policy verification SHALL detect implementation or current-fact changes that lack an active OpenSpec change.
 
 #### Scenario: Protected file changes without active change
 - **WHEN** a diff changes `apps/**`, `services/**`, `contracts/**`, or current-fact documents

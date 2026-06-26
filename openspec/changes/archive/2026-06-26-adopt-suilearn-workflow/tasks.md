@@ -13,4 +13,4 @@
 - [x] Add Tiny/Normal/Major change classes and risk-based Build loop levels.
 - [x] Enhance workflow checker for default base ref and protected path detection.
 - [x] Clarify retired proposal template is historical only.
-- [ ] Archive or close this bootstrap change after user review.
+- [x] Archive or close this bootstrap change after user review.

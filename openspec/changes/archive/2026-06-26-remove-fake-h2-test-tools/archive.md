@@ -1,6 +1,6 @@
 # Archive
 
-Status: blocked by local PostgreSQL availability
+Status: passed
 
 ## Change
 
@@ -23,12 +23,18 @@ Working tree changes from base ref `cc8b0c1c5172088229e37948fa2989f868f5a831`.
 - `mvn -f services/api/pom.xml test-compile -q`: passed.
 - `mvn -f services/api/pom.xml -Dtest=AiProviderStatusServiceTest test -q`: passed.
 - `mvn -f services/api/pom.xml -DskipTests package -q`: passed.
-- `mvn -f services/api/pom.xml test -q`: blocked by missing PostgreSQL at `localhost:5432`.
+- `mvn -f services/api/pom.xml test -q`: passed, exit 0 (2026-06-26) against PostgreSQL 16.14. Full suite: 53 tests, 0 failures, 0 errors. See `verification.md`.
 
 ## Deferred Items
 
-- Run full backend integration tests after PostgreSQL is available via `SUILEARN_TEST_DB_URL` or local port 5432.
+- None. The previously deferred PostgreSQL-backed full integration test now runs and passes; the H2-removal blocker is resolved.
 
 ## Review
 
-No code-review blocker identified in the edited files. Release readiness is blocked on PostgreSQL-backed full test verification.
+No code-review blocker identified in the edited files. Release readiness is confirmed: production fake providers and H2 are removed, backend defaults to PostgreSQL + OpenAI-compatible provider, and the full PostgreSQL-backed test suite is green.
+
+## Final Review Summary
+
+- P0: none.
+- P1: none.
+- P2: none.
