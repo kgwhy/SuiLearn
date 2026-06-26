@@ -136,8 +136,11 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
     public GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt) {
         var root = completeJson("""
             Return a JSON object with fields: answer, uncertain.
-            Answer the user's question using only the provided sourceRefs excerpts.
-            Cite supporting excerpts inline with bracketed numbers like [1], [2], matching the sourceRefs order.
+            Prefer the provided evidence content over sourceRef excerpts.
+            Also return statements as an array of objects with fields: text, citations.
+            Answer the user's question using only the provided evidence content.
+            Cite supporting evidence inline with bracketed numbers like [1], [2], matching citationNumber.
+            If the evidence does not contain enough support, set uncertain to true and start answer with "\u4e0d\u786e\u5b9a\uff1a".
             If the excerpts do not contain enough evidence, set uncertain to true and start answer with "不确定：".
             Do not use outside knowledge, do not invent facts, and do not cite sources that are not provided.
         """, payload()
@@ -145,9 +148,14 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             .putValue("knowledgeBaseId", prompt.knowledgeBaseId())
             .putValue("materialId", prompt.materialId())
             .putValue("question", prompt.question())
+            .putValue("evidence", numberedEvidence(prompt))
             .putValue("sourceRefs", numberedSourceRefs(prompt.sourceRefs()))
             .toMap());
-        return new GeneratedAnswer(requiredText(root, "answer"), root.path("uncertain").asBoolean(false));
+        return new GeneratedAnswer(
+            requiredText(root, "answer"),
+            root.path("uncertain").asBoolean(false),
+            statements(root.path("statements"))
+        );
     }
 
     private JsonNode completeJson(String instruction, Map<String, Object> payload) {
@@ -245,6 +253,33 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
         return values;
     }
 
+    private List<Map<String, Object>> numberedEvidence(AnswerQuestionPrompt prompt) {
+        if (prompt.evidence() != null && !prompt.evidence().isEmpty()) {
+            return prompt.evidence().stream()
+                .map(evidence -> Map.<String, Object>of(
+                    "citationNumber", evidence.citationNumber(),
+                    "type", evidence.sourceRef().type(),
+                    "id", evidence.sourceRef().id(),
+                    "knowledgeBaseId", valueOrEmpty(evidence.sourceRef().knowledgeBaseId()),
+                    "title", valueOrEmpty(evidence.sourceRef().title()),
+                    "materialId", valueOrEmpty(evidence.sourceRef().materialId()),
+                    "chunkId", valueOrEmpty(evidence.sourceRef().chunkId()),
+                    "excerpt", valueOrEmpty(evidence.sourceRef().excerpt()),
+                    "content", valueOrEmpty(evidence.content()),
+                    "score", evidence.score()
+                ))
+                .toList();
+        }
+        return numberedSourceRefs(prompt.sourceRefs()).stream()
+            .map(ref -> {
+                Map<String, Object> values = new LinkedHashMap<>(ref);
+                values.put("content", values.getOrDefault("excerpt", ""));
+                values.put("score", 0.0);
+                return values;
+            })
+            .toList();
+    }
+
     private List<String> strings(JsonNode node, List<String> fallback) {
         if (!node.isArray()) {
             return fallback == null ? List.of() : fallback;
@@ -271,6 +306,33 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             }
             if (values.size() >= maxKnowledgePoints) {
                 break;
+            }
+        }
+        return values;
+    }
+
+    private List<GeneratedStatement> statements(JsonNode node) {
+        if (!node.isArray()) {
+            return List.of();
+        }
+        var values = new ArrayList<GeneratedStatement>();
+        for (var value : node) {
+            var text = value.path("text").asText("");
+            if (!text.isBlank()) {
+                values.add(new GeneratedStatement(text, integers(value.path("citations"))));
+            }
+        }
+        return values;
+    }
+
+    private List<Integer> integers(JsonNode node) {
+        if (!node.isArray()) {
+            return List.of();
+        }
+        var values = new ArrayList<Integer>();
+        for (var value : node) {
+            if (value.canConvertToInt()) {
+                values.add(value.asInt());
             }
         }
         return values;

@@ -62,6 +62,7 @@ public class MaterialQueryService {
     public List<LearningMaterial> listMaterials(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
         return materials.list(knowledgeBaseId).stream()
+            .filter(material -> material.status() != MaterialStatus.DELETED)
             .sorted(Comparator.comparing(LearningMaterial::createdAt))
             .toList();
     }

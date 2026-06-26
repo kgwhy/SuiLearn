@@ -12,7 +12,7 @@ class DefaultMaterialChunkerTest {
     private final DefaultMaterialChunker chunker = new DefaultMaterialChunker();
 
     @Test
-    void chunksMaterialByNonBlankLinesAndKeepsSourceRefs() {
+    void chunksMaterialIntoSemanticWindowsAndKeepsSourceRefs() {
         var material = new LearningMaterial(
             "mat_1",
             "kb_1",
@@ -26,10 +26,11 @@ class DefaultMaterialChunkerTest {
 
         var chunks = chunker.chunk(material);
 
-        assertThat(chunks).hasSize(2);
-        assertThat(chunks).extracting("content")
-            .containsExactly("HashMap uses buckets.", "Collision handling uses linked lists.");
-        assertThat(chunks).extracting("ordinal").containsExactly(0, 1);
+        assertThat(chunks).singleElement()
+            .satisfies(chunk -> assertThat(chunk.content())
+                .contains("HashMap uses buckets.")
+                .contains("Collision handling uses linked lists."));
+        assertThat(chunks).extracting("ordinal").containsExactly(0);
         assertThat(chunks)
             .allSatisfy(chunk -> {
                 assertThat(chunk.materialId()).isEqualTo(material.id());
@@ -38,5 +39,36 @@ class DefaultMaterialChunkerTest {
                 assertThat(chunk.sourceRef().knowledgeBaseId()).isEqualTo(material.knowledgeBaseId());
                 assertThat(chunk.sourceRef().deleted()).isFalse();
             });
+    }
+
+    @Test
+    void attachesMarkdownHeadingToBodyInsteadOfCreatingHeadingOnlyChunk() {
+        var material = new LearningMaterial(
+            "mat_1",
+            "kb_1",
+            "Network Notes",
+            MaterialSourceType.MARKDOWN,
+            MaterialStatus.CHUNKING,
+            """
+                # TCP
+
+                TCP is connection oriented and provides reliable transport.
+
+                ## Handshake
+
+                TCP establishes connections with a three-way handshake.
+                """,
+            Instant.parse("2026-05-25T00:00:00Z"),
+            null
+        );
+
+        var chunks = chunker.chunk(material);
+
+        assertThat(chunks).hasSize(1);
+        assertThat(chunks.getFirst().content())
+            .contains("TCP")
+            .contains("TCP is connection oriented")
+            .contains("TCP > Handshake")
+            .contains("three-way handshake");
     }
 }

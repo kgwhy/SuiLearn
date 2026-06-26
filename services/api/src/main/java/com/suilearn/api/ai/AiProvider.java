@@ -61,7 +61,24 @@ public interface AiProvider {
         String knowledgeBaseId,
         String materialId,
         String question,
-        List<SourceRef> sourceRefs
+        List<SourceRef> sourceRefs,
+        List<AnswerEvidence> evidence
+    ) {
+        public AnswerQuestionPrompt(
+            String knowledgeBaseId,
+            String materialId,
+            String question,
+            List<SourceRef> sourceRefs
+        ) {
+            this(knowledgeBaseId, materialId, question, sourceRefs, List.of());
+        }
+    }
+
+    record AnswerEvidence(
+        int citationNumber,
+        SourceRef sourceRef,
+        String content,
+        double score
     ) {
     }
 
@@ -85,7 +102,17 @@ public interface AiProvider {
 
     record GeneratedAnswer(
         String answer,
-        boolean uncertain
+        boolean uncertain,
+        List<GeneratedStatement> statements
+    ) {
+        public GeneratedAnswer(String answer, boolean uncertain) {
+            this(answer, uncertain, List.of());
+        }
+    }
+
+    record GeneratedStatement(
+        String text,
+        List<Integer> citations
     ) {
     }
 

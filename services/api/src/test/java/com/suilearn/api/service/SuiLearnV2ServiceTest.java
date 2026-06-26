@@ -257,6 +257,10 @@ class SuiLearnV2ServiceTest {
         var deletion = service.deleteMaterial(javaMaterial.id(), null, null);
 
         assertThat(deletion.status()).isEqualTo(MaterialStatus.DELETED);
+        assertThat(service.listMaterials(javaKb.id()))
+            .extracting("id")
+            .doesNotContain(javaMaterial.id());
+        assertThat(service.getKnowledgeBaseDetail(javaKb.id()).materialCount()).isZero();
         assertThat(deletion.deletedPendingGeneratedContentCount()).isEqualTo(1);
         assertThat(service.listGeneratedContents(GeneratedContentStatus.DELETED))
             .extracting("id")
@@ -281,25 +285,14 @@ class SuiLearnV2ServiceTest {
     @Test
     void searchHonorsContractLimitAndRejectsInvalidBounds() {
         var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
-        service.importMaterial(kb.id(), new ImportMaterialRequest(
-            "HashMap Notes",
-            null,
-            MaterialSourceType.MARKDOWN,
-            """
-                HashMap buckets 01
-                HashMap collision 02
-                HashMap treeify 03
-                HashMap resizing 04
-                HashMap load factor 05
-                HashMap table 06
-                HashMap hash spread 07
-                HashMap linked list 08
-                HashMap red black tree 09
-                HashMap null key 10
-                HashMap iterator 11
-                HashMap fail fast 12
-                """
-        ));
+        for (var index = 1; index <= 12; index++) {
+            service.importMaterial(kb.id(), new ImportMaterialRequest(
+                "HashMap Notes " + index,
+                null,
+                MaterialSourceType.MARKDOWN,
+                "HashMap buckets " + index
+            ));
+        }
 
         assertThat(service.search("HashMap", kb.id(), null, 2)).hasSize(2);
         assertThat(service.search("HashMap", kb.id(), null, null)).hasSize(10);
@@ -617,24 +610,17 @@ class SuiLearnV2ServiceTest {
 
         assertThat(material.status()).isEqualTo(MaterialStatus.READY);
         assertThat(service.getMaterialDetail(material.id()).chunks())
-            .satisfiesExactly(
-                chunk -> {
-                    assertThat(chunk.content()).isEqualTo("HashMap uses buckets.");
-                    assertThat(chunk.embedding()).hasSize(3);
-                    assertThat(chunk.embedding()).containsExactly(0.0, 0.0, 0.0);
-                    assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
-                    assertThat(chunk.embeddingModel()).isEqualTo("test-embedding-v1");
-                    assertThat(chunk.embeddingDimensions()).isEqualTo(3);
-                },
-                chunk -> {
-                    assertThat(chunk.content()).isEqualTo("Collision handling uses linked lists.");
-                    assertThat(chunk.embedding()).hasSize(3);
-                    assertThat(chunk.embedding()).containsExactly(0.0, 0.0, 0.0);
-                    assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
-                    assertThat(chunk.embeddingModel()).isEqualTo("test-embedding-v1");
-                    assertThat(chunk.embeddingDimensions()).isEqualTo(3);
-                }
-            );
+            .singleElement()
+            .satisfies(chunk -> {
+                assertThat(chunk.content())
+                    .contains("HashMap uses buckets.")
+                    .contains("Collision handling uses linked lists.");
+                assertThat(chunk.embedding()).hasSize(3);
+                assertThat(chunk.embedding()).containsExactly(0.0, 0.0, 0.0);
+                assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.READY);
+                assertThat(chunk.embeddingModel()).isEqualTo("test-embedding-v1");
+                assertThat(chunk.embeddingDimensions()).isEqualTo(3);
+            });
         var detailJson = objectMapper.valueToTree(service.getMaterialDetail(material.id()));
         assertThat(detailJson.path("chunks").get(0).has("embedding")).isFalse();
         assertThat(detailJson.path("chunks").get(0).path("embeddingStatus").asText()).isEqualTo("READY");
@@ -780,7 +766,7 @@ class SuiLearnV2ServiceTest {
                 assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED);
                 assertThat(task.model()).isEqualTo("test-embedding-v1");
                 assertThat(task.resultRef().type()).isEqualTo("MATERIAL_CHUNKS");
-                assertThat(task.resultRef().count()).isEqualTo(2);
+                assertThat(task.resultRef().count()).isEqualTo(1);
             });
     }
 
@@ -918,10 +904,10 @@ class SuiLearnV2ServiceTest {
             .toList();
 
         assertThat(names)
-            .contains("Java", "MySQL", "Java基础面试题", "HashMap", "equals", "hashCode", "String")
-            .doesNotContain("---", "mysql");
+            .contains("MySQL", "HashMap", "equals", "hashCode", "String")
+            .doesNotContain("---", "mysql", "Java");
         assertThat(names).noneMatch(name -> name.contains("在面试里的地位"));
-        assertThat(names.stream().filter(name -> name.equalsIgnoreCase("java")).toList()).hasSize(1);
+        assertThat(names.stream().filter(name -> name.equalsIgnoreCase("java")).toList()).isEmpty();
         assertThat(names.stream().filter(name -> name.equalsIgnoreCase("mysql")).toList()).hasSize(1);
         assertThat(service.listKnowledgePoints(kb.id()))
             .allSatisfy(point -> assertThat(point.sourceRefs())
@@ -1139,7 +1125,7 @@ class SuiLearnV2ServiceTest {
         var answer = semanticService.ask("ordered lookup technique", kb.id(), null);
 
         assertThat(answer.uncertain()).isFalse();
-        assertThat(answer.evidenceChunks()).hasSize(3);
+        assertThat(answer.evidenceChunks()).hasSize(2);
         assertThat(answer.evidenceChunks())
             .extracting(MaterialChunk::materialId)
             .contains(secondMaterial.id());
@@ -1398,7 +1384,13 @@ class SuiLearnV2ServiceTest {
 
         @Override
         public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
-            return List.of(new GeneratedKnowledgePoint("Provider Concept", "Provider extraction description"));
+            return List.of(
+                new GeneratedKnowledgePoint("#](https", "Markdown fragment"),
+                new GeneratedKnowledgePoint("---", "Separator"),
+                new GeneratedKnowledgePoint("A1", "Short section id"),
+                new GeneratedKnowledgePoint("Java", "Generic material label"),
+                new GeneratedKnowledgePoint("Provider Concept", "Provider extraction description")
+            );
         }
 
         @Override

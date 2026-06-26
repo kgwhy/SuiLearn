@@ -1,18 +1,29 @@
 # 验证
 
+Status: passed.
+
 ## 当前状态
 
-- 阶段：Spec
-- 本轮验证结论：已创建方案文档，未进入 Build。
+- 阶段：Verify
+- 状态：已通过。
+- Status: passed.
+- 本轮验证结论：核心 text-only RAG 已实现，完整后端测试已通过。
 
 ## 本轮验证
 
-本轮只新增 OpenSpec 中文方案文档，没有修改业务代码、测试代码、契约或当前事实文档，因此模块测试不适用。
+本轮已修改后端 RAG 业务代码和测试。
 
 已执行或需执行的检查：
 
-- `git diff 3b8aababf1e49294a32a41eb8ed1780632364ad5 --stat`
-- 文件范围核对：仅应包含 `openspec/changes/upgrade-text-only-rag-pipeline/**` 作为本轮新增文件；工作区既有未提交变更不属于本轮。
+- `docker compose -f services/api/compose.local.yml up -d postgres`：通过，`suilearn-postgres` 已运行。
+- `docker exec suilearn-postgres createdb -U suilearn suilearn_test`：通过，测试库已创建。
+- `mvn -f services/api/pom.xml test-compile -q`：通过。
+- `mvn -f services/api/pom.xml "-Dtest=DefaultMaterialChunkerTest,KeywordRetrieverTest,CitationValidatorTest,OpenAiCompatibleAiProviderTest" test -q`：通过，存在 Mockito dynamic agent warning。
+- `mvn -f services/api/pom.xml "-Dtest=SuiLearnV2ServiceTest" test -q`：通过，存在 Mockito dynamic agent warning。
+- `mvn -f services/api/pom.xml test -q`：通过，存在 Mockito dynamic agent warning。
+- `mvn -f services/api/pom.xml "-Dtest=KeywordRetrieverTest" test -q`：通过，覆盖 embedding endpoint 返回 404/异常时自动降级 text-only 检索。
+- `mvn -f services/api/pom.xml test -q`：通过，确认运行时降级修复后完整后端测试仍通过。
+- `git diff 3b8aababf1e49294a32a41eb8ed1780632364ad5 --stat`：完成前执行。
 
 ## Build 阶段必跑验证
 

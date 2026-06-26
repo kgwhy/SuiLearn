@@ -19,7 +19,6 @@ import com.suilearn.api.task.application.TaskService;
 import java.util.LinkedHashMap;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -183,34 +182,14 @@ public class KnowledgePointService {
         if (candidates.size() >= MAX_EXTRACTED_POINTS) {
             return;
         }
-        var name = sanitizeName(rawName);
-        if (!isUsableName(name)) {
+        var name = KnowledgePointCandidateExtractor.sanitizeName(rawName);
+        if (!KnowledgePointCandidateExtractor.isUsableName(name)) {
             return;
         }
         var description = rawDescription == null || rawDescription.isBlank()
             ? "基于资料《" + materialTitle + "》的证据片段提炼。"
             : rawDescription.trim();
-        candidates.putIfAbsent(normalizeKey(name), new ExtractedCandidate(name, description));
-    }
-
-    private String sanitizeName(String rawName) {
-        return rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
-    }
-
-    private boolean isUsableName(String name) {
-        return name.length() >= 2
-            && name.length() <= 32
-            && name.codePoints().anyMatch(codePoint ->
-                Character.isLetterOrDigit(codePoint) || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN
-            )
-            && !name.matches("[-_=~—–]+")
-            && !name.matches(".*[。！？!?；;，,、].*")
-            && !name.contains("——")
-            && !name.contains("--");
-    }
-
-    private String normalizeKey(String term) {
-        return term.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        candidates.putIfAbsent(KnowledgePointCandidateExtractor.normalizeKey(name), new ExtractedCandidate(name, description));
     }
 
     private String newId(String prefix) {

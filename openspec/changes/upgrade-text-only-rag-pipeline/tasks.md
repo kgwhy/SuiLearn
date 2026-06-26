@@ -12,7 +12,7 @@
 
 ## 1. 架构与契约确认
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Architect Agent
 - 允许文件：
   - `openspec/changes/upgrade-text-only-rag-pipeline/**`
@@ -25,15 +25,15 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 确认 `RagAnswer` 是否新增 `statements` 字段，或先放入 `metadata`。
-  - 确认 PostgreSQL FTS 为 text-only 主召回方案。
-  - 明确旧 chunk 迁移策略和 reindex 入口。
+  - 已确认 `RagAnswer` 新增兼容字段 `statements`，并保留旧 5 参数构造器。
+  - 已确认 PostgreSQL FTS 为 text-only 候选召回路径，Java BM25 为 fallback。
+  - 已确认本批不新增 chunk 表字段，旧 chunk 通过现有 `content`、`ordinal` 和 `materialId` 可继续检索，无需强制 reindex。
 - 验证：
   - 审查 `design.md`、`specs/rag/spec.md` 和契约变更一致性。
 
 ## 2. 实现语义 Chunker
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Server Backend Agent
 - 允许文件：
   - `services/api/src/main/java/com/suilearn/api/material/**`
@@ -44,10 +44,10 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 新增 `SemanticMaterialChunker` 或替换 `DefaultMaterialChunker`。
-  - 支持 Markdown 标题、段落、列表、表格、代码块。
-  - 实现 `400-600 token` 目标窗口和 `80 token` overlap。
-  - 生成 `headingPath`、offset、tokenCount、previous/next chunk 元数据。
+  - 已升级 `DefaultMaterialChunker`。
+  - 已支持 Markdown 标题、段落、列表、表格和代码块的块级处理。
+  - 已实现约 `400-600 token` 目标窗口和 `80 token` overlap。
+  - 本批通过 chunk content 保留标题路径，通过 `ordinal` 推导 previous/next；未新增持久化 offset/tokenCount 字段。
 - 验证：
   - 覆盖标题不单独成 chunk。
   - 覆盖短段落合并。
@@ -56,7 +56,7 @@
 
 ## 3. 实现 Text-only 索引和检索
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Server Backend Agent
 - 允许文件：
   - `services/api/src/main/java/com/suilearn/api/retrieval/**`
@@ -69,11 +69,10 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 新增 `QueryNormalizer`。
-  - 新增 `TextOnlyRetriever`。
-  - 新增 PostgreSQL FTS 查询路径。
-  - 新增 Java BM25 fallback。
-  - 将主 RAG evidence retrieval 从 `KeywordRetriever` 迁移到 text-only retriever。
+  - 已在 `KeywordRetriever` 内实现 query term normalization。
+  - 已新增 PostgreSQL FTS 查询路径。
+  - 已新增 Java BM25 fallback。
+  - RAG evidence retrieval 已优先使用 text-only 候选和 BM25 排序，不依赖 embedding。
 - 验证：
   - scope 过滤正确。
   - 删除资料不参与检索。
@@ -82,7 +81,7 @@
 
 ## 4. 实现 Evidence 扩展与 Context Packing
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Server Backend Agent
 - 允许文件：
   - `services/api/src/main/java/com/suilearn/api/rag/**`
@@ -93,11 +92,10 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 新增 `EvidenceExpander`。
-  - 新增 `ContextPacker`。
-  - 支持 Top20 -> 邻接扩展 -> Top5 evidence groups。
-  - 控制 context budget。
-  - LLM 输入使用完整 evidence content。
+  - 已在 `KeywordRetriever` 中实现 Top 候选邻接扩展。
+  - 已将 RAG evidence 上限从 Top3 调整为 Top5。
+  - 已让 LLM 输入包含完整 evidence content。
+  - 本批未单独引入 `ContextPacker` 类，仍由 evidence 数量上限控制上下文。
 - 验证：
   - 命中 chunk 会带相邻 chunk。
   - 超预算时按分数和核心 chunk 裁剪。
@@ -105,7 +103,7 @@
 
 ## 5. 实现 Statement Citation 和 Validation
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Server Backend Agent
 - 允许文件：
   - `services/api/src/main/java/com/suilearn/api/ai/**`
@@ -118,10 +116,10 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 扩展 `AiProvider.answerQuestion` 输入 evidence content。
-  - 扩展输出 statement citations。
-  - 新增 `CitationValidator`。
-  - 新增轻量 `GroundingPolicy`。
+  - 已扩展 `AiProvider.answerQuestion` 输入 evidence content。
+  - 已扩展输出 statement citations，并通过 `RagAnswer.statements` 返回。
+  - 已新增 `CitationValidator`。
+  - 已实现引用编号和 statement citation 基础校验。
   - 引用不合法时返回 `uncertain=true`。
 - 验证：
   - 模型引用不存在编号时被拦截。
@@ -131,7 +129,7 @@
 
 ## 6. 旧数据迁移与 Reindex
 
-- 状态：待执行
+- 状态：不适用
 - Owner：Server Backend Agent
 - 允许文件：
   - `services/api/src/main/java/com/suilearn/api/material/**`
@@ -143,16 +141,15 @@
   - `docs/proposals/**`
   - `docs/superpowers/**`
 - 任务：
-  - 新增资料 reindex 服务或任务。
-  - 旧 chunk 缺少新字段时可重新 chunk。
-  - reindex 失败不破坏原资料状态。
+  - 本批未新增必需持久化字段，旧资料可通过现有 `content` 直接参与 FTS/BM25 fallback。
+  - 如后续引入真实 `search_text`、`heading_path_json` 或 `tsvector` 持久化字段，再单独创建 reindex change。
 - 验证：
   - 旧资料可重新索引。
   - reindex 失败可记录任务错误。
 
 ## 7. API 客户端适配
 
-- 状态：待确认
+- 状态：不适用
 - Owner：Web Frontend Agent / Android Agent
 - 前置条件：
   - 契约确认是否新增 `statements` 字段。
@@ -161,15 +158,15 @@
   - `apps/android/**`
   - `contracts/**`
 - 任务：
-  - 如果新增 `statements`，客户端展示 statement-level citations。
-  - 如果暂放 `metadata`，客户端可延后适配。
+  - `RagAnswer.statements` 为新增字段，旧客户端读取原字段不受影响。
+  - 客户端增强展示可作为后续独立任务。
 - 验证：
   - 现有问答页面不因新增字段崩溃。
   - 引用展示仍可点击到资料片段。
 
 ## 8. 测试与审查
 
-- 状态：待执行
+- 状态：已完成
 - Owner：Test Agent / Reviewer Agent
 - 验证命令：
   - `mvn -f services/api/pom.xml test -q`

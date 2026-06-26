@@ -11,8 +11,11 @@ import com.suilearn.api.model.SourceType;
 import com.suilearn.api.persistence.SuiLearnV2Store;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -36,6 +39,8 @@ public class KeywordRetriever implements Retriever {
             return List.of();
         }
         var queryEmbedding = queryEmbedding(request.query());
+        var scopedChunks = retrievableChunks(request);
+        var candidateChunks = candidateChunks(request, scopedChunks);
         var results = new ArrayList<SearchResult>();
         store.listKnowledgePoints().stream()
             .filter(point -> matchesScope(point.knowledgeBaseId(), request.knowledgeBaseId()))
@@ -53,16 +58,8 @@ public class KeywordRetriever implements Retriever {
                 List.of(point.id()),
                 point.sourceRefs()
             )));
-        store.listChunks().stream()
-            .filter(this::isRetrievable)
-            .filter(chunk -> {
-                var material = store.findMaterial(chunk.materialId()).orElse(null);
-                return material != null
-                    && material.status() != MaterialStatus.DELETED
-                    && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId())
-                    && (request.materialId() == null || request.materialId().equals(material.id()));
-            })
-            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding))
+        candidateChunks.stream()
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, scopedChunks))
             .filter(scored -> scored.score() >= MIN_RETRIEVAL_SCORE)
             .forEach(scored -> store.findMaterial(scored.chunk().materialId()).ifPresent(material -> results.add(new SearchResult(
                 scored.chunk().id(),
@@ -116,6 +113,18 @@ public class KeywordRetriever implements Retriever {
             return List.of();
         }
         var queryEmbedding = queryEmbedding(request.query());
+        var scopedChunks = retrievableChunks(request);
+        var candidateChunks = candidateChunks(request, scopedChunks);
+        var scored = candidateChunks.stream()
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, scopedChunks))
+            .filter(candidate -> candidate.score() >= MIN_RETRIEVAL_SCORE)
+            .sorted(Comparator.comparing(ScoredChunk::score).reversed())
+            .limit((long) limit * EVIDENCE_OVERFETCH_MULTIPLIER)
+            .toList();
+        return expandEvidence(scored, scopedChunks, limit, request.materialId());
+    }
+
+    private List<MaterialChunk> retrievableChunks(RetrievalRequest request) {
         return store.listChunks().stream()
             .filter(this::isRetrievable)
             .filter(chunk -> request.materialId() == null || chunk.materialId().equals(request.materialId()))
@@ -125,14 +134,22 @@ public class KeywordRetriever implements Retriever {
                     && material.status() != MaterialStatus.DELETED
                     && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId());
             })
-            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding))
-            .filter(scored -> scored.score() >= MIN_RETRIEVAL_SCORE)
-            .sorted(Comparator.comparing(ScoredChunk::score).reversed())
-            .limit((long) limit * EVIDENCE_OVERFETCH_MULTIPLIER)
-            .collect(() -> new DiversifiedEvidence(limit, request.materialId()), DiversifiedEvidence::add, DiversifiedEvidence::addAll)
-            .chunks()
-            .stream()
-            .limit(limit)
+            .toList();
+    }
+
+    private List<MaterialChunk> candidateChunks(RetrievalRequest request, List<MaterialChunk> scopedChunks) {
+        var indexed = store.searchChunksText(
+            request.query(),
+            request.knowledgeBaseId(),
+            request.materialId(),
+            Math.max(request.limit(), 50)
+        );
+        if (indexed == null || indexed.isEmpty()) {
+            return scopedChunks;
+        }
+        var indexedIds = indexed.stream().map(MaterialChunk::id).collect(java.util.stream.Collectors.toSet());
+        return scopedChunks.stream()
+            .filter(chunk -> indexedIds.contains(chunk.id()))
             .toList();
     }
 
@@ -155,15 +172,24 @@ public class KeywordRetriever implements Retriever {
             .orElse(false);
     }
 
-    private ScoredChunk scoredChunk(MaterialChunk chunk, String normalizedQuery, List<Double> queryEmbedding) {
-        return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk));
+    private ScoredChunk scoredChunk(
+        MaterialChunk chunk,
+        String normalizedQuery,
+        List<Double> queryEmbedding,
+        List<MaterialChunk> corpus
+    ) {
+        return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk, corpus));
     }
 
     private List<Double> queryEmbedding(String query) {
         if (!embeddingProvider.supportsEmbeddings()) {
             return List.of();
         }
-        return embeddingProvider.embed(query).values();
+        try {
+            return embeddingProvider.embed(query).values();
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
     }
 
     private boolean isRetrievable(MaterialChunk chunk) {
@@ -188,15 +214,24 @@ public class KeywordRetriever implements Retriever {
         return requestedKnowledgeBaseId == null || requestedKnowledgeBaseId.isBlank() || valueKnowledgeBaseId.equals(requestedKnowledgeBaseId);
     }
 
-    private double combinedScore(String content, String normalizedQuery, List<Double> queryEmbedding, MaterialChunk chunk) {
-        var keywordScore = keywordScore(content, normalizedQuery);
+    private double combinedScore(
+        String content,
+        String normalizedQuery,
+        List<Double> queryEmbedding,
+        MaterialChunk chunk,
+        List<MaterialChunk> corpus
+    ) {
+        var terms = keywords(normalizedQuery);
+        var keywordScore = textOnlyScore(content, normalizedQuery, terms, corpus);
         var semanticScore = semanticScore(queryEmbedding, chunk);
         if (keywordScore == 0.0 && semanticScore == 0.0) {
             return 0.0;
         }
-        var coverageScore = coverageScore(content, normalizedQuery);
         var compactnessScore = compactnessScore(content);
-        return clamp((semanticScore * 0.55) + (keywordScore * 0.30) + (coverageScore * 0.10) + (compactnessScore * 0.05));
+        if (semanticScore > 0.0) {
+            return clamp((semanticScore * 0.55) + (keywordScore * 0.40) + (compactnessScore * 0.05));
+        }
+        return clamp((keywordScore * 0.95) + (compactnessScore * 0.05));
     }
 
     private double semanticScore(List<Double> queryEmbedding, MaterialChunk chunk) {
@@ -226,6 +261,76 @@ public class KeywordRetriever implements Retriever {
             }
         }
         return total == 0 ? 0.0 : (double) hits / (double) total;
+    }
+
+    private double textOnlyScore(
+        String content,
+        String normalizedQuery,
+        List<String> terms,
+        List<MaterialChunk> corpus
+    ) {
+        if (content == null || normalizedQuery == null || normalizedQuery.isBlank()) {
+            return 0.0;
+        }
+        var normalizedContent = normalize(content);
+        var phraseScore = normalizedContent.contains(normalizedQuery) ? 1.0 : 0.0;
+        var bm25 = bm25Score(content, terms, corpus);
+        var normalizedBm25 = bm25 <= 0.0 ? 0.0 : bm25 / (bm25 + 3.0);
+        var coverageScore = coverageScore(content, normalizedQuery);
+        return clamp((normalizedBm25 * 0.60) + (phraseScore * 0.25) + (coverageScore * 0.15));
+    }
+
+    private double bm25Score(String content, List<String> terms, List<MaterialChunk> corpus) {
+        if (terms.isEmpty() || corpus.isEmpty()) {
+            return 0.0;
+        }
+        var frequencies = termFrequencies(content);
+        if (frequencies.isEmpty()) {
+            return 0.0;
+        }
+        var documentLength = frequencies.values().stream().mapToInt(Integer::intValue).sum();
+        var averageLength = averageDocumentLength(corpus);
+        var score = 0.0;
+        var k1 = 1.5;
+        var b = 0.75;
+        for (var term : terms) {
+            var frequency = frequencies.getOrDefault(term, 0);
+            if (frequency == 0) {
+                continue;
+            }
+            var documentFrequency = documentFrequency(term, corpus);
+            var idf = Math.log(1.0 + ((corpus.size() - documentFrequency + 0.5) / (documentFrequency + 0.5)));
+            var denominator = frequency + k1 * (1.0 - b + b * documentLength / Math.max(1.0, averageLength));
+            score += idf * (frequency * (k1 + 1.0)) / denominator;
+        }
+        return score;
+    }
+
+    private double averageDocumentLength(List<MaterialChunk> corpus) {
+        return corpus.stream()
+            .map(MaterialChunk::content)
+            .map(this::termFrequencies)
+            .mapToInt(frequencies -> frequencies.values().stream().mapToInt(Integer::intValue).sum())
+            .average()
+            .orElse(1.0);
+    }
+
+    private int documentFrequency(String term, List<MaterialChunk> corpus) {
+        var count = 0;
+        for (var chunk : corpus) {
+            if (termFrequencies(chunk.content()).containsKey(term)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private Map<String, Integer> termFrequencies(String content) {
+        var values = new HashMap<String, Integer>();
+        for (var term : keywords(normalize(content))) {
+            values.merge(term, 1, Integer::sum);
+        }
+        return values;
     }
 
     private double coverageScore(String content, String normalizedQuery) {
@@ -261,9 +366,37 @@ public class KeywordRetriever implements Retriever {
         if (normalizedQuery == null || normalizedQuery.isBlank()) {
             return List.of();
         }
-        return List.of(normalizedQuery.split("[^\\p{L}\\p{N}]+")).stream()
-            .filter(keyword -> !keyword.isBlank())
-            .toList();
+        var values = new ArrayList<String>();
+        var token = new StringBuilder();
+        String previousHan = null;
+        for (var index = 0; index < normalizedQuery.length();) {
+            var codePoint = normalizedQuery.codePointAt(index);
+            if (Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN) {
+                flushToken(values, token);
+                var current = new String(Character.toChars(codePoint));
+                values.add(current);
+                if (previousHan != null) {
+                    values.add(previousHan + current);
+                }
+                previousHan = current;
+            } else if (Character.isLetterOrDigit(codePoint)) {
+                token.appendCodePoint(codePoint);
+                previousHan = null;
+            } else {
+                flushToken(values, token);
+                previousHan = null;
+            }
+            index += Character.charCount(codePoint);
+        }
+        flushToken(values, token);
+        return values.stream().distinct().toList();
+    }
+
+    private void flushToken(List<String> values, StringBuilder token) {
+        if (!token.isEmpty()) {
+            values.add(token.toString());
+            token.setLength(0);
+        }
     }
 
     private double cosine(List<Double> left, List<Double> right) {
@@ -306,6 +439,41 @@ public class KeywordRetriever implements Retriever {
     }
 
     private record ScoredChunk(MaterialChunk chunk, double score) {
+    }
+
+    private List<MaterialChunk> expandEvidence(
+        List<ScoredChunk> scored,
+        List<MaterialChunk> scopedChunks,
+        int limit,
+        String materialId
+    ) {
+        var bases = scored.stream()
+            .collect(() -> new DiversifiedEvidence(limit, materialId), DiversifiedEvidence::add, DiversifiedEvidence::addAll)
+            .chunks();
+        var byNeighborKey = new HashMap<String, MaterialChunk>();
+        for (var chunk : scopedChunks) {
+            byNeighborKey.put(neighborKey(chunk.materialId(), chunk.ordinal()), chunk);
+        }
+        var selected = new LinkedHashMap<String, MaterialChunk>();
+        for (var base : bases) {
+            addEvidence(selected, base, limit);
+            addEvidence(selected, byNeighborKey.get(neighborKey(base.materialId(), base.ordinal() - 1)), limit);
+            addEvidence(selected, byNeighborKey.get(neighborKey(base.materialId(), base.ordinal() + 1)), limit);
+            if (selected.size() >= limit) {
+                break;
+            }
+        }
+        return selected.values().stream().toList();
+    }
+
+    private void addEvidence(LinkedHashMap<String, MaterialChunk> selected, MaterialChunk chunk, int limit) {
+        if (chunk != null && selected.size() < limit) {
+            selected.putIfAbsent(chunk.id(), chunk);
+        }
+    }
+
+    private String neighborKey(String materialId, int ordinal) {
+        return materialId + "#" + ordinal;
     }
 
     private static class DiversifiedEvidence {

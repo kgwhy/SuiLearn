@@ -36,6 +36,7 @@ import com.suilearn.api.model.MaterialStatus;
 import com.suilearn.api.model.QuestionSummary;
 import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.RagAnswer;
+import com.suilearn.api.model.RagStatement;
 import com.suilearn.api.model.SearchResult;
 import com.suilearn.api.model.SavedAiNote;
 import com.suilearn.api.model.SourceRef;
@@ -45,6 +46,7 @@ import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.model.TaskResultRef;
 import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.persistence.SuiLearnV2Store;
+import com.suilearn.api.rag.application.CitationValidator;
 import com.suilearn.api.retrieval.EmbeddingProvider;
 import com.suilearn.api.retrieval.Retriever;
 import com.suilearn.api.source.application.SourceService;
@@ -54,7 +56,6 @@ import java.time.Clock;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Service;
@@ -68,6 +69,7 @@ public class SuiLearnV2Workflow {
     private static final String KNOWLEDGE_POINT_EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
 
     private final AiProvider aiProvider;
+    private final CitationValidator citationValidator = new CitationValidator();
     private final Clock clock;
     private final EmbeddingProvider embeddingProvider;
     private final MaterialChunker materialChunker;
@@ -154,6 +156,7 @@ public class SuiLearnV2Workflow {
     public List<LearningMaterial> listMaterials(String knowledgeBaseId) {
         requireKnowledgeBase(knowledgeBaseId);
         return store.listMaterials(knowledgeBaseId).stream()
+            .filter(material -> material.status() != MaterialStatus.DELETED)
             .sorted(Comparator.comparing(LearningMaterial::createdAt))
             .toList();
     }
@@ -877,8 +880,14 @@ public class SuiLearnV2Workflow {
         }
         var citations = retriever.retrieveEvidence(
             new Retriever.RetrievalRequest(question, scopedKnowledgeBaseId, materialId),
-            3
+            5
         );
+        if (citations.isEmpty()) {
+            return new RagAnswer("\u4e0d\u786e\u5b9a\uff1a\u8d44\u6599\u4e2d\u672a\u627e\u5230\u660e\u786e\u8bc1\u636e\u3002", true, List.of(), List.of(), null);
+        }
+        if (citations.isEmpty()) {
+            return new RagAnswer("不确定：资料中未找到明确证据。", true, List.of(), List.of(), null);
+        }
         if (citations.isEmpty()) {
             return new RagAnswer("不确定：资料中未找到明确依据。", true, List.of(), List.of(), null);
         }
@@ -887,15 +896,45 @@ public class SuiLearnV2Workflow {
             scopedKnowledgeBaseId,
             materialId,
             question,
-            sourceRefs
+            sourceRefs,
+            answerEvidence(citations)
         ));
+        var validation = citationValidator.validate(generated, citations.size());
+        if (!validation.valid()) {
+            return new RagAnswer("\u4e0d\u786e\u5b9a\uff1a" + validation.reason(), true, sourceRefs, citations, null);
+        }
+        if (!validation.valid()) {
+            return new RagAnswer("不确定：" + validation.reason(), true, sourceRefs, citations, null);
+        }
+        if (!validation.valid()) {
+            return new RagAnswer("不确定：" + validation.reason(), true, sourceRefs, citations, null);
+        }
         return new RagAnswer(
             generated.answer(),
             generated.uncertain(),
             sourceRefs,
             citations,
-            null
+            null,
+            statements(generated)
         );
+    }
+
+    private List<AiProvider.AnswerEvidence> answerEvidence(List<MaterialChunk> chunks) {
+        var values = new java.util.ArrayList<AiProvider.AnswerEvidence>();
+        for (var index = 0; index < chunks.size(); index++) {
+            var chunk = chunks.get(index);
+            values.add(new AiProvider.AnswerEvidence(index + 1, chunk.sourceRef(), chunk.content(), 0.0));
+        }
+        return values;
+    }
+
+    private List<RagStatement> statements(AiProvider.GeneratedAnswer answer) {
+        if (answer.statements() == null) {
+            return List.of();
+        }
+        return answer.statements().stream()
+            .map(statement -> new RagStatement(statement.text(), statement.citations()))
+            .toList();
     }
 
     private SearchScope requireSearchScope(String knowledgeBaseId, String materialId) {
@@ -937,7 +976,9 @@ public class SuiLearnV2Workflow {
     }
 
     private int countMaterials(String knowledgeBaseId) {
-        return store.listMaterials(knowledgeBaseId).size();
+        return (int) store.listMaterials(knowledgeBaseId).stream()
+            .filter(material -> material.status() != MaterialStatus.DELETED)
+            .count();
     }
 
     private int countKnowledgePoints(String knowledgeBaseId) {
@@ -1095,34 +1136,17 @@ public class SuiLearnV2Workflow {
         if (candidates.size() >= MAX_EXTRACTED_POINTS) {
             return;
         }
-        var name = sanitizeKnowledgePointName(rawName);
-        if (!isUsableKnowledgePointName(name)) {
+        var name = KnowledgePointCandidateExtractor.sanitizeName(rawName);
+        if (!KnowledgePointCandidateExtractor.isUsableName(name)) {
             return;
         }
         var description = rawDescription == null || rawDescription.isBlank()
             ? "基于资料《" + materialTitle + "》的证据片段提炼。"
             : rawDescription.trim();
-        candidates.putIfAbsent(normalizeKnowledgePointKey(name), new ExtractedKnowledgePointCandidate(name, description));
-    }
-
-    private String sanitizeKnowledgePointName(String rawName) {
-        return rawName == null ? "" : rawName.trim().replaceAll("\\s+", " ");
-    }
-
-    private boolean isUsableKnowledgePointName(String name) {
-        return name.length() >= 2
-            && name.length() <= 32
-            && name.codePoints().anyMatch(codePoint ->
-                Character.isLetterOrDigit(codePoint) || Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN
-            )
-            && !name.matches("[-_=~—–]+")
-            && !name.matches(".*[。！？!?；;，,、].*")
-            && !name.contains("——")
-            && !name.contains("--");
-    }
-
-    private String normalizeKnowledgePointKey(String term) {
-        return term.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+        candidates.putIfAbsent(
+            KnowledgePointCandidateExtractor.normalizeKey(name),
+            new ExtractedKnowledgePointCandidate(name, description)
+        );
     }
 
     private GeneratedQuestionDraft updateGeneratedStatus(GeneratedQuestionDraft existing, GeneratedContentStatus status) {

@@ -158,6 +158,33 @@ class OpenAiCompatibleAiProviderTest {
         assertThat(embedding.values()).containsExactly(0.1, 0.2, 0.3);
     }
 
+    @Test
+    void sendsFullEvidenceContentForRagAnswers() {
+        var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
+        var ref = sourceRef();
+
+        var answer = provider.answerQuestion(new AiProvider.AnswerQuestionPrompt(
+            "kb_1",
+            "mat_1",
+            "How does HashMap handle collisions?",
+            List.of(ref),
+            List.of(new AiProvider.AnswerEvidence(
+                1,
+                ref,
+                "HashMap handles collisions by storing entries in buckets and using linked lists or tree bins.",
+                0.92
+            ))
+        ));
+
+        assertThat(answer.answer()).contains("[1]");
+        assertThat(answer.statements()).singleElement()
+            .satisfies(statement -> assertThat(statement.citations()).containsExactly(1));
+        assertThat(lastChatRequest.get())
+            .contains("\\\"evidence\\\"")
+            .contains("linked lists or tree bins")
+            .contains("\\\"citationNumber\\\":1");
+    }
+
     private SourceRef sourceRef() {
         return new SourceRef(
             SourceType.MATERIAL,
@@ -176,6 +203,10 @@ class OpenAiCompatibleAiProviderTest {
         var content = lastChatRequest.get().contains("generate_question")
             ? """
                 {"questionType":"SINGLE_CHOICE","categoryId":"java","categoryName":"Java","knowledgePointIds":["kp_1"],"stem":"What does HashMap use for lookup?","options":["A. Hash table","B. Linked only"],"answer":["A"],"explanation":"The answer is grounded in the source."}
+                """
+            : lastChatRequest.get().contains("answer_question")
+            ? """
+                {"answer":"HashMap handles collisions with linked lists or tree bins [1].","uncertain":false,"statements":[{"text":"HashMap handles collisions with linked lists or tree bins.","citations":[1]}]}
                 """
             : """
                 {"title":"Review HashMap","content":"Revisit HashMap collision handling and redo one focused question."}

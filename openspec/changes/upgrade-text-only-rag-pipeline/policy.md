@@ -4,7 +4,7 @@
 
 - 名称：`upgrade-text-only-rag-pipeline`
 - 等级：Major
-- 当前阶段：Spec
+- 当前阶段：Verify
 - base_ref：`3b8aababf1e49294a32a41eb8ed1780632364ad5`
 - Worktree 模式：serial
 - 主角色：Architect Agent
@@ -51,7 +51,7 @@ Build 阶段必须在 Approval Gate 后按任务逐项授权。预计会涉及�
 - 本轮为纯 Spec 文档变更，不运行后端模块测试。
 - Build 前后端任务必须记录基线测试。
 - 预计基线命令：`mvn -f services/api/pom.xml test -q`
-- 当前已知风险：本地 PostgreSQL 测试库可能不可用；若不可用，需记录原始失败输出，并补充可运行的单元测试或 test-compile。
+- 当前已知风险：无阻塞风险；本地 PostgreSQL 测试库 `suilearn_test` 已创建并用于完整后端测试。
 
 ## 文件锁
 

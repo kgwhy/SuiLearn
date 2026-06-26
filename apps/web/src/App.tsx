@@ -101,6 +101,10 @@ export function App() {
 
   const selectedKnowledgeBase = knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId) ?? null;
   const selectedKnowledgePoint = knowledgePoints.find((item) => item.id === selectedKnowledgePointId) ?? null;
+  const activeMaterials = useMemo(
+    () => materials.filter((item) => item.status !== "DELETED"),
+    [materials]
+  );
   const visibleDrafts = useMemo(
     () => drafts.filter((draft) => contentFilter === "ALL" || draft.status === contentFilter),
     [contentFilter, drafts]
@@ -110,8 +114,8 @@ export function App() {
     if (generationForm.sourceKind === "knowledgePoint") {
       return knowledgePoints.find((item) => item.id === generationForm.sourceId) ?? knowledgePoints[0] ?? null;
     }
-    return materials.find((item) => item.id === generationForm.sourceId) ?? materials[0] ?? null;
-  }, [generationForm.sourceId, generationForm.sourceKind, knowledgePoints, materials]);
+    return activeMaterials.find((item) => item.id === generationForm.sourceId) ?? activeMaterials[0] ?? null;
+  }, [activeMaterials, generationForm.sourceId, generationForm.sourceKind, knowledgePoints]);
 
   useEffect(() => {
     void loadKnowledgeBases();
@@ -136,11 +140,11 @@ export function App() {
   }, [selectedKnowledgeBase?.id, selectedKnowledgeBase?.name, selectedKnowledgeBase?.description]);
 
   useEffect(() => {
-    const firstMaterialId = materials.find((item) => item.status !== "DELETED")?.id;
+    const firstMaterialId = activeMaterials[0]?.id;
     if (firstMaterialId && !generationForm.sourceId) {
       setGenerationForm((current) => ({ ...current, sourceId: firstMaterialId }));
     }
-  }, [generationForm.sourceId, materials]);
+  }, [activeMaterials, generationForm.sourceId]);
 
   useEffect(() => {
     if (selectedKnowledgePointId && !knowledgePoints.some((item) => item.id === selectedKnowledgePointId)) {
@@ -218,7 +222,7 @@ export function App() {
     ]);
     setDetail(nextDetail);
     setStatistics(nextStats);
-    setMaterials(nextMaterials);
+    setMaterials(nextMaterials.filter((item) => item.status !== "DELETED"));
     setKnowledgePoints(nextKnowledgePoints);
     setQuestions(nextQuestions);
     setDrafts(nextDrafts.filter((draft) => draft.knowledgeBaseId === knowledgeBaseId));
@@ -356,8 +360,11 @@ export function App() {
   async function deleteMaterial(materialId: string) {
     const confirmed = window.confirm("删除资料后，它不会再参与后续搜索、问答和生成。继续？");
     if (!confirmed) return;
-    await run(() => api.deleteMaterial(materialId), "资料已删除");
+    const deletion = await run(() => api.deleteMaterial(materialId), "资料已删除");
+    if (!deletion) return;
+    setMaterials((current) => current.filter((item) => item.id !== materialId));
     if (materialDetail?.id === materialId) setMaterialDetail(null);
+    setGenerationForm((current) => current.sourceId === materialId ? { ...current, sourceId: "" } : current);
     await loadWorkbench();
   }
 
@@ -647,7 +654,7 @@ export function App() {
           <OverviewPanel
             detail={detail}
             statistics={statistics}
-            materials={materials}
+            materials={activeMaterials}
             knowledgePoints={knowledgePoints}
             selectedKnowledgePoint={selectedKnowledgePoint}
             questions={questions}
@@ -668,7 +675,7 @@ export function App() {
             setMaterialForm={setMaterialForm}
             readMaterialFile={readMaterialFile}
             importMaterial={importMaterial}
-            materials={materials}
+            materials={activeMaterials}
             materialDetail={materialDetail}
             openMaterial={openMaterial}
             openKnowledgePoint={openKnowledgePoint}
@@ -687,7 +694,7 @@ export function App() {
           <GeneratePanel
             form={generationForm}
             setForm={setGenerationForm}
-            materials={materials}
+            materials={activeMaterials}
             knowledgePoints={knowledgePoints}
             questionTypes={questionTypes}
             generateQuestion={generateQuestion}

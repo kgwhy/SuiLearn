@@ -217,6 +217,21 @@ public class SuiLearnV2Store {
     }
 
     @Transactional(readOnly = true)
+    public List<MaterialChunk> searchChunksText(String query, String knowledgeBaseId, String materialId, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        try {
+            return chunks.searchText(query, blankToNull(knowledgeBaseId), blankToNull(materialId), Math.max(1, limit))
+                .stream()
+                .map(this::toModel)
+                .toList();
+        } catch (RuntimeException exception) {
+            return List.of();
+        }
+    }
+
+    @Transactional(readOnly = true)
     public Optional<MaterialChunk> findChunk(String id) {
         return chunks.findById(id).map(this::toModel);
     }
@@ -622,5 +637,9 @@ public class SuiLearnV2Store {
 
     private <E extends Enum<E>> E enumOrDefault(Class<E> type, String value, E defaultValue) {
         return value == null ? defaultValue : Enum.valueOf(type, value);
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }
