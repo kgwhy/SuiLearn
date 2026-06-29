@@ -95,7 +95,9 @@ Android 约束：
 | Persistence | Spring Data JPA |
 | 开发 / 测试数据库 | PostgreSQL；本地可使用 `services/api/compose.local.yml` |
 | 目标数据库 | PostgreSQL |
+| text-only 检索索引 | 应用层 n-gram tokenizer 生成 `search_text` → PostgreSQL 生成列 `search_tsv = to_tsvector('simple', search_text)` + GIN 索引；零扩展，适配镜像 `pgvector/pgvector:pg16`。pg_jieba/zhparser 真正中文分词需自定义镜像，列为后续可选升级 |
 | 向量检索 | pgvector / OpenAI-compatible embedding 优先，关键词检索作为无语义命中时的兜底 |
+| 检索索引迁移 | 项目无 Flyway/Liquibase，schema 由 Hibernate `ddl-auto` 管理；生成列、GIN 索引与 `search_text` 回填由运行时 `ApplicationRunner` 组件完成（沿用 `PostgresLargeObjectTextMigration` 模式） |
 | AI Provider | 业务层依赖 `AiProvider`；当前运行时实现为 OpenAI-compatible |
 | Spring AI | 预留 1.0.x 稳定线；首轮只建立 SuiLearn port 与 `ai/infrastructure/springai/**` adapter 边界，不启用 starter |
 | 测试 | Spring Boot Test / JUnit |

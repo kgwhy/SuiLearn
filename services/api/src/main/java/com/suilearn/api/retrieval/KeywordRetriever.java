@@ -3,7 +3,6 @@ package com.suilearn.api.retrieval;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialStatus;
-import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.SearchResult;
 import com.suilearn.api.model.SearchResultType;
 import com.suilearn.api.model.SourceRef;
@@ -15,7 +14,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -23,13 +21,21 @@ public class KeywordRetriever implements Retriever {
     private static final double MIN_SEMANTIC_SCORE = 0.35;
     private static final double MIN_RETRIEVAL_SCORE = 0.15;
     private static final int EVIDENCE_OVERFETCH_MULTIPLIER = 4;
+    // 索引仅做候选预筛选，BM25 再排序；text-only 路径有界候选上限，优先保性能。
+    private static final int CANDIDATE_INDEX_LIMIT = 50;
 
     private final EmbeddingProvider embeddingProvider;
     private final SuiLearnV2Store store;
+    private final TextSearchTokenizer tokenizer;
 
-    public KeywordRetriever(EmbeddingProvider embeddingProvider, SuiLearnV2Store store) {
+    public KeywordRetriever(
+        EmbeddingProvider embeddingProvider,
+        SuiLearnV2Store store,
+        TextSearchTokenizer tokenizer
+    ) {
         this.embeddingProvider = embeddingProvider;
         this.store = store;
+        this.tokenizer = tokenizer;
     }
 
     @Override
@@ -41,6 +47,7 @@ public class KeywordRetriever implements Retriever {
         var queryEmbedding = queryEmbedding(request.query());
         var scopedChunks = retrievableChunks(request);
         var candidateChunks = candidateChunks(request, scopedChunks);
+        var corpusStats = CorpusStats.of(scopedChunks, tokenizer);
         var results = new ArrayList<SearchResult>();
         store.listKnowledgePoints().stream()
             .filter(point -> matchesScope(point.knowledgeBaseId(), request.knowledgeBaseId()))
@@ -59,7 +66,7 @@ public class KeywordRetriever implements Retriever {
                 point.sourceRefs()
             )));
         candidateChunks.stream()
-            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, scopedChunks))
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, corpusStats))
             .filter(scored -> scored.score() >= MIN_RETRIEVAL_SCORE)
             .forEach(scored -> store.findMaterial(scored.chunk().materialId()).ifPresent(material -> results.add(new SearchResult(
                 scored.chunk().id(),
@@ -115,8 +122,9 @@ public class KeywordRetriever implements Retriever {
         var queryEmbedding = queryEmbedding(request.query());
         var scopedChunks = retrievableChunks(request);
         var candidateChunks = candidateChunks(request, scopedChunks);
+        var corpusStats = CorpusStats.of(scopedChunks, tokenizer);
         var scored = candidateChunks.stream()
-            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, scopedChunks))
+            .map(chunk -> scoredChunk(chunk, normalizedQuery, queryEmbedding, corpusStats))
             .filter(candidate -> candidate.score() >= MIN_RETRIEVAL_SCORE)
             .sorted(Comparator.comparing(ScoredChunk::score).reversed())
             .limit((long) limit * EVIDENCE_OVERFETCH_MULTIPLIER)
@@ -125,24 +133,22 @@ public class KeywordRetriever implements Retriever {
     }
 
     private List<MaterialChunk> retrievableChunks(RetrievalRequest request) {
-        return store.listChunks().stream()
-            .filter(this::isRetrievable)
-            .filter(chunk -> request.materialId() == null || chunk.materialId().equals(request.materialId()))
-            .filter(chunk -> {
-                var material = store.findMaterial(chunk.materialId()).orElse(null);
-                return material != null
-                    && material.status() != MaterialStatus.DELETED
-                    && matchesScope(material.knowledgeBaseId(), request.knowledgeBaseId());
-            })
-            .toList();
+        // scope/删除/embedding_status 过滤已在 SQL 完成，避免全表 findAll() 与逐 chunk 的 N+1。
+        return store.listChunksByScope(request.knowledgeBaseId(), request.materialId());
     }
 
     private List<MaterialChunk> candidateChunks(RetrievalRequest request, List<MaterialChunk> scopedChunks) {
+        // 语义模式下，索引（仅基于关键词）无法预过滤「语义相关但无关键词重叠」的 chunk，
+        // 否则会丢失语义召回；此时对已加载的 scope 候选直接打分。索引收窄只用于 text-only
+        // 主路径——这也是本变更要消除全表扫描的目标场景。
+        if (embeddingProvider.supportsEmbeddings()) {
+            return scopedChunks;
+        }
         var indexed = store.searchChunksText(
             request.query(),
             request.knowledgeBaseId(),
             request.materialId(),
-            Math.max(request.limit(), 50)
+            Math.max(request.limit(), CANDIDATE_INDEX_LIMIT)
         );
         if (indexed == null || indexed.isEmpty()) {
             return scopedChunks;
@@ -176,9 +182,9 @@ public class KeywordRetriever implements Retriever {
         MaterialChunk chunk,
         String normalizedQuery,
         List<Double> queryEmbedding,
-        List<MaterialChunk> corpus
+        CorpusStats stats
     ) {
-        return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk, corpus));
+        return new ScoredChunk(chunk, combinedScore(chunk.content(), normalizedQuery, queryEmbedding, chunk, stats));
     }
 
     private List<Double> queryEmbedding(String query) {
@@ -190,20 +196,6 @@ public class KeywordRetriever implements Retriever {
         } catch (RuntimeException exception) {
             return List.of();
         }
-    }
-
-    private boolean isRetrievable(MaterialChunk chunk) {
-        return chunk.embeddingStatus() == EmbeddingStatus.READY
-            || chunk.embeddingStatus() == EmbeddingStatus.TEXT_ONLY;
-    }
-
-    private boolean containsAnyKeyword(String content, String normalizedQuery) {
-        for (var keyword : keywords(normalizedQuery)) {
-            if (!keyword.isBlank() && contains(content, keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean contains(String value, String normalizedQuery) {
@@ -219,10 +211,10 @@ public class KeywordRetriever implements Retriever {
         String normalizedQuery,
         List<Double> queryEmbedding,
         MaterialChunk chunk,
-        List<MaterialChunk> corpus
+        CorpusStats stats
     ) {
         var terms = keywords(normalizedQuery);
-        var keywordScore = textOnlyScore(content, normalizedQuery, terms, corpus);
+        var keywordScore = textOnlyScore(content, normalizedQuery, terms, chunk, stats);
         var semanticScore = semanticScore(queryEmbedding, chunk);
         if (keywordScore == 0.0 && semanticScore == 0.0) {
             return 0.0;
@@ -267,70 +259,26 @@ public class KeywordRetriever implements Retriever {
         String content,
         String normalizedQuery,
         List<String> terms,
-        List<MaterialChunk> corpus
+        MaterialChunk chunk,
+        CorpusStats stats
     ) {
         if (content == null || normalizedQuery == null || normalizedQuery.isBlank()) {
             return 0.0;
         }
         var normalizedContent = normalize(content);
         var phraseScore = normalizedContent.contains(normalizedQuery) ? 1.0 : 0.0;
-        var bm25 = bm25Score(content, terms, corpus);
+        var bm25 = bm25Score(chunk, terms, stats);
         var normalizedBm25 = bm25 <= 0.0 ? 0.0 : bm25 / (bm25 + 3.0);
         var coverageScore = coverageScore(content, normalizedQuery);
         return clamp((normalizedBm25 * 0.60) + (phraseScore * 0.25) + (coverageScore * 0.15));
     }
 
-    private double bm25Score(String content, List<String> terms, List<MaterialChunk> corpus) {
-        if (terms.isEmpty() || corpus.isEmpty()) {
-            return 0.0;
-        }
-        var frequencies = termFrequencies(content);
-        if (frequencies.isEmpty()) {
-            return 0.0;
-        }
-        var documentLength = frequencies.values().stream().mapToInt(Integer::intValue).sum();
-        var averageLength = averageDocumentLength(corpus);
-        var score = 0.0;
-        var k1 = 1.5;
-        var b = 0.75;
-        for (var term : terms) {
-            var frequency = frequencies.getOrDefault(term, 0);
-            if (frequency == 0) {
-                continue;
-            }
-            var documentFrequency = documentFrequency(term, corpus);
-            var idf = Math.log(1.0 + ((corpus.size() - documentFrequency + 0.5) / (documentFrequency + 0.5)));
-            var denominator = frequency + k1 * (1.0 - b + b * documentLength / Math.max(1.0, averageLength));
-            score += idf * (frequency * (k1 + 1.0)) / denominator;
-        }
-        return score;
-    }
-
-    private double averageDocumentLength(List<MaterialChunk> corpus) {
-        return corpus.stream()
-            .map(MaterialChunk::content)
-            .map(this::termFrequencies)
-            .mapToInt(frequencies -> frequencies.values().stream().mapToInt(Integer::intValue).sum())
-            .average()
-            .orElse(1.0);
-    }
-
-    private int documentFrequency(String term, List<MaterialChunk> corpus) {
-        var count = 0;
-        for (var chunk : corpus) {
-            if (termFrequencies(chunk.content()).containsKey(term)) {
-                count++;
-            }
-        }
-        return count;
-    }
-
-    private Map<String, Integer> termFrequencies(String content) {
-        var values = new HashMap<String, Integer>();
-        for (var term : keywords(normalize(content))) {
-            values.merge(term, 1, Integer::sum);
-        }
-        return values;
+    /**
+     * BM25 打分使用每次查询预计算一次的 {@link CorpusStats}，而不是对每个候选重新遍历
+     * 整个语料分词。打分公式与逐候选实现等价（k1=1.5、b=0.75、相同 IDF）。
+     */
+    private double bm25Score(MaterialChunk chunk, List<String> terms, CorpusStats stats) {
+        return stats.bm25(chunk.id(), terms);
     }
 
     private double coverageScore(String content, String normalizedQuery) {
@@ -363,40 +311,7 @@ public class KeywordRetriever implements Retriever {
     }
 
     private List<String> keywords(String normalizedQuery) {
-        if (normalizedQuery == null || normalizedQuery.isBlank()) {
-            return List.of();
-        }
-        var values = new ArrayList<String>();
-        var token = new StringBuilder();
-        String previousHan = null;
-        for (var index = 0; index < normalizedQuery.length();) {
-            var codePoint = normalizedQuery.codePointAt(index);
-            if (Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN) {
-                flushToken(values, token);
-                var current = new String(Character.toChars(codePoint));
-                values.add(current);
-                if (previousHan != null) {
-                    values.add(previousHan + current);
-                }
-                previousHan = current;
-            } else if (Character.isLetterOrDigit(codePoint)) {
-                token.appendCodePoint(codePoint);
-                previousHan = null;
-            } else {
-                flushToken(values, token);
-                previousHan = null;
-            }
-            index += Character.charCount(codePoint);
-        }
-        flushToken(values, token);
-        return values.stream().distinct().toList();
-    }
-
-    private void flushToken(List<String> values, StringBuilder token) {
-        if (!token.isEmpty()) {
-            values.add(token.toString());
-            token.setLength(0);
-        }
+        return tokenizer.tokens(normalizedQuery);
     }
 
     private double cosine(List<Double> left, List<Double> right) {

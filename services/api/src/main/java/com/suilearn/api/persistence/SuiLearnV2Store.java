@@ -44,6 +44,7 @@ import com.suilearn.api.persistence.repository.LearningMaterialJpaRepository;
 import com.suilearn.api.persistence.repository.MaterialChunkJpaRepository;
 import com.suilearn.api.persistence.repository.QuestionJpaRepository;
 import com.suilearn.api.persistence.repository.TaskStatusJpaRepository;
+import com.suilearn.api.retrieval.TextSearchTokenizer;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
@@ -69,6 +70,7 @@ public class SuiLearnV2Store {
     private final AnswerRecordJpaRepository answerRecords;
     private final TaskStatusJpaRepository tasks;
     private final ObjectMapper objectMapper;
+    private final TextSearchTokenizer searchTokenizer;
 
     public SuiLearnV2Store(
         KnowledgeBaseJpaRepository knowledgeBases,
@@ -81,7 +83,8 @@ public class SuiLearnV2Store {
         AiNoteJpaRepository aiNotes,
         AnswerRecordJpaRepository answerRecords,
         TaskStatusJpaRepository tasks,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        TextSearchTokenizer searchTokenizer
     ) {
         this.knowledgeBases = knowledgeBases;
         this.materials = materials;
@@ -94,6 +97,7 @@ public class SuiLearnV2Store {
         this.answerRecords = answerRecords;
         this.tasks = tasks;
         this.objectMapper = objectMapper;
+        this.searchTokenizer = searchTokenizer;
     }
 
     public List<KnowledgeBase> listKnowledgeBases() {
@@ -173,6 +177,7 @@ public class SuiLearnV2Store {
                 chunk.knowledgeBaseId(),
                 chunk.materialId(),
                 chunk.content(),
+                searchTokenizer.searchText(chunk.content()),
                 chunk.ordinal(),
                 write(chunk.sourceRef()),
                 write(chunk.embedding()),
@@ -195,6 +200,7 @@ public class SuiLearnV2Store {
                 chunk.getKnowledgeBaseId(),
                 chunk.getMaterialId(),
                 chunk.getContent(),
+                chunk.getSearchText(),
                 chunk.getOrdinal(),
                 chunk.getSourceRefJson(),
                 null,
@@ -218,17 +224,25 @@ public class SuiLearnV2Store {
 
     @Transactional(readOnly = true)
     public List<MaterialChunk> searchChunksText(String query, String knowledgeBaseId, String materialId, int limit) {
-        if (query == null || query.isBlank()) {
+        var tsquery = searchTokenizer.tsquery(query);
+        if (tsquery.isBlank()) {
             return List.of();
         }
         try {
-            return chunks.searchText(query, blankToNull(knowledgeBaseId), blankToNull(materialId), Math.max(1, limit))
+            return chunks.searchText(tsquery, blankToNull(knowledgeBaseId), blankToNull(materialId), Math.max(1, limit))
                 .stream()
                 .map(this::toModel)
                 .toList();
         } catch (RuntimeException exception) {
             return List.of();
         }
+    }
+
+    @Transactional(readOnly = true)
+    public List<MaterialChunk> listChunksByScope(String knowledgeBaseId, String materialId) {
+        return chunks.findByScope(blankToNull(knowledgeBaseId), blankToNull(materialId)).stream()
+            .map(this::toModel)
+            .toList();
     }
 
     @Transactional(readOnly = true)

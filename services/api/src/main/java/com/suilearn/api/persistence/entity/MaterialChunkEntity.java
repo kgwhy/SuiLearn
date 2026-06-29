@@ -14,6 +14,8 @@ public class MaterialChunkEntity {
     private String materialId;
     @Column(columnDefinition = "text")
     private String content;
+    @Column(name = "search_text", columnDefinition = "text")
+    private String searchText;
     @Column(name = "chunk_ordinal")
     private int ordinal;
     @Column(columnDefinition = "text")
@@ -32,6 +34,7 @@ public class MaterialChunkEntity {
         String knowledgeBaseId,
         String materialId,
         String content,
+        String searchText,
         int ordinal,
         String sourceRefJson,
         String embeddingJson,
@@ -43,6 +46,7 @@ public class MaterialChunkEntity {
         this.knowledgeBaseId = knowledgeBaseId;
         this.materialId = materialId;
         this.content = content;
+        this.searchText = searchText;
         this.ordinal = ordinal;
         this.sourceRefJson = sourceRefJson;
         this.embeddingJson = embeddingJson;
@@ -65,6 +69,14 @@ public class MaterialChunkEntity {
 
     public String getContent() {
         return content;
+    }
+
+    public String getSearchText() {
+        return searchText;
+    }
+
+    public void setSearchText(String searchText) {
+        this.searchText = searchText;
     }
 
     public int getOrdinal() {

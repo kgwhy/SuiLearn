@@ -26,11 +26,11 @@ class KeywordRetrieverTest {
         var material = material();
         var chunk = textOnlyChunk();
         when(store.listKnowledgePoints()).thenReturn(List.of());
-        when(store.listChunks()).thenReturn(List.of(chunk));
+        when(store.listChunksByScope("kb_1", null)).thenReturn(List.of(chunk));
         when(store.listQuestions()).thenReturn(List.of());
         when(store.listGeneratedContents()).thenReturn(List.of());
         when(store.findMaterial("mat_1")).thenReturn(Optional.of(material));
-        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store);
+        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store, new TextSearchTokenizer());
 
         var results = retriever.search(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null));
         var evidence = retriever.retrieveEvidence(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null), 3);
@@ -44,15 +44,37 @@ class KeywordRetrieverTest {
     }
 
     @Test
+    void scoresChineseChunkViaNgramTokenizationInFallbackPath() {
+        var store = mock(SuiLearnV2Store.class);
+        var material = material();
+        var chunk = textOnlyChunk("chunk_1", "机器学习是人工智能的一个分支。", 0);
+        when(store.listKnowledgePoints()).thenReturn(List.of());
+        when(store.listChunksByScope("kb_1", null)).thenReturn(List.of(chunk));
+        when(store.listQuestions()).thenReturn(List.of());
+        when(store.listGeneratedContents()).thenReturn(List.of());
+        when(store.findMaterial("mat_1")).thenReturn(Optional.of(material));
+        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store, new TextSearchTokenizer());
+
+        var results = retriever.search(new Retriever.RetrievalRequest("机器学习", "kb_1", null));
+        var evidence = retriever.retrieveEvidence(new Retriever.RetrievalRequest("机器学习", "kb_1", null), 3);
+
+        assertThat(results).singleElement().satisfies(result -> {
+            assertThat(result.id()).isEqualTo("chunk_1");
+            assertThat(result.score()).isGreaterThan(0.0);
+        });
+        assertThat(evidence).containsExactly(chunk);
+    }
+
+    @Test
     void expandsAdjacentChunksAroundBestTextOnlyHit() {
         var store = mock(SuiLearnV2Store.class);
         var material = material();
         var intro = textOnlyChunk("chunk_0", "HashMap stores entries in buckets.", 0);
         var hit = textOnlyChunk("chunk_1", "HashMap collision handling uses linked lists.", 1);
         var next = textOnlyChunk("chunk_2", "Tree bins are used after collision chains grow.", 2);
-        when(store.listChunks()).thenReturn(List.of(intro, hit, next));
+        when(store.listChunksByScope("kb_1", null)).thenReturn(List.of(intro, hit, next));
         when(store.findMaterial("mat_1")).thenReturn(Optional.of(material));
-        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store);
+        var retriever = new KeywordRetriever(new TextOnlyEmbeddingProvider(), store, new TextSearchTokenizer());
 
         var evidence = retriever.retrieveEvidence(new Retriever.RetrievalRequest("collision handling", "kb_1", null), 3);
 
@@ -66,11 +88,11 @@ class KeywordRetrieverTest {
         var material = material();
         var chunk = textOnlyChunk();
         when(store.listKnowledgePoints()).thenReturn(List.of());
-        when(store.listChunks()).thenReturn(List.of(chunk));
+        when(store.listChunksByScope("kb_1", null)).thenReturn(List.of(chunk));
         when(store.listQuestions()).thenReturn(List.of());
         when(store.listGeneratedContents()).thenReturn(List.of());
         when(store.findMaterial("mat_1")).thenReturn(Optional.of(material));
-        var retriever = new KeywordRetriever(new FailingEmbeddingProvider(), store);
+        var retriever = new KeywordRetriever(new FailingEmbeddingProvider(), store, new TextSearchTokenizer());
 
         var results = retriever.search(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null));
         var evidence = retriever.retrieveEvidence(new Retriever.RetrievalRequest("HashMap collision", "kb_1", null), 3);

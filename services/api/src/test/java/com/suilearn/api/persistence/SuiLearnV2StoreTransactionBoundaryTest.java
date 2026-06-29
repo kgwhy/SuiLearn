@@ -16,6 +16,7 @@ class SuiLearnV2StoreTransactionBoundaryTest {
             method("findMaterial", String.class),
             method("listChunks"),
             method("listChunksByMaterial", String.class),
+            method("listChunksByScope", String.class, String.class),
             method("findChunk", String.class),
             method("listKnowledgePoints"),
             method("listKnowledgePoints", String.class),

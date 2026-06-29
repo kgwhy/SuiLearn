@@ -18,11 +18,8 @@ public interface MaterialChunkJpaRepository extends JpaRepository<MaterialChunkE
           and (:materialId is null or c.material_id = :materialId)
           and m.status <> 'DELETED'
           and c.embedding_status in ('READY', 'TEXT_ONLY')
-          and to_tsvector('simple', coalesce(c.content, '')) @@ plainto_tsquery('simple', :query)
-        order by ts_rank_cd(
-          to_tsvector('simple', coalesce(c.content, '')),
-          plainto_tsquery('simple', :query)
-        ) desc
+          and c.search_tsv @@ to_tsquery('simple', :query)
+        order by ts_rank_cd(c.search_tsv, to_tsquery('simple', :query)) desc
         limit :limit
         """, nativeQuery = true)
     List<MaterialChunkEntity> searchText(
@@ -30,6 +27,21 @@ public interface MaterialChunkJpaRepository extends JpaRepository<MaterialChunkE
         @Param("knowledgeBaseId") String knowledgeBaseId,
         @Param("materialId") String materialId,
         @Param("limit") int limit
+    );
+
+    @Query(value = """
+        select c.*
+        from material_chunks c
+        join learning_materials m on m.id = c.material_id
+        where (:knowledgeBaseId is null or m.knowledge_base_id = :knowledgeBaseId)
+          and (:materialId is null or c.material_id = :materialId)
+          and m.status <> 'DELETED'
+          and c.embedding_status in ('READY', 'TEXT_ONLY')
+        order by c.material_id, c.chunk_ordinal
+        """, nativeQuery = true)
+    List<MaterialChunkEntity> findByScope(
+        @Param("knowledgeBaseId") String knowledgeBaseId,
+        @Param("materialId") String materialId
     );
 
     void deleteByMaterialId(String materialId);

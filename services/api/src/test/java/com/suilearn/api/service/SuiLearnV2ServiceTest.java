@@ -49,6 +49,7 @@ import com.suilearn.api.retrieval.EmbeddingProvider;
 import com.suilearn.api.retrieval.EmbeddingProvider.Embedding;
 import com.suilearn.api.retrieval.KeywordRetriever;
 import com.suilearn.api.retrieval.Retriever;
+import com.suilearn.api.retrieval.TextSearchTokenizer;
 import com.suilearn.api.search.application.SearchService;
 import com.suilearn.api.service.internal.SuiLearnV2Workflow;
 import com.suilearn.api.source.application.SourceService;
@@ -1183,7 +1184,7 @@ class SuiLearnV2ServiceTest {
     }
 
     private KeywordRetriever keywordRetriever() {
-        return new KeywordRetriever(new DeterministicEmbeddingProvider(), store);
+        return new KeywordRetriever(new DeterministicEmbeddingProvider(), store, new TextSearchTokenizer());
     }
 
     private SuiLearnV2Service semanticService() {
@@ -1193,7 +1194,7 @@ class SuiLearnV2ServiceTest {
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
             embeddingProvider,
-            new KeywordRetriever(embeddingProvider, store),
+            new KeywordRetriever(embeddingProvider, store, new TextSearchTokenizer()),
             clock,
             store
         );
@@ -1206,7 +1207,7 @@ class SuiLearnV2ServiceTest {
             new TextMaterialParser(),
             new DefaultMaterialChunker(),
             embeddingProvider,
-            new KeywordRetriever(embeddingProvider, store),
+            new KeywordRetriever(embeddingProvider, store, new TextSearchTokenizer()),
             clock,
             store
         );

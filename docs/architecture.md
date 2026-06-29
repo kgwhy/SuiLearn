@@ -340,6 +340,9 @@ RagController / SearchController
 - RAG 必须受 `knowledgeBaseId` 或 `materialId` 范围约束。
 - 回答需要返回来源引用；证据不足时表达不确定。
 - 搜索和问答必须排除已删除资料、失效 chunk 或不可用 embedding。
+- text-only 候选召回必须走持久化检索索引（chunk 写入时由 `TextSearchTokenizer` 生成 `search_text`，PostgreSQL 生成列 `search_tsv = to_tsvector('simple', search_text)` + GIN 索引），不以全表 `findAll()` Java 扫描为主路径；中文经应用层 n-gram 进入索引。
+- 索引收窄仅用于 text-only 路径；当 embedding 可用时，对 scope 候选全量打分以保留语义召回。
+- BM25 打分按候选集每次查询预计算一次语料统计（词频/长度/document frequency），不得按候选重复分词。
 
 ## 4. Web 当前结构
 

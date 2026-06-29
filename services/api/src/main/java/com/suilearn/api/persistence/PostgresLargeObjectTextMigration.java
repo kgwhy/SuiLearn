@@ -3,12 +3,14 @@ package com.suilearn.api.persistence;
 import java.util.List;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
+@Order(10)
 public class PostgresLargeObjectTextMigration implements ApplicationRunner {
     static final List<TextColumn> TEXT_COLUMNS = List.of(
         new TextColumn("ai_note_drafts", "content"),
