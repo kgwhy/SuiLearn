@@ -33,6 +33,7 @@ import com.suilearn.api.model.AiNoteType;
 import com.suilearn.api.model.AiProviderType;
 import com.suilearn.api.model.EmbeddingStatus;
 import com.suilearn.api.model.GeneratedContentStatus;
+import com.suilearn.api.model.LearningMaterial;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialSourceType;
 import com.suilearn.api.model.MaterialStatus;
@@ -661,6 +662,72 @@ class SuiLearnV2ServiceTest {
         var answer = textOnlyService.ask("HashMap collision", kb.id(), material.id());
         assertThat(answer.uncertain()).isFalse();
         assertThat(answer.evidenceChunks()).isNotEmpty();
+    }
+
+    @Test
+    void importMaterialFallsBackToTextOnlyWhenEmbeddingFails() {
+        var embeddingProvider = new FailingEmbeddingProvider();
+        var fallbackService = new SuiLearnV2Service(
+            new DeterministicAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            embeddingProvider,
+            new KeywordRetriever(embeddingProvider, store, new TextSearchTokenizer()),
+            clock,
+            store
+        );
+        var kb = fallbackService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+
+        var material = fallbackService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "HashMap Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap uses buckets.\n\nHashMap collision handling uses linked lists."
+        ));
+
+        assertThat(material.status()).isEqualTo(MaterialStatus.READY);
+        assertThat(material.errorMessage()).isNull();
+        assertThat(material.embeddingTaskId()).isNotBlank();
+        assertThat(fallbackService.getTaskStatus(material.importTaskId()))
+            .satisfies(task -> assertThat(task.status()).isEqualTo(TaskLifecycleStatus.SUCCEEDED));
+        assertThat(fallbackService.getTaskStatus(material.embeddingTaskId()))
+            .satisfies(task -> {
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.FAILED);
+                assertThat(task.errorCode()).isEqualTo("EMBEDDING_FAILED");
+                assertThat(task.errorMessage()).contains("OpenAI-compatible embeddings returned HTTP 404");
+            });
+        assertThat(fallbackService.getMaterialDetail(material.id()).chunks())
+            .allSatisfy(chunk -> {
+                assertThat(chunk.embedding()).isNull();
+                assertThat(chunk.embeddingStatus()).isEqualTo(EmbeddingStatus.TEXT_ONLY);
+                assertThat(chunk.embeddingModel()).isNull();
+                assertThat(chunk.embeddingDimensions()).isNull();
+            });
+        assertThat(fallbackService.search("HashMap collision", kb.id(), material.id())).isNotEmpty();
+    }
+
+    @Test
+    void knowledgePointExtractionRejectsFailedMaterials() {
+        var kb = knowledgeBaseService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var failed = store.saveMaterial(new LearningMaterial(
+            "mat_failed",
+            kb.id(),
+            "Broken Notes",
+            MaterialSourceType.MARKDOWN,
+            MaterialStatus.FAILED,
+            "task_import_failed",
+            null,
+            "parse failed",
+            "HashMap uses buckets.",
+            clock.instant(),
+            null
+        ));
+
+        assertThatThrownBy(() -> knowledgePointService.extractKnowledgePoints(failed.id()))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("READY material")
+            .hasMessageContaining("FAILED");
+        assertThat(knowledgePointService.listKnowledgePoints(kb.id())).isEmpty();
     }
 
     @Test
@@ -1365,6 +1432,18 @@ class SuiLearnV2ServiceTest {
         @Override
         public String model() {
             return "text-only";
+        }
+    }
+
+    private static class FailingEmbeddingProvider implements EmbeddingProvider {
+        @Override
+        public Embedding embed(String input) {
+            throw new IllegalStateException("OpenAI-compatible embeddings returned HTTP 404");
+        }
+
+        @Override
+        public String model() {
+            return "broken-embedding-v1";
         }
     }
 

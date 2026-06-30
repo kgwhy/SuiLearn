@@ -6,6 +6,7 @@ import com.suilearn.api.model.KnowledgePoint;
 import com.suilearn.api.model.KnowledgePointExtractionResult;
 import com.suilearn.api.model.LearningMaterial;
 import com.suilearn.api.model.MaterialChunk;
+import com.suilearn.api.model.MaterialStatus;
 import com.suilearn.api.model.TaskKind;
 import com.suilearn.api.model.TaskLifecycleStatus;
 import com.suilearn.api.model.TaskResultRef;
@@ -59,6 +60,12 @@ public class KnowledgePointService {
 
     public KnowledgePointExtractionResult extractKnowledgePoints(String materialId) {
         var material = requireMaterial(materialId);
+        if (material.status() != MaterialStatus.READY) {
+            throw new IllegalArgumentException(
+                "Knowledge points can only be extracted from READY material: " + materialId
+                    + " is " + material.status()
+            );
+        }
         var task = taskService.startTask(taskService.createTask(
             TaskKind.KNOWLEDGE_POINT_EXTRACTION,
             material.knowledgeBaseId(),

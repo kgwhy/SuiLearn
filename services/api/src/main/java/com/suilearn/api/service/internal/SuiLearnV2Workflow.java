@@ -253,7 +253,11 @@ public class SuiLearnV2Workflow {
                             materialRef.get().id(),
                             null
                         );
-                        throw exception;
+                        var fallback = withEmbeddingTaskId(materialRef.get(), embeddingExecution.current().id());
+                        store.saveChunks(fallback.id(), chunks.stream().map(this::withoutEmbedding).toList());
+                        var fallbackReady = store.saveMaterial(withStatus(fallback, MaterialStatus.READY));
+                        materialRef.set(fallbackReady);
+                        return fallbackReady;
                     }
                 );
                 importExecution.succeed(
@@ -392,6 +396,12 @@ public class SuiLearnV2Workflow {
 
     public KnowledgePointExtractionResult extractKnowledgePoints(String materialId) {
         var material = requireMaterial(materialId);
+        if (material.status() != MaterialStatus.READY) {
+            throw new IllegalArgumentException(
+                "Knowledge points can only be extracted from READY material: " + materialId
+                    + " is " + material.status()
+            );
+        }
         var task = taskService.startTask(taskService.createTask(
             TaskKind.KNOWLEDGE_POINT_EXTRACTION,
             material.knowledgeBaseId(),

@@ -147,7 +147,11 @@ public class MaterialImportService {
                             materialRef.get().id(),
                             null
                         );
-                        throw exception;
+                        var fallback = withEmbeddingTaskId(materialRef.get(), embeddingExecution.current().id());
+                        materialChunks.replace(fallback.id(), chunks.stream().map(this::withoutEmbedding).toList());
+                        var fallbackReady = materials.save(withStatus(fallback, MaterialStatus.READY));
+                        materialRef.set(fallbackReady);
+                        return fallbackReady;
                     }
                 );
                 importExecution.succeed(

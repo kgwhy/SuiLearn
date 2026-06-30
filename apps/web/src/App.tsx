@@ -334,6 +334,10 @@ export function App() {
       "资料已导入"
     );
     if (!material) return;
+    if (material.status !== "READY") {
+      await loadWorkbench();
+      return;
+    }
     setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: material.id }));
     await extractKnowledgePoints(material.id);
   }
