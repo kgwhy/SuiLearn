@@ -1,0 +1,6 @@
+target/
+config/local.properties
+*.iml
+*.log
+.idea/
+.mvn/

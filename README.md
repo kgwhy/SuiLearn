@@ -61,7 +61,44 @@ SuiLearn
 - Maven，用于运行后端服务。
 - Node.js 和 npm，用于运行 Web 工作台。
 - PostgreSQL，用于运行后端 API 和后端集成测试。
-- Docker 可选，用于通过 `services/api/compose.local.yml` 启动本地 PostgreSQL / pgvector。
+- Docker 可选：既可通过根目录 [compose.yml](compose.yml) 一键启动全栈，也可通过 `services/api/compose.local.yml` 仅启动本地 PostgreSQL / pgvector。
+
+> 只想快速跑起来？直接看下文 [Docker 一键启动（全栈）](#docker-一键启动全栈)，无需本地安装 JDK / Maven / Node.js。
+
+### Docker 一键启动（全栈）
+
+最快的体验方式：用仓库根目录的 [compose.yml](compose.yml) 一键拉起 PostgreSQL、后端 API 和 Web 工作台，无需本地安装 JDK、Maven 或 Node.js。
+
+```powershell
+Copy-Item .env.example .env
+# 按需在 .env 中填入 AI Provider 的 base URL、API Key 和模型名
+docker compose up --build -d
+```
+
+启动后访问：
+
+| 服务 | 地址 |
+| --- | --- |
+| Web 工作台 | http://localhost:5173 |
+| 后端 API | http://localhost:8080/api/v2 |
+| PostgreSQL | localhost:5432 |
+
+说明：
+
+- Web 容器内的 Nginx 会把 `/api` 反向代理到后端容器，前端默认通过 `/api/v2` 同源访问后端，无需额外配置跨域。
+- Compose 已配置健康检查与启动顺序：API 等 PostgreSQL 就绪后启动，Web 等 API 健康后启动，首次启动需等待数十秒后端就绪。
+- 端口、数据库账号密码和 AI 配置都可在 `.env` 中覆盖（见 [.env.example](.env.example)）。
+- 不填 AI 相关变量也能启动，但 AI 生成、RAG 和语义搜索功能不可用。
+
+常用命令：
+
+```powershell
+docker compose logs -f          # 查看日志
+docker compose down             # 停止并移除容器（保留数据卷）
+docker compose down -v          # 同时删除 PostgreSQL 数据卷
+```
+
+如果只想用 Docker 跑数据库、其余服务本地启动，请使用下文的 [本地 PostgreSQL / pgvector](#本地-postgresql--pgvector)。
 
 ### Android App
 
@@ -225,6 +262,19 @@ mvn -f services/api/pom.xml test -q
 cd apps/web
 npm run build
 ```
+
+## 持续集成
+
+仓库通过 GitHub Actions 在 `main` 分支 push 和 Pull Request 时自动运行 CI，工作流定义见 [.github/workflows/ci.yml](.github/workflows/ci.yml)，包含以下并行任务：
+
+| 任务 | 内容 |
+| --- | --- |
+| Workflow Policy | 校验改动是否符合 SuiLearn 协作流程约定 |
+| Android | 运行单元测试并构建 Debug APK |
+| Backend | 基于 PostgreSQL 服务容器运行后端测试 |
+| Web | 安装依赖、运行测试并执行生产构建 |
+
+本地复现 CI 检查可运行上文 [常用检查](#常用检查) 中的命令。
 
 ## 文档入口
 

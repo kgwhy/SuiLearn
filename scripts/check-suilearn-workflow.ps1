@@ -50,6 +50,26 @@ function Test-ActiveChangeExists {
     return $false
 }
 
+function Test-ArchivedChangeInCurrentDiffExists {
+    $archiveDirs = Get-ChildItem -Path "openspec/changes/archive" -Directory -ErrorAction SilentlyContinue
+
+    foreach ($dir in $archiveDirs) {
+        $tasks = Join-Path $dir.FullName "tasks.md"
+        $policy = Join-Path $dir.FullName "policy.md"
+        if (-not ((Test-Path $tasks) -and (Test-Path $policy))) {
+            continue
+        }
+
+        $relativePrefix = "openspec/changes/archive/$($dir.Name)/"
+        foreach ($entry in $script:allChangedPaths) {
+            if ($entry -like "$relativePrefix*") {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 function Add-ClosingChangeIssue {
     param([string]$Message)
     $script:changed += "Closing change check failed: $Message"
@@ -110,6 +130,7 @@ function Test-ClosingChange {
 }
 
 $protectedChanged = @()
+$allChangedPaths = @()
 
 foreach ($entry in $diffEntries) {
     if ([string]::IsNullOrWhiteSpace($entry)) {
@@ -121,6 +142,7 @@ foreach ($entry in $diffEntries) {
     }
     $status = $parts[0]
     $path = $parts[1].Trim()
+    $allChangedPaths += $path
     if ($path -like "docs/proposals/*" -and $path -ne "docs/proposals/README.md" -and $path -ne "docs/proposals/_template.md") {
         $changed += "Retired proposal path changed in diff ($status): $path"
     }
@@ -142,6 +164,7 @@ foreach ($line in $worktreeChanged) {
     }
     $path = $line.Substring(3).Trim()
     $status = $line.Substring(0, 2)
+    $allChangedPaths += $path
     if ($path -like "docs/proposals/*" -and $path -ne "docs/proposals/README.md" -and $path -ne "docs/proposals/_template.md" -and $status -match "A|\?") {
         $changed += "New or modified retired proposal path: $path"
     }
@@ -156,7 +179,7 @@ foreach ($line in $worktreeChanged) {
     }
 }
 
-if ($protectedChanged.Count -gt 0 -and -not (Test-ActiveChangeExists)) {
+if ($protectedChanged.Count -gt 0 -and -not (Test-ActiveChangeExists) -and -not (Test-ArchivedChangeInCurrentDiffExists)) {
     $changed += "Protected implementation or fact-document paths changed without an active openspec/changes/<name>/tasks.md and policy.md."
     foreach ($path in ($protectedChanged | Sort-Object -Unique)) {
         $changed += "Protected changed path: $path"
@@ -173,7 +196,7 @@ if ($changed.Count -gt 0) {
     exit 1
 } else {
     if ($protectedChanged.Count -gt 0) {
-        Write-Output "Protected paths changed; active OpenSpec change found."
+        Write-Output "Protected paths changed; OpenSpec change record found."
     }
 }
 
