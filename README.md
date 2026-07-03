@@ -61,7 +61,7 @@ SuiLearn
 - Maven，用于运行后端服务。
 - Node.js 和 npm，用于运行 Web 工作台。
 - PostgreSQL，用于运行后端 API 和后端集成测试。
-- Docker 可选：既可通过根目录 [compose.yml](compose.yml) 一键启动全栈，也可通过 `services/api/compose.local.yml` 仅启动本地 PostgreSQL / pgvector。
+- Docker 可选：统一使用根目录 [compose.yml](compose.yml)，可一键启动全栈，也可只启动 PostgreSQL、API 或 Web 单个组件。
 
 > 只想快速跑起来？直接看下文 [Docker 一键启动（全栈）](#docker-一键启动全栈)，无需本地安装 JDK / Maven / Node.js。
 
@@ -79,14 +79,14 @@ docker compose up --build -d
 
 | 服务 | 地址 |
 | --- | --- |
-| Web 工作台 | http://localhost:5173 |
+| Web 工作台 | http://localhost:5174 |
 | 后端 API | http://localhost:8080/api/v2 |
 | PostgreSQL | localhost:5432 |
 
 说明：
 
-- Web 容器内的 Nginx 会把 `/api` 反向代理到后端容器，前端默认通过 `/api/v2` 同源访问后端，无需额外配置跨域。
-- Compose 已配置健康检查与启动顺序：API 等 PostgreSQL 就绪后启动，Web 等 API 健康后启动，首次启动需等待数十秒后端就绪。
+- Web 容器内的 Nginx 默认把 `/api` 反向代理到后端容器，前端默认通过 `/api/v2` 同源访问后端，无需额外配置跨域。
+- API 和 PostgreSQL 已配置健康检查；首次启动需等待数十秒后端就绪，API 容器会在数据库未就绪时自动重启恢复。
 - 端口、数据库账号密码和 AI 配置都可在 `.env` 中覆盖（见 [.env.example](.env.example)）。
 - 不填 AI 相关变量也能启动，但 AI 生成、RAG 和语义搜索功能不可用。
 
@@ -99,6 +99,62 @@ docker compose down -v          # 同时删除 PostgreSQL 数据卷
 ```
 
 如果只想用 Docker 跑数据库、其余服务本地启动，请使用下文的 [本地 PostgreSQL / pgvector](#本地-postgresql--pgvector)。
+
+### Docker 与本地混合启动
+
+根目录 `compose.yml` 只保留一套组件服务：`postgres`、`api`、`web`。前端和后端各自只有一个 Docker image。默认配置统一走宿主机发布端口：Web 容器访问 `host.docker.internal:8080`，API 容器访问 `host.docker.internal:5432`。因此 Docker 后端、本地 Maven 后端、Docker 数据库、本地数据库在默认端口下无需手动切换环境变量。
+
+常用组合：
+
+| 目标 | 命令 |
+| --- | --- |
+| 只用 Docker 启动数据库 | `docker compose up -d postgres` |
+| Docker 数据库 + 本地 Maven 后端 | `docker compose up -d postgres` 后运行 `mvn -f services/api/pom.xml spring-boot:run` |
+| Docker 数据库 + Docker 后端 | `docker compose up --build -d postgres api` |
+| Docker 后端 + 本地 Vite 前端 | `docker compose up --build -d postgres api` 后在 `apps/web` 运行 `npm run dev` |
+| Docker 前端 + 本地 Maven 后端 | 本地后端监听 `8080` 后运行 `docker compose up --build -d web` |
+| Docker 全栈 | `docker compose up --build -d` |
+
+例如 PostgreSQL 和 Web 工作台跑在 Docker 中，后端 API 用本地 Maven / IDE 启动：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d postgres
+
+docker compose up --build -d web
+
+# 另开一个终端启动本地后端
+mvn -f services/api/pom.xml spring-boot:run
+```
+
+默认要求本地后端监听：
+
+```text
+http://localhost:8080/api/v2
+```
+
+如果本地后端端口不是 `8080`，可覆盖 Web 容器代理上游：
+
+```powershell
+$env:SUILEARN_API_UPSTREAM="http://host.docker.internal:8081"
+docker compose up --build -d web
+```
+
+Docker API 默认也经宿主机发布端口连接数据库，所以 Docker 数据库和本地数据库默认都不需要切换配置。如果数据库不在默认宿主机端口，可覆盖数据库连接地址：
+
+```powershell
+$env:SUILEARN_DB_URL="jdbc:postgresql://host.docker.internal:5432/suilearn"
+docker compose up --build -d api
+```
+
+如果默认 Web 端口 `5174` 已被占用，可在 `.env` 中设置其他端口，例如 `SUILEARN_WEB_PORT=5175`。
+
+切回默认端口前，如果当前 PowerShell 会话里设置过自定义上游，先清掉环境变量：
+
+```powershell
+Remove-Item Env:\SUILEARN_API_UPSTREAM
+Remove-Item Env:\SUILEARN_DB_URL
+```
 
 ### Android App
 
@@ -121,11 +177,9 @@ docker compose down -v          # 同时删除 PostgreSQL 数据卷
 后端默认使用 PostgreSQL 和 OpenAI-compatible Provider。先准备本地配置：
 
 ```powershell
-cd services/api
-docker compose -f compose.local.yml up -d
-docker compose -f compose.local.yml exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
-Copy-Item config/local.properties.example config/local.properties
-cd ../..
+docker compose up -d postgres
+docker compose exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
+Copy-Item services/api/config/local.properties.example services/api/config/local.properties
 ```
 
 然后在环境变量中提供真实 API Key：
@@ -165,7 +219,7 @@ npm install
 npm run dev
 ```
 
-Vite 开发服务默认把 `/api` 代理到 `http://localhost:8080`。构建 Web 应用：
+Vite 开发服务默认监听 `http://localhost:5174`，并把 `/api` 代理到 `http://localhost:8080`。构建 Web 应用：
 
 ```powershell
 npm run build
@@ -176,11 +230,9 @@ npm run build
 本地开发和测试默认使用 PostgreSQL。可用 Docker Compose 启动本地数据库：
 
 ```powershell
-cd services/api
-docker compose -f compose.local.yml up -d
-docker compose -f compose.local.yml exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
-Copy-Item config/local.properties.example config/local.properties
-cd ../..
+docker compose up -d postgres
+docker compose exec postgres psql -U suilearn -d suilearn -c "CREATE EXTENSION IF NOT EXISTS vector;"
+Copy-Item services/api/config/local.properties.example services/api/config/local.properties
 ```
 
 配置模板使用本地默认值：

@@ -144,13 +144,18 @@ public class KnowledgePointService {
     }
 
     private List<ExtractedCandidate> extractCandidateTerms(LearningMaterial material, List<MaterialChunk> evidence) {
-        var generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
-            material.knowledgeBaseId(),
-            material.id(),
-            material.title(),
-            evidence.stream().map(MaterialChunk::sourceRef).toList(),
-            MAX_EXTRACTED_POINTS
-        ));
+        List<AiProvider.GeneratedKnowledgePoint> generated;
+        try {
+            generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+                material.knowledgeBaseId(),
+                material.id(),
+                material.title(),
+                evidence.stream().map(MaterialChunk::sourceRef).toList(),
+                MAX_EXTRACTED_POINTS
+            ));
+        } catch (RuntimeException exception) {
+            generated = List.of();
+        }
         var candidates = new LinkedHashMap<String, ExtractedCandidate>();
         if (generated != null) {
             for (var point : generated) {

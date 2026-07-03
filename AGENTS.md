@@ -31,6 +31,7 @@ Explore -> Spec -> Build -> Verify -> Archive
 3. 记录 `base_ref`，通常为当前 `HEAD`。
 4. 检查 `docs/development-workflow.md` 中的锁和 worktree 要求。
 5. 业务代码编辑前运行相关基线测试。
+6. 若任务涉及端口、CORS、Docker/Compose、反向代理、环境变量、CI wrapper、数据库连接或本地/容器启动方式，必须先在 active change 中写验收矩阵、默认值语义、覆盖口、残留扫描项和运行态验证计划；同一用户问题链路必须复用一个 active change home。
 
 纯文档、纯工作流和只读审查任务可以跳过模块测试，但必须说明测试不适用的原因。
 
@@ -54,7 +55,8 @@ Explore -> Spec -> Build -> Verify -> Archive
 4. 对 Major 或跨角色工作，确认最终 Review Agent 发现已修复、已明确延期到具名 follow-up change，或已由用户显式接受。
 5. 声明变更完成前，检查 active change 产物中是否仍有 `In progress`、`Status: open` 或无 Owner 的 `pending` 等陈旧关闭状态。
 6. 检查本次触及的当前事实文档，确认除历史参考段落外，不再把新工作指向 `docs/proposals/**` 等退役流程。
-7. 报告所有已运行命令的原始测试输出。
+7. 对配置 / 启动 / 集成类变更，报告验收矩阵对应的运行态验证结果、旧默认值残留扫描结果，以及任何不可运行项的原因。
+8. 报告所有已运行命令的原始测试输出。
 
 完成格式：
 
@@ -82,6 +84,7 @@ Review 闭环: <无发现 / 已修复 Pn / 已延期到 change id>
 - 业务代码实现必须来自已批准的 `openspec/changes/<change-name>/tasks.md` 任务。
 - Fast Track 例外：低风险单角色变更在 `docs/development-workflow.md` 分类为 `Tiny` 时，可使用轻量任务说明代替完整 proposal/design 包。
 - Bug 修复应由 OpenSpec change、现有 active task，或低风险且不改变产品/架构/契约/存储/跨角色行为的 Fast Track 任务说明承载。
+- 第一次返工暴露语义偏差时，停止继续补丁式实现，先回到 `Spec` 更新验收标准。典型信号包括用户指出“不是这个效果”、默认路径仍需手动配置，或验证证明当前实现只满足“可配置”但不满足“默认可用”。
 - `docs/proposals/**` 已退役，不用于新工作。
 - `docs/superpowers/specs/**` 和 `docs/superpowers/plans/**` 不是项目事实源。
 

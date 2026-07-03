@@ -13,7 +13,9 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+ENV SUILEARN_API_UPSTREAM=http://host.docker.internal:8080
+
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /workspace/dist /usr/share/nginx/html
 
 EXPOSE 80

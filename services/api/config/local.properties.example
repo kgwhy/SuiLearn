@@ -1,7 +1,7 @@
 # Copy this file to config/local.properties for local-only overrides.
 # The copied local.properties file is ignored by git. Do not commit real API keys.
 
-# Local PostgreSQL + pgvector started from services/api/compose.local.yml
+# Local PostgreSQL + pgvector started from the root compose.yml
 spring.datasource.url=jdbc:postgresql://localhost:5432/suilearn
 spring.datasource.driver-class-name=org.postgresql.Driver
 spring.datasource.username=suilearn

@@ -339,6 +339,8 @@ export function App() {
       return;
     }
     setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: material.id }));
+    setSection("materials");
+    await openMaterial(material.id);
     await extractKnowledgePoints(material.id);
   }
 
@@ -353,6 +355,13 @@ export function App() {
     const extraction = await run(() => api.extractKnowledgePoints(materialId), "知识点已提取");
     const firstExtracted = extraction?.knowledgePoints[0];
     if (firstExtracted) setSelectedKnowledgePointId(firstExtracted.id);
+    if (extraction) {
+      setMaterialDetail((current) =>
+        current?.id === materialId
+          ? { ...current, extractedKnowledgePoints: extraction.knowledgePoints }
+          : current
+      );
+    }
     await loadWorkbench();
   }
 
@@ -1060,7 +1069,7 @@ function MaterialsPanel(props: {
                 error={props.taskErrors[props.materialDetail.embeddingTaskId]}
               />
             )}
-            <p>{props.materialDetail.contentPreview ?? props.materialDetail.content ?? "暂无可预览内容"}</p>
+            <MaterialContentReader detail={props.materialDetail} />
             <div className="chunk-list">
               <h4>资料片段</h4>
               {(props.materialDetail.chunks ?? []).slice(0, 8).map((chunk) => (
@@ -1069,7 +1078,7 @@ function MaterialsPanel(props: {
                     <span>#{chunk.ordinal + 1}</span>
                     <StatusPill label={chunk.embeddingStatus} />
                   </div>
-                  <p>{chunk.content}</p>
+                  <p>{readableMaterialText(chunk.content)}</p>
                   <div className="result-meta">
                     <span>model {chunk.embeddingModel ?? "未返回"}</span>
                     <span>dim {chunk.embeddingDimensions ?? "未返回"}</span>
@@ -1080,14 +1089,11 @@ function MaterialsPanel(props: {
               ))}
               {(props.materialDetail.chunks ?? []).length === 0 && <EmptyLine label="还没有返回可检索片段" />}
             </div>
-            <div className="tag-cloud">
-              {(props.materialDetail.extractedKnowledgePoints ?? []).map((item) => (
-                <KnowledgePointChip key={item.id} point={item} onOpen={props.openKnowledgePoint} />
-              ))}
-              {(props.materialDetail.extractedKnowledgePoints ?? []).length === 0 && (
-                <EmptyLine label="这份资料还没有提取知识点" />
-              )}
-            </div>
+            <KnowledgePointSummaryList
+              points={props.materialDetail.extractedKnowledgePoints ?? []}
+              onOpen={props.openKnowledgePoint}
+              emptyLabel="这份资料还没有提取知识点"
+            />
           </div>
         )}
       </div>
@@ -1460,6 +1466,47 @@ function sourceRefLabel(ref: SourceRef) {
   return ref.deleted ? "来源已删除" : ref.title ?? ref.id;
 }
 
+function readableMaterialText(value: string) {
+  return decodePercentText(value)
+    .replace(/\[([^\]]*)]\(([^)]*)\)/g, (_match, rawLabel: string, rawUrl: string) => {
+      const label = decodePercentText(rawLabel).trim();
+      if (label && label !== "#") return label;
+      const anchor = rawUrl.includes("#") ? rawUrl.slice(rawUrl.indexOf("#") + 1) : "";
+      return decodePercentText(anchor.replace(/^#+/, "")).trim();
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function decodePercentText(value: string) {
+  return value.replace(/(?:%[0-9A-Fa-f]{2})+/g, (encoded) => {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      return encoded;
+    }
+  });
+}
+
+function MaterialContentReader({ detail }: { detail: MaterialDetail }) {
+  const content = detail.content ?? detail.contentPreview ?? "";
+  const label = detail.content ? "完整正文" : detail.contentPreview ? "预览" : "暂无正文";
+  return (
+    <div className="material-content-reader">
+      <div className="detail-heading">
+        <h4>资料正文</h4>
+        <StatusPill label={label} />
+      </div>
+      {content.trim() ? (
+        <pre>{readableMaterialText(content)}</pre>
+      ) : (
+        <EmptyLine label="后端暂未返回可查看正文" />
+      )}
+    </div>
+  );
+}
+
 function KnowledgePointChip({
   point,
   active = false,
@@ -1488,13 +1535,62 @@ function KnowledgePointDetail({ point }: { point: KnowledgePoint }) {
         <StatusPill label="知识点" />
       </div>
       <p>{point.description || "暂无描述"}</p>
+      <KnowledgePointSources point={point} />
+    </div>
+  );
+}
+
+function KnowledgePointSummaryList({
+  points,
+  activeId,
+  onOpen,
+  emptyLabel
+}: {
+  points: KnowledgePoint[];
+  activeId?: string;
+  onOpen: (id: string) => void;
+  emptyLabel: string;
+}) {
+  if (points.length === 0) {
+    return <EmptyLine label={emptyLabel} />;
+  }
+  return (
+    <div className="knowledge-point-list">
+      {points.map((point) => (
+        <article className={`knowledge-point-card${point.id === activeId ? " active" : ""}`} key={point.id}>
+          <div className="detail-heading">
+            <button type="button" className="knowledge-point-title-button" onClick={() => onOpen(point.id)}>
+              {point.name}
+              <ChevronRight size={15} />
+            </button>
+            <StatusPill label="知识点" />
+          </div>
+          <p>{point.description || "暂无描述"}</p>
+          <KnowledgePointSources point={point} />
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function KnowledgePointSources({ point }: { point: KnowledgePoint }) {
+  const sourceRefs = (point.sourceRefs ?? []).slice(0, 3);
+  return (
+    <>
       <div className="result-meta">
         {point.sourceMaterialId && <span>资料 {shortId(point.sourceMaterialId)}</span>}
-        {(point.sourceRefs ?? []).slice(0, 3).map((ref) => (
+        {sourceRefs.map((ref) => (
           <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
         ))}
       </div>
-    </div>
+      {sourceRefs.some((ref) => ref.excerpt) && (
+        <div className="source-excerpts">
+          {sourceRefs.filter((ref) => ref.excerpt).map((ref) => (
+            <blockquote key={`${ref.type}-${ref.id}-excerpt`}>{ref.excerpt}</blockquote>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

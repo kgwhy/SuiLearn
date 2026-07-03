@@ -93,7 +93,7 @@ Android 约束：
 | Build | Maven |
 | API | REST + JSON |
 | Persistence | Spring Data JPA |
-| 开发 / 测试数据库 | PostgreSQL；本地可使用 `services/api/compose.local.yml` |
+| 开发 / 测试数据库 | PostgreSQL；本地统一使用根目录 `compose.yml` 启动数据库 |
 | 目标数据库 | PostgreSQL |
 | text-only 检索索引 | 应用层 n-gram tokenizer 生成 `search_text` → PostgreSQL 生成列 `search_tsv = to_tsvector('simple', search_text)` + GIN 索引；零扩展，适配镜像 `pgvector/pgvector:pg16`。pg_jieba/zhparser 真正中文分词需自定义镜像，列为后续可选升级 |
 | 向量检索 | pgvector / OpenAI-compatible embedding 优先，关键词检索作为无语义命中时的兜底 |

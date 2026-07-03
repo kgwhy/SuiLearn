@@ -618,7 +618,8 @@ textarea[aria-invalid="true"] {
 .provider-status,
 .task-card,
 .chunk-list,
-.chunk-item {
+.chunk-item,
+.knowledge-point-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -687,8 +688,80 @@ textarea[aria-invalid="true"] {
 }
 
 .task-card p,
-.chunk-item p {
+.chunk-item p,
+.knowledge-point-card p {
   margin: 0;
+}
+
+.material-content-reader {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.material-content-reader pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.65;
+}
+
+.knowledge-point-list {
+  margin-top: 14px;
+}
+
+.knowledge-point-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+
+.knowledge-point-card.active {
+  border-color: #9fc7bb;
+  background: #f4faf8;
+}
+
+.knowledge-point-title-button {
+  justify-content: flex-start;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 800;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-point-title-button svg {
+  flex-shrink: 0;
+}
+
+.source-excerpts {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.source-excerpts blockquote {
+  margin: 0;
+  border-left: 3px solid #9fc7bb;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  color: var(--muted);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 .chunk-list {
