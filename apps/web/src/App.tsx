@@ -31,6 +31,7 @@ import type {
   KnowledgeBaseDetail,
   KnowledgeBaseStatistics,
   KnowledgePoint,
+  MaterialChunk,
   MaterialDetail,
   MaterialMetadata,
   MaterialSourceType,
@@ -75,6 +76,7 @@ export function App() {
   const [taskStatuses, setTaskStatuses] = useState<TaskStatusMap>({});
   const [taskErrors, setTaskErrors] = useState<TaskErrorMap>({});
   const [taskLoading, setTaskLoading] = useState<Record<string, boolean>>({});
+  const [extractionTasks, setExtractionTasks] = useState<Record<string, TaskStatus>>({});
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ tone: ToastTone; message: string } | null>(null);
   const [formErrors, setFormErrors] = useState<FieldErrors>({});
@@ -356,6 +358,7 @@ export function App() {
     const firstExtracted = extraction?.knowledgePoints[0];
     if (firstExtracted) setSelectedKnowledgePointId(firstExtracted.id);
     if (extraction) {
+      setExtractionTasks((current) => ({ ...current, [materialId]: extraction.task }));
       setMaterialDetail((current) =>
         current?.id === materialId
           ? { ...current, extractedKnowledgePoints: extraction.knowledgePoints }
@@ -697,6 +700,7 @@ export function App() {
             taskStatuses={taskStatuses}
             taskErrors={taskErrors}
             taskLoading={taskLoading}
+            extractionTasks={extractionTasks}
             viewTaskStatus={viewTaskStatus}
             loading={loading}
             errors={formErrors}
@@ -947,6 +951,7 @@ function MaterialsPanel(props: {
   taskStatuses: TaskStatusMap;
   taskErrors: TaskErrorMap;
   taskLoading: Record<string, boolean>;
+  extractionTasks: Record<string, TaskStatus>;
   viewTaskStatus: (id: string) => Promise<void>;
   loading: boolean;
   errors: FieldErrors;
@@ -1069,24 +1074,28 @@ function MaterialsPanel(props: {
                 error={props.taskErrors[props.materialDetail.embeddingTaskId]}
               />
             )}
+            <TaskStatusCard task={props.extractionTasks[props.materialDetail.id]} />
             <MaterialContentReader detail={props.materialDetail} />
             <div className="chunk-list">
               <h4>资料片段</h4>
-              {(props.materialDetail.chunks ?? []).slice(0, 8).map((chunk) => (
-                <div className="chunk-item" key={chunk.id}>
-                  <div className="chunk-heading">
-                    <span>#{chunk.ordinal + 1}</span>
-                    <StatusPill label={chunk.embeddingStatus} />
+              {(props.materialDetail.chunks ?? []).slice(0, 8).map((chunk) => {
+                const embeddingMeta = materialChunkEmbeddingMeta(chunk);
+                return (
+                  <div className="chunk-item" key={chunk.id}>
+                    <div className="chunk-heading">
+                      <span>#{chunk.ordinal + 1}</span>
+                      <StatusPill label={chunk.embeddingStatus} />
+                    </div>
+                    <p>{readableMaterialText(chunk.content)}</p>
+                    <div className="result-meta">
+                      <span>model {embeddingMeta.model}</span>
+                      <span>dim {embeddingMeta.dimensions}</span>
+                      {chunk.tokenEstimate !== undefined && <span>tokens {chunk.tokenEstimate}</span>}
+                      {chunk.titlePath?.length ? <span>{chunk.titlePath.join(" / ")}</span> : null}
+                    </div>
                   </div>
-                  <p>{readableMaterialText(chunk.content)}</p>
-                  <div className="result-meta">
-                    <span>model {chunk.embeddingModel ?? "未返回"}</span>
-                    <span>dim {chunk.embeddingDimensions ?? "未返回"}</span>
-                    {chunk.tokenEstimate !== undefined && <span>tokens {chunk.tokenEstimate}</span>}
-                    {chunk.titlePath?.length ? <span>{chunk.titlePath.join(" / ")}</span> : null}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {(props.materialDetail.chunks ?? []).length === 0 && <EmptyLine label="还没有返回可检索片段" />}
             </div>
             <KnowledgePointSummaryList
@@ -1477,6 +1486,22 @@ function readableMaterialText(value: string) {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function materialChunkEmbeddingMeta(chunk: MaterialChunk) {
+  if (chunk.embeddingStatus === "TEXT_ONLY") {
+    return { model: "文本检索", dimensions: "无向量" };
+  }
+  if (chunk.embeddingStatus === "FAILED") {
+    return { model: chunk.embeddingModel ?? "索引失败", dimensions: chunk.embeddingDimensions ?? "无向量" };
+  }
+  if (chunk.embeddingStatus === "PENDING" || chunk.embeddingStatus === "INDEXING") {
+    return { model: chunk.embeddingModel ?? "等待索引", dimensions: chunk.embeddingDimensions ?? "等待索引" };
+  }
+  if (chunk.embeddingStatus === "INVALIDATED") {
+    return { model: chunk.embeddingModel ?? "已失效", dimensions: chunk.embeddingDimensions ?? "需重建" };
+  }
+  return { model: chunk.embeddingModel ?? "未返回", dimensions: chunk.embeddingDimensions ?? "未返回" };
 }
 
 function decodePercentText(value: string) {

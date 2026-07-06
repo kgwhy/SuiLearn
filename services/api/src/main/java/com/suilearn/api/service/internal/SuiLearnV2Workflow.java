@@ -1,6 +1,7 @@
 package com.suilearn.api.service.internal;
 
 import com.suilearn.api.ai.AiProvider;
+import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
@@ -67,6 +68,9 @@ public class SuiLearnV2Workflow {
     private static final int MAX_EXTRACTED_POINTS = 16;
     private static final int MAX_EVIDENCE_CHUNKS = 8;
     private static final String KNOWLEDGE_POINT_EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
+    private static final String STEP_AI_EXTRACTED = "AI_EXTRACTED";
+    private static final String STEP_AI_EXTRACTION_FAILED = "AI_EXTRACTION_FAILED";
+    private static final String STEP_LOCAL_FALLBACK = "LOCAL_FALLBACK";
 
     private final AiProvider aiProvider;
     private final CitationValidator citationValidator = new CitationValidator();
@@ -74,6 +78,7 @@ public class SuiLearnV2Workflow {
     private final EmbeddingProvider embeddingProvider;
     private final MaterialChunker materialChunker;
     private final MaterialParser materialParser;
+    private final SuiLearnAiProperties properties;
     private final Retriever retriever;
     private final SourceService sourceService;
     private final SuiLearnV2Store store;
@@ -88,6 +93,7 @@ public class SuiLearnV2Workflow {
         Retriever retriever,
         Clock clock,
         SuiLearnV2Store store,
+        SuiLearnAiProperties properties,
         TaskService taskService,
         TaskExecutor taskExecutor,
         SourceService sourceService
@@ -97,6 +103,7 @@ public class SuiLearnV2Workflow {
         this.embeddingProvider = embeddingProvider;
         this.materialChunker = materialChunker;
         this.materialParser = materialParser;
+        this.properties = properties;
         this.retriever = retriever;
         this.sourceService = sourceService;
         this.store = store;
@@ -406,16 +413,32 @@ public class SuiLearnV2Workflow {
             TaskKind.KNOWLEDGE_POINT_EXTRACTION,
             material.knowledgeBaseId(),
             material.id(),
-            aiProviderType(),
-            chatModelName(),
+            chatConfigured() ? aiProviderType() : null,
+            chatConfigured() ? chatModelName() : null,
             "EXTRACTING"
         ), "EXTRACTING");
         var evidence = extractionEvidence(material);
-        var candidates = extractCandidateTerms(material, evidence);
+        ExtractedKnowledgePointCandidates candidates;
+        try {
+            candidates = extractCandidateTerms(material, evidence);
+        } catch (RuntimeException exception) {
+            taskService.updateTask(
+                task,
+                TaskLifecycleStatus.FAILED,
+                100,
+                STEP_AI_EXTRACTION_FAILED,
+                null,
+                STEP_AI_EXTRACTION_FAILED,
+                safeErrorMessage(exception),
+                material.id(),
+                null
+            );
+            throw exception;
+        }
         var sourceRefs = evidence.isEmpty()
             ? List.of(sourceService.materialSourceRef(material))
             : evidence.stream().map(MaterialChunk::sourceRef).toList();
-        var extracted = candidates.stream()
+        var extracted = candidates.items().stream()
             .map(candidate -> new KnowledgePoint(
                 newId("kp"),
                 material.knowledgeBaseId(),
@@ -430,7 +453,7 @@ public class SuiLearnV2Workflow {
             task,
             TaskLifecycleStatus.SUCCEEDED,
             100,
-            "READY",
+            candidates.step(),
             new TaskResultRef("KNOWLEDGE_POINTS", material.id(), extracted.size()),
             null,
             null,
@@ -1093,17 +1116,28 @@ public class SuiLearnV2Workflow {
         );
     }
 
-    private List<ExtractedKnowledgePointCandidate> extractCandidateTerms(
+    private ExtractedKnowledgePointCandidates extractCandidateTerms(
         LearningMaterial material,
         List<MaterialChunk> evidence
     ) {
-        var generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
-            material.knowledgeBaseId(),
-            material.id(),
-            material.title(),
-            evidence.stream().map(MaterialChunk::sourceRef).toList(),
-            MAX_EXTRACTED_POINTS
-        ));
+        if (!chatConfigured()) {
+            return new ExtractedKnowledgePointCandidates(localKnowledgePointCandidates(material), STEP_LOCAL_FALLBACK);
+        }
+        List<AiProvider.GeneratedKnowledgePoint> generated;
+        try {
+            generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+                material.knowledgeBaseId(),
+                material.id(),
+                material.title(),
+                evidence.stream().map(MaterialChunk::sourceRef).toList(),
+                MAX_EXTRACTED_POINTS
+            ));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException(
+                "Configured chat AI failed to extract knowledge points: " + safeErrorMessage(exception),
+                exception
+            );
+        }
         var candidates = new LinkedHashMap<String, ExtractedKnowledgePointCandidate>();
         if (generated != null) {
             for (var point : generated) {
@@ -1111,11 +1145,12 @@ public class SuiLearnV2Workflow {
             }
         }
         if (candidates.isEmpty()) {
-            for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
-                addKnowledgePointCandidate(candidates, term, null, material.title());
-            }
+            throw new IllegalStateException("Configured chat AI returned no usable knowledge points");
         }
-        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+        return new ExtractedKnowledgePointCandidates(
+            candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList(),
+            STEP_AI_EXTRACTED
+        );
     }
 
     private List<MaterialChunk> extractionEvidence(LearningMaterial material) {
@@ -1157,6 +1192,14 @@ public class SuiLearnV2Workflow {
             KnowledgePointCandidateExtractor.normalizeKey(name),
             new ExtractedKnowledgePointCandidate(name, description)
         );
+    }
+
+    private List<ExtractedKnowledgePointCandidate> localKnowledgePointCandidates(LearningMaterial material) {
+        var candidates = new LinkedHashMap<String, ExtractedKnowledgePointCandidate>();
+        for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
+            addKnowledgePointCandidate(candidates, term, null, material.title());
+        }
+        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
     }
 
     private GeneratedQuestionDraft updateGeneratedStatus(GeneratedQuestionDraft existing, GeneratedContentStatus status) {
@@ -1318,11 +1361,18 @@ public class SuiLearnV2Workflow {
     }
 
     private String chatModelName() {
-        return "openai-compatible-chat";
+        return properties.chatModel();
+    }
+
+    private boolean chatConfigured() {
+        return properties.hasOpenAiCompatibleChatConfiguration();
     }
 
     private String newId(String prefix) {
         return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record ExtractedKnowledgePointCandidates(List<ExtractedKnowledgePointCandidate> items, String step) {
     }
 
     private record ExtractedKnowledgePointCandidate(String name, String description) {

@@ -26,3 +26,16 @@ test("extracted knowledge points are rendered as readable details instead of key
   assert.match(appSource, /points=\{props\.materialDetail\.extractedKnowledgePoints\s*\?\?\s*\[\]\}/);
   assert.match(appSource, /ref\.excerpt/);
 });
+
+test("text-only material chunks do not render missing model and dimension as unavailable metadata", () => {
+  assert.match(appSource, /function materialChunkEmbeddingMeta/);
+  assert.match(appSource, /chunk\.embeddingStatus === "TEXT_ONLY"/);
+  assert.match(appSource, /model: "文本检索"/);
+  assert.match(appSource, /dimensions: "无向量"/);
+});
+
+test("knowledge point extraction stores and displays the extraction task status", () => {
+  assert.match(appSource, /const \[extractionTasks, setExtractionTasks]/);
+  assert.match(appSource, /setExtractionTasks\(\(current\) => \(\{ \.\.\.current, \[materialId]: extraction\.task \}\)\)/);
+  assert.match(appSource, /<TaskStatusCard task=\{props\.extractionTasks\[props\.materialDetail\.id\]\} \/>/);
+});

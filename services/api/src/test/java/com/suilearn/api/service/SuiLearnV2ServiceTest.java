@@ -987,6 +987,37 @@ class SuiLearnV2ServiceTest {
     }
 
     @Test
+    void legacyWorkflowDoesNotFallBackWhenConfiguredAiReturnsNoUsableKnowledgePoints() {
+        var noUsableAiService = new SuiLearnV2Service(
+            new NoUsableKnowledgePointAiProvider(),
+            new TextMaterialParser(),
+            new DefaultMaterialChunker(),
+            new DeterministicEmbeddingProvider(),
+            keywordRetriever(),
+            clock,
+            store
+        );
+        var kb = noUsableAiService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = noUsableAiService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Java Interview Notes",
+            null,
+            MaterialSourceType.MARKDOWN,
+            "HashMap equals hashCode StringBuilder"
+        ));
+
+        assertThatThrownBy(() -> noUsableAiService.extractKnowledgePoints(material.id()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Configured chat AI returned no usable knowledge points");
+        assertThat(noUsableAiService.listKnowledgePoints(kb.id())).isEmpty();
+        assertThat(store.listTasks())
+            .anySatisfy(task -> {
+                assertThat(task.kind()).isEqualTo(TaskKind.KNOWLEDGE_POINT_EXTRACTION);
+                assertThat(task.status()).isEqualTo(TaskLifecycleStatus.FAILED);
+                assertThat(task.currentStep()).isEqualTo("AI_EXTRACTION_FAILED");
+            });
+    }
+
+    @Test
     void aiGenerationDelegatesSourceNormalizationToSourceService() {
         var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
         var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
@@ -1486,6 +1517,18 @@ class SuiLearnV2ServiceTest {
         @Override
         public GeneratedAnswer answerQuestion(AnswerQuestionPrompt prompt) {
             return new GeneratedAnswer("Provider replacement answer [1]", false);
+        }
+    }
+
+    private static class NoUsableKnowledgePointAiProvider extends DeterministicAiProvider {
+        @Override
+        public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
+            return List.of(
+                new GeneratedKnowledgePoint("#](https", "Markdown fragment"),
+                new GeneratedKnowledgePoint("---", "Separator"),
+                new GeneratedKnowledgePoint("A1", "Short section id"),
+                new GeneratedKnowledgePoint("Java", "Generic material label")
+            );
         }
     }
 

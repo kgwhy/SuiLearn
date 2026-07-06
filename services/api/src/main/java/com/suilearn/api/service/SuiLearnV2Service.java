@@ -1,6 +1,7 @@
 package com.suilearn.api.service;
 
 import com.suilearn.api.ai.AiProvider;
+import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
@@ -67,7 +68,16 @@ public class SuiLearnV2Service {
         Clock clock,
         SuiLearnV2Store store
     ) {
-        this(createWorkflow(aiProvider, materialParser, materialChunker, embeddingProvider, retriever, clock, store));
+        this(createWorkflow(
+            aiProvider,
+            materialParser,
+            materialChunker,
+            embeddingProvider,
+            retriever,
+            clock,
+            store,
+            defaultTestAiProperties()
+        ));
     }
 
     private static SuiLearnV2Workflow createWorkflow(
@@ -77,7 +87,8 @@ public class SuiLearnV2Service {
         EmbeddingProvider embeddingProvider,
         Retriever retriever,
         Clock clock,
-        SuiLearnV2Store store
+        SuiLearnV2Store store,
+        SuiLearnAiProperties properties
     ) {
         var taskService = new TaskService(new TaskStore(store), clock);
         return new SuiLearnV2Workflow(
@@ -88,6 +99,7 @@ public class SuiLearnV2Service {
             retriever,
             clock,
             store,
+            properties,
             taskService,
             new TaskExecutor(taskService),
             new SourceService(
@@ -96,6 +108,18 @@ public class SuiLearnV2Service {
                 new MaterialStore(store),
                 new MaterialChunkStore(store)
             )
+        );
+    }
+
+    private static SuiLearnAiProperties defaultTestAiProperties() {
+        return new SuiLearnAiProperties(
+            "openai-compatible",
+            "https://ai.example.test/v1",
+            "test-api-key",
+            "openai-compatible-chat",
+            "",
+            30000,
+            0
         );
     }
 

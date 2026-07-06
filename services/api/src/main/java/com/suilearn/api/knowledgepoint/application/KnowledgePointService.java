@@ -1,6 +1,7 @@
 package com.suilearn.api.knowledgepoint.application;
 
 import com.suilearn.api.ai.AiProvider;
+import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
 import com.suilearn.api.model.KnowledgePoint;
 import com.suilearn.api.model.KnowledgePointExtractionResult;
@@ -28,12 +29,16 @@ public class KnowledgePointService {
     private static final int MAX_EXTRACTED_POINTS = 16;
     private static final int MAX_EVIDENCE_CHUNKS = 8;
     private static final String EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
+    private static final String STEP_AI_EXTRACTED = "AI_EXTRACTED";
+    private static final String STEP_AI_EXTRACTION_FAILED = "AI_EXTRACTION_FAILED";
+    private static final String STEP_LOCAL_FALLBACK = "LOCAL_FALLBACK";
 
     private final AiProvider aiProvider;
     private final KnowledgeBaseStore knowledgeBases;
     private final KnowledgePointStore knowledgePoints;
     private final MaterialChunkStore materialChunks;
     private final MaterialStore materials;
+    private final SuiLearnAiProperties properties;
     private final Retriever retriever;
     private final SourceService sourceService;
     private final TaskService taskService;
@@ -44,6 +49,7 @@ public class KnowledgePointService {
         MaterialStore materials,
         MaterialChunkStore materialChunks,
         KnowledgePointStore knowledgePoints,
+        SuiLearnAiProperties properties,
         Retriever retriever,
         TaskService taskService,
         SourceService sourceService
@@ -53,6 +59,7 @@ public class KnowledgePointService {
         this.knowledgePoints = knowledgePoints;
         this.materialChunks = materialChunks;
         this.materials = materials;
+        this.properties = properties;
         this.retriever = retriever;
         this.sourceService = sourceService;
         this.taskService = taskService;
@@ -70,16 +77,32 @@ public class KnowledgePointService {
             TaskKind.KNOWLEDGE_POINT_EXTRACTION,
             material.knowledgeBaseId(),
             material.id(),
-            null,
-            null,
+            chatConfigured() ? properties.providerType() : null,
+            chatConfigured() ? properties.chatModel() : null,
             "EXTRACTING"
         ), "EXTRACTING");
         var evidence = extractionEvidence(material);
-        var candidates = extractCandidateTerms(material, evidence);
+        ExtractionCandidates candidates;
+        try {
+            candidates = extractCandidateTerms(material, evidence);
+        } catch (RuntimeException exception) {
+            taskService.updateTask(
+                task,
+                TaskLifecycleStatus.FAILED,
+                100,
+                STEP_AI_EXTRACTION_FAILED,
+                null,
+                STEP_AI_EXTRACTION_FAILED,
+                safeErrorMessage(exception),
+                material.id(),
+                null
+            );
+            throw exception;
+        }
         var sourceRefs = evidence.isEmpty()
             ? List.of(sourceService.materialSourceRef(material))
             : evidence.stream().map(MaterialChunk::sourceRef).toList();
-        var extracted = candidates.stream()
+        var extracted = candidates.items().stream()
             .map(candidate -> new KnowledgePoint(
                 newId("kp"),
                 material.knowledgeBaseId(),
@@ -94,7 +117,7 @@ public class KnowledgePointService {
             task,
             TaskLifecycleStatus.SUCCEEDED,
             100,
-            "READY",
+            candidates.step(),
             new TaskResultRef("KNOWLEDGE_POINTS", material.id(), extracted.size()),
             null,
             null,
@@ -143,7 +166,10 @@ public class KnowledgePointService {
             .orElseThrow(() -> new IllegalArgumentException("Knowledge point not found: " + knowledgePointId));
     }
 
-    private List<ExtractedCandidate> extractCandidateTerms(LearningMaterial material, List<MaterialChunk> evidence) {
+    private ExtractionCandidates extractCandidateTerms(LearningMaterial material, List<MaterialChunk> evidence) {
+        if (!chatConfigured()) {
+            return new ExtractionCandidates(localCandidates(material), STEP_LOCAL_FALLBACK);
+        }
         List<AiProvider.GeneratedKnowledgePoint> generated;
         try {
             generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
@@ -154,7 +180,10 @@ public class KnowledgePointService {
                 MAX_EXTRACTED_POINTS
             ));
         } catch (RuntimeException exception) {
-            generated = List.of();
+            throw new IllegalStateException(
+                "Configured chat AI failed to extract knowledge points: " + safeErrorMessage(exception),
+                exception
+            );
         }
         var candidates = new LinkedHashMap<String, ExtractedCandidate>();
         if (generated != null) {
@@ -163,11 +192,9 @@ public class KnowledgePointService {
             }
         }
         if (candidates.isEmpty()) {
-            for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
-                addCandidate(candidates, term, null, material.title());
-            }
+            throw new IllegalStateException("Configured chat AI returned no usable knowledge points");
         }
-        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+        return new ExtractionCandidates(candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList(), STEP_AI_EXTRACTED);
     }
 
     private List<MaterialChunk> extractionEvidence(LearningMaterial material) {
@@ -204,8 +231,31 @@ public class KnowledgePointService {
         candidates.putIfAbsent(KnowledgePointCandidateExtractor.normalizeKey(name), new ExtractedCandidate(name, description));
     }
 
+    private List<ExtractedCandidate> localCandidates(LearningMaterial material) {
+        var candidates = new LinkedHashMap<String, ExtractedCandidate>();
+        for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
+            addCandidate(candidates, term, null, material.title());
+        }
+        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+    }
+
+    private boolean chatConfigured() {
+        return properties.hasOpenAiCompatibleChatConfiguration();
+    }
+
+    private String safeErrorMessage(RuntimeException exception) {
+        var message = exception.getMessage();
+        if (message == null || message.isBlank()) {
+            message = exception.getClass().getSimpleName();
+        }
+        return message.length() <= 160 ? message : message.substring(0, 160);
+    }
+
     private String newId(String prefix) {
         return prefix + "_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private record ExtractionCandidates(List<ExtractedCandidate> items, String step) {
     }
 
     private record ExtractedCandidate(String name, String description) {

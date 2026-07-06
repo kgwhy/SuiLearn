@@ -5,7 +5,7 @@ export type QuestionType = "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | 
 export type SourceType = "KNOWLEDGE_POINT" | "WRONG_QUESTION" | "MATERIAL" | "MATERIAL_CHUNK" | "KNOWLEDGE_BASE" | "ANSWER_HISTORY";
 export type AiNoteType = "KNOWLEDGE_POINT_EXPLANATION" | "REVIEW_SUGGESTION" | "RAG_ANSWER" | "MANUAL_NOTE";
 export type AiProviderType = "FAKE" | "OPENAI_COMPATIBLE";
-export type EmbeddingStatus = "PENDING" | "INDEXING" | "READY" | "FAILED" | "INVALIDATED";
+export type EmbeddingStatus = "PENDING" | "INDEXING" | "READY" | "FAILED" | "INVALIDATED" | "TEXT_ONLY";
 export type TaskKind =
   | "MATERIAL_IMPORT"
   | "EMBEDDING"
