@@ -1,7 +1,7 @@
-# Subagent Build Loop
+# 子 Agent Build 循环
 
-Use the smallest loop level that protects the task. Use fresh subagents with
-task-local context only when the loop level requires them.
+使用足以保护任务的最小循环等级。只有所选循环等级需要时，才使用仅携带任务局部
+上下文的新子 Agent。
 
 ```text
 L1 Tiny: Implementer -> Verify
@@ -9,35 +9,49 @@ L2 Normal: Implementer -> Test -> Review -> Fix
 L3 Major: Implementer -> Test -> Spec Review -> Code Review -> Fix
 ```
 
+P0/P1 发现返回 Fix，并且必须复审。最终审查中的 P2 发现必须修复、迁移到带
+Owner 和理由的具名 follow-up change，或由用户显式接受。
+
 ## Implementer
 
-Input:
+输入：
 
-- exact task text
-- relevant artifact excerpts
-- allowed and forbidden paths
-- test command
-- expected output format
+- 精确任务文本
+- 相关产物摘录
+- 允许和禁止路径
+- 测试命令
+- 期望返回格式
 
-Rules:
+规则：
 
-- Use TDD for behavior changes.
-- Reproduce bugs before fixing.
-- Keep changes minimal.
+- 行为变更使用 TDD。
+- Bug 修复前先复现。
+- 保持最小变更。
+- 不为了局部方便改变产品、架构、契约或存储决策。
 
 ## Test
 
-Run required commands independently and report raw output.
+独立运行要求的命令，并报告原始输出。
 
 ## Spec Review
 
-Check the implementation against proposal, design, specs, and tasks.
+对照 proposal、design、specs 和 tasks 检查实现。
 
 ## Code Review
 
-Check quality, boundaries, maintainability, tests, and regression risk.
+检查质量、边界、可维护性、测试和回归风险。
 
 ## Fix
 
-Fix only the reported issue, then re-run test and review. Stop after three
-unsuccessful fix rounds.
+只修复已报告的问题，然后重新运行测试和审查。同一文件三轮修复仍失败时停止。
+
+## 返回格式
+
+```text
+STATUS: DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED
+Changed files:
+Tests:
+Summary:
+Assumptions:
+Blockers:
+```

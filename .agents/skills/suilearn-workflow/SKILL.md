@@ -1,15 +1,15 @@
 ---
 name: suilearn-workflow
-description: Coordinate SuiLearn development through the native Explore -> Spec -> Build -> Verify -> Archive workflow. Use for SuiLearn changes, implementation tasks, workflow decisions, or when deciding how OpenSpec-style SDD, subagent-driven development, TDD, testing, review, and project role/file policy fit together.
+description: 当在 SuiLearn 中处理工作流路由、OpenSpec 变更、实现任务、验证、归档、角色/文件策略，或判断应加载哪些项目流程规则时使用。
 ---
 
-# SuiLearn Workflow
+# SuiLearn 工作流
 
-Use this skill as the single workflow router for SuiLearn. It is not a parallel
-planning system and must not create `docs/superpowers/specs/**`,
-`docs/superpowers/plans/**`, or new `docs/proposals/**`.
+将本 Skill 作为 SuiLearn 的轻量工作流路由器。只加载当前状态、角色和门禁所需的
+reference。不要把 `docs/development-workflow.md` 当作每个任务都必须全量读取的
+入口；它是完整的人类可审查政策源。
 
-## State Machine
+## 状态机
 
 ```text
 Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
@@ -17,58 +17,55 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
              +---- spec issue found -----+
 ```
 
-- **Explore:** clarify the problem; do not write business code.
-- **Spec:** create or update `openspec/changes/<change-name>/**` artifacts.
-- **Build:** execute tasks through fresh subagents.
-- **Verify:** collect final tests, diff, and review evidence.
-- **Archive:** sync stable facts and close the change.
+## 先路由
 
-Read `docs/development-workflow.md` for the full project policy. Use the
-reference files in this skill only when you need compact reminders:
+行动前先回答：
 
-- `references/state-machine.md`
-- `references/subagent-loop.md`
-- `references/policy-gates.md`
+- 当前处于哪个状态：Explore、Spec、Build、Verify 还是 Archive？
+- 哪个角色拥有相关文件？
+- 变更等级是 Tiny、Normal 还是 Major？
+- 是否会编辑文件？
+- 是否已有 active `openspec/changes/<change-name>` 变更目录？
 
-## Routing Rules
+## 按需加载
 
-When the request is exploratory, stay in `Explore`. You may read files and ask
-questions, but do not write code.
+仅在条件适用时读取这些 reference：
 
-When the request changes behavior, architecture, product scope, contracts, or
-workflow, enter `Spec` and use `openspec/changes/<change-name>/**` as the change
-home. Classify the change as `Tiny`, `Normal`, or `Major`; use Fast Track only
-for Tiny work.
+| 需要 | 读取 |
+| --- | --- |
+| 判断状态或退出条件 | `references/state-machine.md` |
+| 查看真实任务触发示例 | `references/usage-examples.md` |
+| 设计或执行前向测试 | `references/forward-testing.md` |
+| 判定 Tiny/Normal/Major | `references/change-levels.md` |
+| 准备编辑或完成声明 | `references/policy-gates.md` |
+| 执行已批准的 Build 任务 | `references/subagent-loop.md` |
+| 声明完成或关闭变更 | `references/verification.md` |
 
-When an approved task is ready, enter `Build`. The main agent coordinates; fresh
-subagents implement, test, review, and fix.
+确定性检查优先运行 `scripts/check-skill.ps1`，再按项目要求运行 OpenSpec 和工作流检查器。
 
-When claiming completion, enter `Verify` first. Run or collect fresh evidence
-before making success claims.
+若要编辑文件，还必须读取：
 
-When the change is complete, enter `Archive`: sync stable facts, record
-verification and implementation references, and archive the change.
+- `agents/<role>.md`
+- active change 的 `policy.md`
+- active change 的 `tasks.md`
 
-## Build Loop
+## 路由规则
 
-For each task:
+- 探索性请求停留在 Explore，不写业务代码。
+- 工作流、产品、架构、契约或行为变化进入 Spec，并使用一个
+  `openspec/changes/<change-name>/**` 变更目录。
+- 已批准任务进入 Build。主 Agent 负责协调；循环等级需要时，由聚焦 Agent
+  分别实现、测试、审查和修复。
+- 声明完成前先进入 Verify。证据先于成功声明。
+- 稳定事实已同步或标记为不受影响后，完成的变更进入 Archive。
 
-```text
-L1 Tiny:  Implementer -> Verify
-L2 Normal: Implementer -> Test -> Review -> Fix
-L3 Major: Implementer -> Test -> Spec Review -> Code Review -> Fix
-```
+## 不可协商项
 
-P0/P1 test or review issues return to Fix. Scope ambiguity, architecture
-conflict, contract change, or out-of-policy files return to Spec or require user
-confirmation.
-
-## Non-Negotiables
-
-- Use one change home: `openspec/changes/<change-name>/**`.
-- Do not create new `docs/proposals/**`.
-- Do not create Superpowers design or plan documents.
-- Use the smallest valid change class; reclassify upward as soon as scope grows.
-- Business-code changes require TDD or explicit reproduction steps.
-- The implementer cannot self-certify completion.
-- Evidence comes before completion claims.
+- 同一用户问题链路只使用一个 active change home。
+- 不在 `docs/proposals/**` 下创建新文件。
+- 不创建 Superpowers design 或 plan 文档。
+- 不绕过角色归属或 active change policy。
+- 使用足以保护工作的最小有效变更等级；范围扩大时立即向上重分类。
+- 业务代码变更需要 TDD 或明确复现步骤。
+- 实现 Agent 不能自证完成。
+- 证据先于完成声明。

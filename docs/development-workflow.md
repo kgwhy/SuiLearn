@@ -4,6 +4,12 @@ SuiLearn 工作流是本仓库唯一的软件开发生命周期。它吸收 Open
 规格驱动开发状态机、Superpowers 风格的子 Agent/TDD/调试/验证纪律，以及
 SuiLearn 的角色和文件边界策略。
 
+本文是完整的人类可审查政策说明和稳定事实源，不是每次 Agent 任务的强制
+全量加载入口。Agent 执行时应先读取 `AGENTS.md` 的常驻红线，再使用
+`.agents/skills/suilearn-workflow` 作为轻量路由器，按当前状态、角色、门禁
+和变更等级读取对应 `references/**`。只有在审查、修改工作流政策、解决规则
+冲突或 reference 不足时，才需要回到本文读取完整背景。
+
 项目级状态机：
 
 ```text
@@ -14,6 +20,7 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 
 ## 原则
 
+- 渐进加载：常驻规则回答“什么不能违反”，Skill 回答“当前该加载什么”，本文回答“完整制度为什么这样设计”。
 - 一个生命周期：不要运行并行的 proposal、design 或 plan 流程。
 - 一个变更目录：新变更统一进入 `openspec/changes/<change-name>/**`。
 - 一组当前事实：稳定事实写入产品、架构、技术选型和契约文档。

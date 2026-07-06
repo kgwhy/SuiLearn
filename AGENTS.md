@@ -1,76 +1,60 @@
 # SuiLearn Agent 规则
 
-## 核心规则
+## 常驻红线
 
-SuiLearn 使用唯一原生工作流：
+SuiLearn 只使用一个原生工作流：
 
 ```text
 Explore -> Spec -> Build -> Verify -> Archive
 ```
 
-该工作流吸收 OpenSpec 风格的 SDD 生命周期、Superpowers 风格的子 Agent/TDD/调试/验证纪律，以及 SuiLearn 角色/文件策略。所有 Agent 必须遵守本文、`docs/development-workflow.md` 和当前活动角色文件。
+本文件是常驻 ruler，只保留不可违反规则和加载入口。执行细节按需加载
+`.agents/skills/suilearn-workflow`；完整政策说明见 `docs/development-workflow.md`。
 
 ## 优先级
 
 1. 用户显式指令。
 2. 本 `AGENTS.md` 和活动角色文件。
-3. `docs/development-workflow.md`。
-4. active `openspec/changes/<change-name>` 产物。
-5. 工具或技能默认规则。
+3. `.agents/skills/suilearn-workflow` 按需加载的 reference。
+4. `docs/development-workflow.md`。
+5. active `openspec/changes/<change-name>` 产物。
+6. 工具或技能默认规则。
 
-如果某个工具或技能试图创建并行设计或计划流程，以本项目工作流为准。
+若任何工具或技能试图创建并行 proposal/design/plan 流程，以 SuiLearn Workflow 为准。
 
-## 强制门禁
+## 何时加载
 
-### Gate A：修改文件前
+- 涉及流程判断、OpenSpec、实现、验证、归档或角色/文件策略时，使用 `.agents/skills/suilearn-workflow`。
+- 编辑文件前，读取对应 `agents/<role>.md`，并读取 active change 的 `policy.md` 和 `tasks.md`。
+- 修改工作流政策、解决规则冲突或 reference 不足时，再读取 `docs/development-workflow.md`。
+- 查稳定事实时读取：`docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md`、`contracts/**`。
 
-任何文件编辑前：
+## 编辑门禁
 
-1. 读取活动角色文件 `agents/<role>.md`。
-2. 列出计划修改文件，并逐项对照角色策略。
-3. 记录 `base_ref`，通常为当前 `HEAD`。
-4. 检查 `docs/development-workflow.md` 中的锁和 worktree 要求。
-5. 业务代码编辑前运行相关基线测试。
-6. 若任务涉及端口、CORS、Docker/Compose、反向代理、环境变量、CI wrapper、数据库连接或本地/容器启动方式，必须先在 active change 中写验收矩阵、默认值语义、覆盖口、残留扫描项和运行态验证计划；同一用户问题链路必须复用一个 active change home。
+编辑任何文件前必须：
 
-纯文档、纯工作流和只读审查任务可以跳过模块测试，但必须说明测试不适用的原因。
-
-### Gate B：编辑期间
-
-每个编辑批次前声明：
+1. 判定状态、角色、变更等级和 active change home。
+2. 记录 `base_ref`。
+3. 声明计划修改文件，并核对角色和 `policy.md` 允许范围。
+4. 业务代码编辑前运行基线测试，或记录不可用/不适用原因。
+5. 每批编辑前声明：
 
 ```text
 📝 本次修改: <file list>
 ```
 
-如果需要新增声明外文件，先停止并声明扩展范围再编辑。若同一文件在同一任务中三轮修复仍失败，停止并请求重新拆分工作流或重置上下文。
+若需要新增声明外文件，先停止并声明扩展范围。
 
-### Gate C：完成前
+## 完成门禁
 
-声明完成前：
+声明完成前必须：
 
-1. 运行必需验证命令，或说明不适用原因。
-2. 运行 `git diff <base_ref> --stat`；如果没有 `base_ref`，运行 `git diff --stat`。
-3. 对照活动角色策略和任务范围检查每个变更文件。
-4. 对 Major 或跨角色工作，确认最终 Review Agent 发现已修复、已明确延期到具名 follow-up change，或已由用户显式接受。
-5. 声明变更完成前，检查 active change 产物中是否仍有 `In progress`、`Status: open` 或无 Owner 的 `pending` 等陈旧关闭状态。
-6. 检查本次触及的当前事实文档，确认除历史参考段落外，不再把新工作指向 `docs/proposals/**` 等退役流程。
-7. 对配置 / 启动 / 集成类变更，报告验收矩阵对应的运行态验证结果、旧默认值残留扫描结果，以及任何不可运行项的原因。
-8. 报告所有已运行命令的原始测试输出。
-
-完成格式：
-
-```text
-✅ 完成
-改了什么: <summary>
-测试结果: <raw output or not-applicable reason>
-文件核对: <N files, all in scope / out-of-scope files: X>
-Review 闭环: <无发现 / 已修复 Pn / 已延期到 change id>
-```
-
-### Gate D：自我审查
-
-任务结束时执行快速 reviewer-style 自审：
+1. 运行必需验证，或说明不适用原因。
+2. 运行 `git diff <base_ref> --stat`；无 `base_ref` 时运行 `git diff --stat`。
+3. 核对所有变更文件都在角色和 active change 范围内。
+4. 检查 active change 产物没有陈旧的 `In progress`、`Status: open` 或无 Owner 的 `pending`。
+5. 对 Major 或跨角色工作记录 Review 闭环。
+6. 做 reviewer-style 自审：
 
 ```text
 🔍 自我审查
@@ -78,69 +62,14 @@ Review 闭环: <无发现 / 已修复 Pn / 已延期到 change id>
 无阻塞问题 / 发现 N 个问题
 ```
 
-## 工作流入口
+## 不可违反
 
-- Explore/spec/design/planning 工作属于 SuiLearn Workflow 的 `Explore` 和 `Spec` 状态。
-- 业务代码实现必须来自已批准的 `openspec/changes/<change-name>/tasks.md` 任务。
-- Fast Track 例外：低风险单角色变更在 `docs/development-workflow.md` 分类为 `Tiny` 时，可使用轻量任务说明代替完整 proposal/design 包。
-- Bug 修复应由 OpenSpec change、现有 active task，或低风险且不改变产品/架构/契约/存储/跨角色行为的 Fast Track 任务说明承载。
-- 第一次返工暴露语义偏差时，停止继续补丁式实现，先回到 `Spec` 更新验收标准。典型信号包括用户指出“不是这个效果”、默认路径仍需手动配置，或验证证明当前实现只满足“可配置”但不满足“默认可用”。
-- `docs/proposals/**` 已退役，不用于新工作。
-- `docs/superpowers/specs/**` 和 `docs/superpowers/plans/**` 不是项目事实源。
-
-## 文档规则
-
-- 当前事实位于：
-  - `docs/product-requirements.md`
-  - `docs/architecture.md`
-  - `docs/tech-selection.md`
-  - `contracts/**`
-- 未来变更位于 `openspec/changes/<change-name>/**`。
-- `openspec/changes/**` 下的 Spec 产物统一使用中文编写，包括 `proposal.md`、`design.md`、`tasks.md`、`policy.md`、`verification.md`、`archive.md` 和 `specs/**`；仅代码标识、命令、路径、API 字段和必要英文术语保留原文。
-- 已完成变更的稳定结论必须在归档前同步回当前事实文档。
-- `docs/chat.md` 仅作为灵感和讨论材料，默认只读，不是实现依据。
-- `docs/proposals/**` 仅作为历史迁移材料。
-
-## 角色目录
-
-- Leader Agent：`agents/leader.md`
-- Product Agent：`agents/product.md`
-- Architect Agent：`agents/architect.md`
-- Content Agent：`agents/content.md`
-- Android Agent：`agents/android.md`
-- Server Backend Agent：`agents/server-backend.md`
-- Web Frontend Agent：`agents/web-frontend.md`
-- Test Agent：`agents/test.md`
-- Reviewer Agent：`agents/reviewer.md`
-
-未指定角色时，推断主要角色、说明理由，并将任务保持在该角色策略内。跨角色工作由 Leader 协调。
-
-## 角色隔离
-
-- 除非用户或 Leader 明确授权扩展范围，否则不得修改活动角色策略外的文件。
-- 共享文件和契约需要串行执行或 worktree 隔离。
-- 实现 Agent 不得为了局部方便改变产品范围、技术基线或契约。
-- 如果文档和实现冲突，停止并询问是更新 spec 还是更新实现。
-
-## 子 Agent 策略
-
-在 `Build` 中，主 Agent 作为协调者。任务非平凡、跨角色、高风险或用户要求时，实现、测试、审查和修复应委派给新的子 Agent。
-
-循环强度按风险选择：
-
-```text
-L1: Implementer -> Verify
-L2: Implementer -> Test Agent -> Review
-L3: Implementer -> Test Agent -> Spec Reviewer -> Code Reviewer -> Fix Agent
-```
-
-实现 Agent 不能自证完成。P0/P1 测试或审查问题返回修复循环。Spec 歧义、范围变化、架构冲突和越界编辑返回 `Spec` 或需要用户确认。
-
-Major 变更必须在完成前进行最终审查。P2 发现必须修复、迁移到带 Owner 和理由的具名 follow-up change，或由用户显式接受；不允许静默遗留。
-
-## 退役流程
-
-不要在以下路径下创建新文件：
+- 业务代码实现必须来自已批准的 `openspec/changes/<change-name>/tasks.md`。
+- 同一用户问题链路只使用一个 active change home。
+- 不绕过角色归属、文件边界、TDD/复现步骤或完成验证。
+- 实现 Agent 不能自证完成。
+- 配置/启动/集成类变更进入 Build 前必须写清验收矩阵、默认值语义、覆盖口、残留扫描项和运行态验证计划。
+- 不在以下路径创建新文件：
 
 ```text
 docs/proposals/**
@@ -148,4 +77,16 @@ docs/superpowers/specs/**
 docs/superpowers/plans/**
 ```
 
-使用 `openspec/changes/<change-name>/**` 和 SuiLearn Workflow。
+## 角色索引
+
+- Leader：`agents/leader.md`
+- Product：`agents/product.md`
+- Architect：`agents/architect.md`
+- Content：`agents/content.md`
+- Android：`agents/android.md`
+- Server Backend：`agents/server-backend.md`
+- Web Frontend：`agents/web-frontend.md`
+- Test：`agents/test.md`
+- Reviewer：`agents/reviewer.md`
+
+未指定角色时，先推断主要角色并说明理由；跨角色工作由 Leader 协调。
