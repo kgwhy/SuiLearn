@@ -31,7 +31,6 @@ import type {
   KnowledgeBaseDetail,
   KnowledgeBaseStatistics,
   KnowledgePoint,
-  MaterialChunk,
   MaterialDetail,
   MaterialMetadata,
   MaterialSourceType,
@@ -1014,7 +1013,7 @@ function MaterialsPanel(props: {
               <button type="button" onClick={() => void props.openMaterial(item.id)}>
                 <FileText size={16} />
                 <span>
-                  {item.title}
+                  {readableMaterialText(item.title)}
                   <small>import {shortId(item.importTaskId)}{item.embeddingTaskId ? ` · embed ${shortId(item.embeddingTaskId)}` : ""}</small>
                 </span>
               </button>
@@ -1041,7 +1040,7 @@ function MaterialsPanel(props: {
         </div>
         {props.materialDetail && (
           <div className="detail-box">
-            <h4>{props.materialDetail.title}</h4>
+            <h4>{readableMaterialText(props.materialDetail.title)}</h4>
             <div className="metadata-grid">
               <MetaItem label="导入任务" value={props.materialDetail.importTaskId} />
               {props.materialDetail.embeddingTaskId && <MetaItem label="Embedding 任务" value={props.materialDetail.embeddingTaskId} />}
@@ -1076,28 +1075,6 @@ function MaterialsPanel(props: {
             )}
             <TaskStatusCard task={props.extractionTasks[props.materialDetail.id]} />
             <MaterialContentReader detail={props.materialDetail} />
-            <div className="chunk-list">
-              <h4>资料片段</h4>
-              {(props.materialDetail.chunks ?? []).slice(0, 8).map((chunk) => {
-                const embeddingMeta = materialChunkEmbeddingMeta(chunk);
-                return (
-                  <div className="chunk-item" key={chunk.id}>
-                    <div className="chunk-heading">
-                      <span>#{chunk.ordinal + 1}</span>
-                      <StatusPill label={chunk.embeddingStatus} />
-                    </div>
-                    <p>{readableMaterialText(chunk.content)}</p>
-                    <div className="result-meta">
-                      <span>model {embeddingMeta.model}</span>
-                      <span>dim {embeddingMeta.dimensions}</span>
-                      {chunk.tokenEstimate !== undefined && <span>tokens {chunk.tokenEstimate}</span>}
-                      {chunk.titlePath?.length ? <span>{chunk.titlePath.join(" / ")}</span> : null}
-                    </div>
-                  </div>
-                );
-              })}
-              {(props.materialDetail.chunks ?? []).length === 0 && <EmptyLine label="还没有返回可检索片段" />}
-            </div>
             <KnowledgePointSummaryList
               points={props.materialDetail.extractedKnowledgePoints ?? []}
               onOpen={props.openKnowledgePoint}
@@ -1472,36 +1449,25 @@ function sourceRefForKnowledgePoint(point: KnowledgePoint): SourceRef {
 }
 
 function sourceRefLabel(ref: SourceRef) {
-  return ref.deleted ? "来源已删除" : ref.title ?? ref.id;
+  if (ref.deleted) return "来源已删除";
+  const label = readableMaterialText(ref.title ?? "");
+  return label || shortId(ref.id);
 }
 
 function readableMaterialText(value: string) {
   return decodePercentText(value)
-    .replace(/\[([^\]]*)]\(([^)]*)\)/g, (_match, rawLabel: string, rawUrl: string) => {
+    .replace(/!\[[^\]]*]\s*\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)]\s*\(([^)]*)\)/g, (_match, rawLabel: string, rawUrl: string) => {
       const label = decodePercentText(rawLabel).trim();
       if (label && label !== "#") return label;
-      const anchor = rawUrl.includes("#") ? rawUrl.slice(rawUrl.indexOf("#") + 1) : "";
-      return decodePercentText(anchor.replace(/^#+/, "")).trim();
+      return readableUrlLabel(rawUrl);
     })
+    .replace(/\((https?:\/\/[^)\s]+)\)/g, (_match, rawUrl: string) => readableUrlLabel(rawUrl))
+    .replace(/https?:\/\/[^\s)]+/g, (rawUrl) => readableUrlLabel(rawUrl))
     .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function materialChunkEmbeddingMeta(chunk: MaterialChunk) {
-  if (chunk.embeddingStatus === "TEXT_ONLY") {
-    return { model: "文本检索", dimensions: "无向量" };
-  }
-  if (chunk.embeddingStatus === "FAILED") {
-    return { model: chunk.embeddingModel ?? "索引失败", dimensions: chunk.embeddingDimensions ?? "无向量" };
-  }
-  if (chunk.embeddingStatus === "PENDING" || chunk.embeddingStatus === "INDEXING") {
-    return { model: chunk.embeddingModel ?? "等待索引", dimensions: chunk.embeddingDimensions ?? "等待索引" };
-  }
-  if (chunk.embeddingStatus === "INVALIDATED") {
-    return { model: chunk.embeddingModel ?? "已失效", dimensions: chunk.embeddingDimensions ?? "需重建" };
-  }
-  return { model: chunk.embeddingModel ?? "未返回", dimensions: chunk.embeddingDimensions ?? "未返回" };
 }
 
 function decodePercentText(value: string) {
@@ -1512,6 +1478,18 @@ function decodePercentText(value: string) {
       return encoded;
     }
   });
+}
+
+function readableUrlLabel(value: string) {
+  const decoded = decodePercentText(value);
+  const anchor = decoded.includes("#") ? decoded.slice(decoded.indexOf("#") + 1).replace(/^#+/, "").trim() : "";
+  if (anchor) return anchor;
+  try {
+    const url = new URL(decoded);
+    return decodePercentText(url.pathname.split("/").filter(Boolean).pop() ?? "").replace(/\.[A-Za-z0-9]+$/, "").trim();
+  } catch {
+    return "";
+  }
 }
 
 function MaterialContentReader({ detail }: { detail: MaterialDetail }) {
@@ -1547,7 +1525,7 @@ function KnowledgePointChip({
       className={`knowledge-point-chip${active ? " active" : ""}`}
       onClick={() => onOpen(point.id)}
     >
-      {point.name}
+      {readableMaterialText(point.name)}
     </button>
   );
 }
@@ -1556,10 +1534,10 @@ function KnowledgePointDetail({ point }: { point: KnowledgePoint }) {
   return (
     <div className="knowledge-point-detail">
       <div className="detail-heading">
-        <h4>{point.name}</h4>
+        <h4>{readableMaterialText(point.name)}</h4>
         <StatusPill label="知识点" />
       </div>
-      <p>{point.description || "暂无描述"}</p>
+      <p>{point.description ? readableMaterialText(point.description) : "暂无描述"}</p>
       <KnowledgePointSources point={point} />
     </div>
   );
@@ -1585,12 +1563,12 @@ function KnowledgePointSummaryList({
         <article className={`knowledge-point-card${point.id === activeId ? " active" : ""}`} key={point.id}>
           <div className="detail-heading">
             <button type="button" className="knowledge-point-title-button" onClick={() => onOpen(point.id)}>
-              {point.name}
+              {readableMaterialText(point.name)}
               <ChevronRight size={15} />
             </button>
             <StatusPill label="知识点" />
           </div>
-          <p>{point.description || "暂无描述"}</p>
+          <p>{point.description ? readableMaterialText(point.description) : "暂无描述"}</p>
           <KnowledgePointSources point={point} />
         </article>
       ))}
@@ -1608,13 +1586,6 @@ function KnowledgePointSources({ point }: { point: KnowledgePoint }) {
           <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
         ))}
       </div>
-      {sourceRefs.some((ref) => ref.excerpt) && (
-        <div className="source-excerpts">
-          {sourceRefs.filter((ref) => ref.excerpt).map((ref) => (
-            <blockquote key={`${ref.type}-${ref.id}-excerpt`}>{ref.excerpt}</blockquote>
-          ))}
-        </div>
-      )}
     </>
   );
 }
