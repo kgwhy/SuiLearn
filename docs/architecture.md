@@ -346,6 +346,7 @@ KnowledgeBase
   ├─ GeneratedContent
   ├─ AiNote / AiNoteDraft
   ├─ ProcessingTask / TaskStatus
+  │  └─ ProcessingOperation / persistent claim-result
   └─ OutboxEvent
 ```
 
@@ -365,7 +366,7 @@ Web multipart upload
   -> manual ACK
 ```
 
-队列按 `document.processing`、`knowledge-point.generation`、`question.generation` 隔离，每类使用短/长两级 retry queue 和 dead-letter queue。投递语义为至少一次；消费者以 `taskId + stage + documentRevision/processingVersion` 作为幂等键，并在数据库结果与资产元数据提交后 ACK。永久错误直接失败，暂时错误有界退避；timeout、retry、circuit breaker 的目标默认值、覆盖口、合法范围和总调用上限统一以 `docs/tech-selection.md` 的韧性配置矩阵为准，禁止在架构文档复制参数形成漂移。
+队列按 `document.processing`、`knowledge-point.generation`、`question.generation` 隔离，每类使用短/长两级 retry queue 和 dead-letter queue。投递语义为至少一次；消费者以 `taskId + stage + documentRevision/processingVersion` 作为消息/阶段幂等键，并在数据库结果与资产元数据提交后 ACK。该键不替代 adapter operation 幂等：`ProcessingOperation` 以稳定输入和 adapter/version 构造独立 operationKey，持久化 task/stage、状态、attempt、result reference、版本、时间和脱敏错误；成功结果在消息重投、任务重试和重启后复用，只重新调度未完成或可重试失败 operation。永久错误直接失败，暂时错误有界退避；operation key 细则以 active change design/spec 为准，timeout、retry、circuit breaker 的默认值、覆盖口、合法范围和总调用上限只以 `docs/tech-selection.md` 的韧性配置矩阵为准，禁止在架构文档复制参数形成漂移。
 
 PostgreSQL 事务与 MinIO 不能原子提交，因此衍生资产先写临时 key，校验且数据库提交成功后再提升；失败补偿和孤儿扫描负责回收。RabbitMQ 不可用时 Outbox 保留未发送事件，恢复后继续投递；消费者在 ACK 前崩溃时由 RabbitMQ 重投并通过幂等状态恢复。
 

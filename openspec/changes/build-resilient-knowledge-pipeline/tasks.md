@@ -30,19 +30,19 @@
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 异步开关关闭时禁用上传而非同步 fallback；API/消费者线程池隔离；健康检查区分 HTTP 与处理依赖；测试依赖不泄漏到业务接口；应用层默认 adapter retry 为 0，空值视为未提供，仅旧键执行 `0→0/正整数→1` 映射并诊断，新旧键同时非空以 `SUILEARN_RETRY_CONFIG_CONFLICT` fail-fast，Provider SDK/旧手写 retry 不得形成第二套计数器。
 
-- [ ] 2.3 以失败测试定义并实现 MaterialAsset、DocumentRevision、DocumentBlock、扩展 ProcessingTask、OutboxEvent 和结构化知识点的增量持久化映射。
+- [ ] 2.3 以失败测试定义并实现 MaterialAsset、DocumentRevision、DocumentBlock、扩展 ProcessingTask、ProcessingOperation、OutboxEvent 和结构化知识点的增量持久化映射。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/main/java/com/suilearn/api/**/infrastructure/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
-  - Review focus: schema 只增量演进；revision 不可变；唯一约束保护幂等；现有资料/知识点/题目不丢失。
+  - Review focus: schema 只增量演进；revision 不可变；ProcessingOperation 持久化 operationKey、task/stage、状态、attempt、result reference、adapterVersion、时间和脱敏错误；唯一约束保护消息级与 operation 级幂等；现有资料/知识点/题目不丢失。
 
-- [ ] 2.4 以失败测试定义并实现 Transactional Outbox、RabbitMQ publisher confirm/manual ack、队列隔离、有界 retry/DLQ、幂等 claim 和重启恢复。
+- [ ] 2.4 以失败测试定义并实现 Transactional Outbox、RabbitMQ publisher confirm/manual ack、队列隔离、有界 retry/DLQ、消息与 adapter operation 两级幂等 claim 和重启恢复。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/task/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
-  - Review focus: 业务提交与事件投递无丢失窗口；ACK 在结果提交后；重复消息不重复写；永久错误不重试；死信可追踪/可人工重试。
+  - Review focus: 业务提交与事件投递无丢失窗口；ACK 在结果提交后；重复消息不重复写；operation 只调度未完成或可重试失败项并复用成功 result reference；永久错误不重试；死信可追踪/可人工重试。
 
 - [ ] 2.5 以失败测试定义并实现 MinIO AssetStorage port、流式上传、私有读取、校验、临时对象提升、孤儿清理和删除清理任务。
   - Owner: Server Backend Agent
@@ -72,7 +72,7 @@
   - Allowed files: `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/test/**`, `services/api/Dockerfile`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`; `docker compose config`
-  - Review focus: OCR 并发默认 1；外部进程参数不可注入；超时可终止；预览失败不丢原件；资源限制符合 50 MB/500 页默认。
+  - Review focus: OCR 并发默认 1；外部进程参数不可注入；超时可终止；预览失败不丢原件；OCR operation key 固定到 revision/page/adapterVersion，重试或重启复用成功页面、只处理剩余页面；单 operation 调用上限不得误限整份 500 页 PDF。
 
 - [ ] 3.4 将 material import orchestration 切换为 multipart + Outbox 异步流水线，并实现 legacy content 到 LEGACY_TEXT revision 的增量兼容迁移。
   - Owner: Server Backend Agent
@@ -129,12 +129,12 @@
 
 ## 6. 韧性、安全与集成验证
 
-- [ ] 6.1 加入 Testcontainers 集成测试，覆盖 PostgreSQL/Outbox、RabbitMQ 中断/恢复/重复投递/DLQ、MinIO 临时对象/清理和消费者重启恢复。
+- [ ] 6.1 加入 Testcontainers 集成测试，覆盖 PostgreSQL/Outbox、RabbitMQ 中断/恢复/重复投递/DLQ、MinIO 临时对象/清理、消费者重启恢复和部分 OCR 页面 operation 复用。
   - Owner: Test Agent
   - Allowed files: `services/api/src/test/**`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`
   - Forbidden files: `services/api/src/main/**`, `services/api/pom.xml`, `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`
   - Test command: `mvn -f services/api/pom.xml test -q`
-  - Review focus: 测试证明故障恢复与幂等，不只验证 happy path；容器/测试数据可重复清理；无网络或外部真实 AI 依赖。
+  - Review focus: 测试证明消息与 operation 两级故障恢复和幂等，不只验证 happy path；已成功 OCR 页面在重投/重启后调用次数不增加，未完成页面继续处理；容器/测试数据可重复清理；无网络或外部真实 AI 依赖。
 
 - [ ] 6.2 完成文件安全、模型提示注入边界、日志脱敏、Actuator/Micrometer 指标和健康分层测试与实现。
   - Owner: Server Backend Agent
@@ -148,7 +148,7 @@
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `services/api/src/test/**`, `apps/web/src/*.test.mjs`, `scripts/**`（仅经 Leader 批准的验证脚本）
   - Forbidden files: 未经另行声明的业务实现文件、`contracts/**`, `docs/proposals/**`, `docs/superpowers/**`
   - Test command: `docker compose config`; `docker compose up -d --build`; `docker compose ps`; `mvn -f services/api/pom.xml test -q`; `npm --prefix apps/web test`; `npm --prefix apps/web run build`
-  - Review focus: 记录原始证据、默认值与覆盖值；失败项不得用单元测试替代运行态验证；完成后停止测试资源但保留持久数据策略说明。
+  - Review focus: 记录原始证据、默认值与覆盖值；验证 retry 新旧键缺失/空值/仅新/仅旧/双非空/非法值及诊断码，验证 operation 调用上限和页级恢复、Markdown raw HTML/危险 URL/远程资源策略、metric tags 低基数；失败项不得用单元测试替代运行态验证；完成后停止测试资源但保留持久数据策略说明。
 
 - [ ] 6.4 运行 Android 本地回归，确认新中间件和远程契约变化不破坏离线刷题闭环。
   - Owner: Android Agent
@@ -171,11 +171,11 @@
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: 未经任务卡授权的业务/契约/当前事实文件、`docs/proposals/**`, `docs/superpowers/**`
   - Test command: `mvn -f services/api/pom.xml test -q`; `npm --prefix apps/web test`; `npm --prefix apps/web run build`; `.\gradlew.bat :app:testDebugUnitTest --no-daemon`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`; `git diff ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0 --stat`
-  - Review focus: 清除 `file.text()` PDF、旧文案、PDF/Office 不支持声明、关键词 fallback、同步主路径和敏感日志；所有变更在 policy 范围。
+  - Review focus: 清除 `file.text()` PDF、旧文案、PDF/Office 不支持声明、关键词 fallback、同步主路径和敏感日志；扫描旧 retry 默认 `2`、错误 Compose 默认注入、Provider/SDK/手写 retry、legacy 键非允许位置、ID metric tags、Markdown raw HTML/危险 URL/远程资源自动加载和未复用成功 operation；所有变更在 policy 范围。
 
-- [ ] 7.3 由独立 Reviewer 完成 Spec Review 与 Code Review，所有 P0/P1 闭环后记录 Major Review 结论。
+- [ ] 7.3 由独立 Reviewer 完成 Spec Review 与 Code Review，所有 P0/P1/P2 均已修复，或经用户批准迁移到具名 follow-up change 后，记录 Major Review 结论。
   - Owner: Reviewer Agent
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: 业务实现文件、`contracts/**`, `docs/**`（除上述 verification/tasks）, `docs/proposals/**`, `docs/superpowers/**`
   - Test command: 复核 7.2 原始命令结果，并按发现要求责任 Agent 重跑受影响验证
-  - Review focus: 规格一致性、数据迁移、消息幂等、对象补偿、安全、契约兼容、UI 可访问性、运行态故障矩阵；Implementer 不自证完成。
+  - Review focus: 规格一致性、数据迁移、消息/operation 两级幂等、对象补偿、安全、契约兼容、UI 可访问性、运行态故障矩阵；所有 P0/P1/P2 已修复或经用户批准迁移到具名 follow-up change；Implementer 不自证完成。

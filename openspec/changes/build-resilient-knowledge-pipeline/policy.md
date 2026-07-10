@@ -78,6 +78,8 @@
 - AI 未配置/失败时资料仍可阅读，但不得生成关键词/占位知识点。
 - 环境变量提供覆盖口；`.env.example` 只含非敏感默认值。
 - Adapter retry 的 canonical key 为 `SUILEARN_ADAPTER_MAX_RETRIES`，应用默认 `0`；兼容周期内 Compose 对新旧 retry 键都只做无默认值可选透传，空值视为未提供，`.env.example` 只记录新键。Backend 对仅旧键执行有界映射并诊断，新旧键同时非空必须 fail-fast，具体语义以 `design.md` 和 durable async spec 为准。
+- Legacy retry 移除采用两阶段：第一个具名 removal change 保留 Compose 旧键可选透传和 removed-key detector，非空旧键以 `SUILEARN_RETRY_CONFIG_REMOVED` fail-fast；只有完整 tombstone 错误窗口和无残留证据后，后续 cleanup change 才能删除透传与 detector，禁止静默忽略旧 `.env`。
+- RabbitMQ 消息幂等与 adapter operation 幂等分层；OCR 成功页必须持久化 result reference 并在重投/重启时复用，只调度未完成或可重试失败 operation。
 - `verification.md` 的格式、依赖故障、恢复、重复投递、删除清理和运行态矩阵必须执行或记录真实阻塞。
 - 完成前执行 design 的 Residual Scan，不得以单元测试代替 Compose 运行态证据。
 
@@ -91,5 +93,5 @@
 - `verification.md` 从“待执行”更新为真实结果，禁止预填通过。
 - Product/Architecture/Tech/Contracts 的 Sync Gate 已完成或明确记录不受影响。
 - `git diff ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0 --stat` 与文件范围核对通过。
-- 无陈旧 In progress/open 或无 Owner pending；所有 P0/P1 Review 发现闭环。
+- 无陈旧 In progress/open 或无 Owner pending；所有 P0/P1/P2 Review 发现均已修复，或经用户批准迁移到带 Owner、理由和风险的具名 follow-up change。
 - Implementer、Test、Spec Reviewer、Code Reviewer 职责分离并记录。

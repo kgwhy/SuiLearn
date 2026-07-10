@@ -25,6 +25,21 @@
 - **WHEN** 相同 taskId、stage 和 processingVersion 的消息被消费多次
 - **THEN** 后续消费返回或复用已有结果，不产生重复业务记录
 
+### Requirement: 持久化 adapter operation 幂等恢复
+系统 MUST 将消息/阶段幂等与 adapter operation 幂等分离。消息幂等键 SHALL 使用 taskId、stage 与 revision/processingVersion 防止重复提交阶段业务结果；每个 adapter operation MUST 通过持久化 `ProcessingOperation` 或字段语义等价模型执行 claim/result，记录唯一 operationKey、task/stage、状态、累计 attempt、result reference、adapterVersion、时间戳和脱敏错误。OCR operation key MUST 至少包含 revisionId、pageNumber 与 ocrAdapterVersion；parser、preview 和 AI operation key MUST 分别由稳定输入与对应 adapter/model version 构成。成功 operation MUST 在 ProcessingTask 重试、消息重投和应用重启后复用，只允许重新调度未完成、租约过期或可重试失败的 operation。
+
+#### Scenario: 部分 OCR 页面成功后恢复
+- **WHEN** 一份多页 PDF 的部分 OCR 页面已成功持久化 operation 结果，随后消费者消息重投或应用重启
+- **THEN** 系统复用已成功页面的 result reference 且不再次调用这些页面的 OCR adapter，只为剩余未完成、租约过期或可重试失败页面执行 claim 和调用
+
+#### Scenario: 单 operation 上限不限制 500 页资料
+- **WHEN** 一份合法的 500 页 PDF 每页都需要 OCR
+- **THEN** 系统把每页作为独立 operation 分别应用调用上限，不得把单 operation 上限当作文档累计上限而拒绝、跳过或截断剩余页面
+
+#### Scenario: 非 OCR operation 结果复用
+- **WHEN** parser、preview 或 AI operation 已以稳定输入和 adapter/model version 保存成功 result reference，随后相同 ProcessingTask 阶段恢复
+- **THEN** 系统复用该结果而不重复调用对应 adapter；只有稳定输入或 adapter/model version 改变时才形成新的 operationKey
+
 ### Requirement: 有界重试与死信
 系统 SHALL 区分暂时错误与永久错误；暂时错误 SHALL 使用有界退避重试，达到最大尝试次数后进入死信队列，永久错误 SHALL 直接失败。
 
@@ -59,7 +74,7 @@
 - **THEN** 系统禁用新文件上传并说明原因，而不是回退旧同步主路径
 
 ### Requirement: Adapter retry 配置兼容迁移
-系统 SHALL 以 `SUILEARN_ADAPTER_MAX_RETRIES` 作为 adapter 即时重试的 canonical key，应用层默认 `0` 且只接受整数 `0..1`。系统 SHALL 将 `SUILEARN_AI_MAX_RETRIES` 保留一个 deprecated 兼容周期；兼容周期内，Compose SHALL 同时对新旧键执行无默认值可选透传，空字符串 SHALL 视为未显式提供，且 `.env.example` SHALL 只记录新键的非敏感目标默认 `0`，不得继续提供旧键或旧默认 `2`。兼容周期结束后，系统 SHALL 通过后续具名 change 删除 Compose 旧键透传和 Backend 旧键读取逻辑。
+系统 SHALL 以 `SUILEARN_ADAPTER_MAX_RETRIES` 作为 adapter 即时重试的 canonical key，应用层默认 `0` 且只接受整数 `0..1`。系统 SHALL 将 `SUILEARN_AI_MAX_RETRIES` 保留一个 deprecated 兼容周期；兼容周期内，Compose SHALL 同时对新旧键执行无默认值可选透传，空字符串 SHALL 视为未显式提供，且 `.env.example` SHALL 只记录新键的非敏感目标默认 `0`，不得继续提供旧键或旧默认 `2`。兼容周期后的第一个具名 removal change SHALL 保留 Compose 旧键可选透传并以专用 detector 替代 legacy 映射；只有再后续 cleanup change 在残留扫描和运行态证据确认无 legacy 输入后，才可删除旧键透传与 detector。
 
 #### Scenario: 新旧键均未非空提供
 - **WHEN** 新旧 retry 键均缺失、为空或只有 Compose 的空值透传
@@ -76,6 +91,14 @@
 #### Scenario: 新旧键同时非空
 - **WHEN** `SUILEARN_ADAPTER_MAX_RETRIES` 与 `SUILEARN_AI_MAX_RETRIES` 同时以非空值显式提供
 - **THEN** Backend 启动 fail-fast 并记录 `SUILEARN_RETRY_CONFIG_CONFLICT`，无论两个值是否相同都不得静默选择优先级
+
+#### Scenario: removal change 提供 tombstone 错误窗口
+- **WHEN** 当前兼容周期结束后的第一个具名 removal change 已部署，且 Compose 收到非空 `SUILEARN_AI_MAX_RETRIES`
+- **THEN** Compose 仍将旧键无默认透传给 Backend，Backend 不再映射或业务绑定旧值，而是启动 fail-fast 并记录 `SUILEARN_RETRY_CONFIG_REMOVED`
+
+#### Scenario: 有证据后清理 tombstone
+- **WHEN** tombstone 错误窗口已完整运行，且残留扫描和运行态证据确认部署环境、根 `.env`、CI 与启动脚本均未再提供 legacy 键
+- **THEN** 再后续 cleanup change 可以同时删除 Compose 旧键透传与 Backend removed-key detector，不得在缺少上述证据时提前删除检测链路
 
 ### Requirement: 任务可观测与可恢复
 系统 SHALL 记录任务阶段、进度、尝试、关联 ID、错误和时间，并 SHALL 暴露队列、Outbox、死信、OCR/AI、任务耗时与依赖健康指标。

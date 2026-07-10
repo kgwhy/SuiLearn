@@ -44,6 +44,7 @@ Owner: 各模块 Test Agent；最终复核 Leader/Reviewer。
 | 损坏文件 | 永久失败、原件/错误语义符合策略 | 待执行 — Test Agent |
 | 伪造扩展/MIME/签名 | 上传拒绝，不产生虚假 READY | 待执行 — Test Agent |
 | 50 MB/500 页边界 | 默认值与环境覆盖均按契约执行 | 待执行 — Test Agent |
+| Markdown 不可信内容 | raw HTML 转义/禁用，危险或未知 scheme 拒绝，远程资源默认不自动加载；受控代理验证 SSRF 边界 | 待执行 — Test Agent |
 
 ## 异步与故障恢复矩阵
 
@@ -57,6 +58,10 @@ Owner: 各模块 Test Agent；最终复核 Leader/Reviewer。
 | AI/OCR 超时 | 退避重试、熔断、上限后 DLQ | 待执行 — Test Agent |
 | 应用重启 | 未发 Outbox/卡住任务恢复 | 待执行 — Test Agent |
 | 删除资料 | 资产/索引异步清理，已保存内容保留删除来源 | 待执行 — Test Agent |
+| 部分 OCR 页面后重投/重启 | 已成功页复用持久化 operation result，调用次数不增加；只继续未完成/可重试失败页 | 待执行 — Test Agent |
+| Adapter retry 配置四态 | 缺失/空值使用应用默认 0；仅新键校验；仅旧键有界映射并诊断；双非空/非法值 fail-fast | 待执行 — Test Agent |
+| Legacy retry tombstone | removal change 的非空旧键以 `SUILEARN_RETRY_CONFIG_REMOVED` fail-fast；只有无残留证据后 cleanup change 才删除透传/detector | 待执行 — Test Agent |
+| 指标标签基数 | IDs 仅进入日志/trace/exemplar；metric tags 只使用受控低基数枚举 | 待执行 — Test Agent |
 
 ## Web 验收
 
@@ -101,6 +106,11 @@ docker compose ps
 - `KnowledgePointCandidateExtractor` 或统一占位 description fallback 的主路径引用。
 - `runManagedTask` 等同步资料/知识点/题目主路径。
 - 日志/响应中的密钥、完整正文、原始模型响应、object key 或永久授权信息。
+- 旧 retry 默认 `2`、`${SUILEARN_ADAPTER_MAX_RETRIES:-0}` 等 Compose 默认注入、Provider SDK/手写 retry 第二计数器。
+- `SUILEARN_AI_MAX_RETRIES` 只允许出现在当前兼容期的 Compose 可选透传、Backend legacy detector/映射及迁移测试；tombstone/cleanup 阶段按具名 change 的 allowlist 扫描。
+- correlationId/taskId/materialId 等 ID 被用作 Micrometer tags。
+- Markdown raw HTML 未转义、`javascript:`/`data:`/`file:` 等危险 scheme 或远程图片默认自动加载。
+- 已成功 OCR 页或其他 adapter operation 在任务重投/重启后被重复调用。
 
 状态：待执行（Owner: Leader Agent + Reviewer Agent）。
 
@@ -108,5 +118,5 @@ docker compose ps
 
 - Spec Review：未执行（Owner: Reviewer Agent）。
 - Code Review：未执行（Owner: Reviewer Agent）。
-- P0/P1 处置：当前无实现发现；Build 后据实记录。
+- P0/P1/P2 处置：Task 1.1/Spec 修订 Review 已发现并修复配置、幂等、安全与任务边界问题；后续 Build 继续逐任务据实记录，任何 P2 也必须修复或经用户批准迁移到具名 follow-up change。
 - reviewer-style 自审：Spec 收尾时先执行一次，Build/Verify 收尾再执行一次。

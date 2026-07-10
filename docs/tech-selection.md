@@ -197,11 +197,11 @@ Backend 约束：
 | OPEN 等待时间 | `SUILEARN_CIRCUIT_BREAKER_OPEN_STATE_MS` | `60000`（1 分钟） | `1000..600000` ms |
 | HALF_OPEN 探测调用数 | `SUILEARN_CIRCUIT_BREAKER_HALF_OPEN_CALLS` | `2` | 整数 `1..10` |
 
-RabbitMQ 退避顺序固定为：首次失败后使用短退避，第二次失败后使用长退避，第三次失败后进入 DLQ/FAILED；若最大尝试被降低，对应后续退避不执行。重试计数单元是一个可幂等恢复的 adapter operation，而不是整个 stage：单次文档解析以 revision/processingVersion 为 operation，单页 OCR 以 revision/pageNumber/OCR version 为 operation，单次预览以 revision/renderVersion 为 operation，单次 AI 请求以 taskId/logicalRequestId/generationVersion 为 operation。
+RabbitMQ 退避顺序固定为：首次失败后使用短退避，第二次失败后使用长退避，第三次失败后进入 DLQ/FAILED；若最大尝试被降低，对应后续退避不执行。消息/阶段幂等键 `taskId + stage + revision/processingVersion` 只防止消息重投重复提交阶段业务结果，不得代替 adapter operation key。重试计数单元是一个可幂等恢复的 adapter operation，而不是整个 stage：单次文档解析、单页 OCR、单次预览和单次 AI logical request 分别使用稳定输入与对应 adapter/model version 构造 operation key。
 
 单个 adapter operation 的外部调用硬上限为 `ProcessingTask 最大尝试 × (Adapter 即时重试次数 + 1)`：目标默认 `3 × 1 = 3` 次，所有合法覆盖组合最多 `3 × 2 = 6` 次。文档级 OCR 的理论调用上限为 `待 OCR 页数 × ProcessingTask 最大尝试 × (Adapter 即时重试次数 + 1)`；因此 500 个待 OCR 页面对应目标默认最多 1500 次、所有合法覆盖组合最多 3000 次理论调用，不得用单 operation 的 3/6 次上限限制整份 PDF 页数。
 
-每个 operation 在调用 adapter 前先按幂等键 claim/查询持久化结果；已成功持久化的 OCR 页面、解析 revision、预览或 AI 结果在 ProcessingTask 重试和重启恢复时必须复用，只重新调度未完成或可重试失败的 operation。若实现批处理，必须以 `revision + ordered page set/batch index + adapter version` 定义稳定幂等键，并清楚记录页/批次完成状态；批次设计不能降低 500 页 PDF 验收上限。不得同时启用 Resilience4j、Provider SDK 和自定义循环的独立 retry 计数器。
+PostgreSQL 必须持久化 `ProcessingOperation`（或字段语义等价模型）的唯一 operationKey、task/stage、状态、跨任务尝试和重启累计的 attemptCount、resultReference、adapterVersion、timestamps 与脱敏 error。OCR key 至少为 `revisionId + pageNumber + ocrAdapterVersion`；parser、preview、AI key 的稳定输入/version 规则以 active change design 和 durable capability spec 为准。每个 operation 在调用 adapter 前先原子 claim/查询持久化结果；已成功持久化的 OCR 页面、解析 revision、预览或 AI 结果在 ProcessingTask 重试和重启恢复时必须复用，只重新调度未完成、租约过期或可重试失败的 operation。若实现批处理，必须以 `revision + ordered page set/batch index + adapter version` 定义稳定幂等键，并清楚记录页/批次完成状态；批次设计不能降低 500 页 PDF 验收上限。不得同时启用 Resilience4j、Provider SDK 和自定义循环的独立 retry 计数器。
 
 #### 5.4.1 旧 AI retry 配置迁移
 
@@ -216,7 +216,9 @@ RabbitMQ 退避顺序固定为：首次失败后使用短退避，第二次失�
 | 仅非空提供 deprecated `SUILEARN_AI_MAX_RETRIES` | 兼容映射 `0 -> 0`、任意正整数 `-> 1`；负数或非整数 fail-fast；启动记录 `SUILEARN_RETRY_CONFIG_LEGACY_MAPPED` 诊断，明确旧值与有效值。旧值 `2` 因而最多产生每 operation `3 × 2 = 6` 次理论调用，不会形成 9 次 |
 | 新旧键同时非空提供 | 无论值是否相同均 fail-fast，诊断码 `SUILEARN_RETRY_CONFIG_CONFLICT`，要求删除 deprecated 旧键；不采用静默优先级 |
 
-兼容周期结束时，后续具名 change 同时删除 Compose 旧键透传和 Backend 旧键读取逻辑；届时出现 `SUILEARN_AI_MAX_RETRIES` 必须作为未知/已移除配置 fail-fast，不得静默忽略。以上迁移只影响 retry 配置，不改变 RabbitMQ/MinIO/AI 凭据无生产默认值的规则。
+当前兼容周期继续保留 legacy 映射。兼容周期后的第一个具名 removal change 必须提供完整 tombstone 错误窗口：Compose 继续对 `SUILEARN_AI_MAX_RETRIES` 做无默认值可选透传；Backend 删除 legacy mapper 和业务配置绑定，但保留专用 removed-key detector，检测到非空旧键时以 `SUILEARN_RETRY_CONFIG_REMOVED` fail-fast，空值仍视为未提供。该 removal change 的整个支持周期内不得删除 Compose 透传或 detector。
+
+只有再后续 cleanup change 在残留扫描和运行态证据确认部署环境、根 `.env`、CI/启动脚本均无 legacy 输入后，才能同时删除 Compose 旧键透传和 Backend removed-key detector。最终清理后不再声称 Backend 能检测无法透传的旧键。以上迁移只影响 retry 配置，不改变 RabbitMQ/MinIO/AI 凭据无生产默认值的规则。
 
 所有范围、相互关系和时长单位在配置绑定时 fail-fast 校验；不得夹取非法值后继续启动。上述业务/韧性参数允许覆盖，RabbitMQ/MinIO/AI 凭据仍无生产默认值，只能由部署环境注入。
 

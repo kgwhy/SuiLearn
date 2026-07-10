@@ -85,7 +85,11 @@ Backend 仍为 `services/api` 单应用，内部划分 Material API、Asset Stor
 - `knowledge-point.generation`
 - `question.generation`
 
-每类主队列配 30 秒、5 分钟 retry queue 和 dead-letter queue。消费者完成资产与数据库事务后才 ACK。幂等键使用 `taskId + stage + documentRevision/processingVersion`；重复消息返回已有结果。
+每类主队列配短/长两级 retry queue 和 dead-letter queue；具体退避默认值、合法范围和覆盖口只以 `docs/tech-selection.md` 的韧性配置矩阵为准，design 不复制参数。消费者完成资产与数据库事务后才 ACK。消息/阶段幂等键使用 `taskId + stage + documentRevision/processingVersion`，用于阻止同一消息重投重复提交阶段业务结果；它不是 adapter operation 幂等键，不能代替页级 OCR 或其他外部调用的持久化 claim/result。
+
+PostgreSQL 还必须持久化 `ProcessingOperation`（或字段语义等价的明确模型），至少包含唯一 `operationKey`、`taskId`、`stage`、状态、跨 ProcessingTask 尝试与重启累计的 `attemptCount`、`resultReference`、`adapterVersion`、创建/更新时间与开始/完成时间，以及脱敏 `errorCode/errorMessage`。状态至少能区分待执行、执行中、成功、可重试失败和永久失败；`resultReference` 指向已经提交的 revision、OCR page asset/block、preview asset 或 AI generation result。
+
+operation key 必须由稳定输入和 adapter/version 构成，并与消息幂等键分离：OCR 至少使用 `revisionId + pageNumber + ocrAdapterVersion`；parser 使用原始资产 checksum、processingVersion 与 parser adapter version；preview 使用 revision/原始资产 checksum、preview profile 与 preview adapter version；AI 使用稳定 logical input hash、generationVersion 与 AI adapter/model version。每次外部调用前先原子 claim 或读取 operation；已成功且结果引用有效的 operation 在消息重投、ProcessingTask 重试和应用重启后直接复用，只调度未完成、租约过期或可重试失败的 operation。单 operation 调用上限逐 operation 计算，不能作为整份文档页数上限；500 个待 OCR 页面是最多 500 个独立页级 operation，不能因其中若干 operation 达到上限而跳过其他页面。具体调用上限公式与数值仍只由 `docs/tech-selection.md` 定义。
 
 ### 6. 状态模型分离用户结果与执行细节
 
@@ -157,7 +161,9 @@ Backend 配置绑定以“非空显式存在”判定新旧输入：
 - 仅旧键非空：旧值 `0` 映射为 `0`，正整数映射为 `1`，并记录 `SUILEARN_RETRY_CONFIG_LEGACY_MAPPED`；负数或非整数 fail-fast。
 - 新旧键同时非空：无论值是否相同均 fail-fast，并记录 `SUILEARN_RETRY_CONFIG_CONFLICT`，不得静默选择优先级。
 
-任务 2.1 只负责 `.env.example` 的新默认和 Compose 新旧键可选透传；任务 2.2 负责应用绑定、legacy 映射/冲突诊断，以及关闭 Provider SDK 和旧手写 retry，确保 Resilience4j 是唯一 adapter retry owner。兼容周期结束后必须由后续具名 change 删除 Compose 旧键透传和 Backend 旧键读取逻辑，本 change 不提前静默切断旧 `.env` 配置。
+任务 2.1 只负责 `.env.example` 的新默认和 Compose 新旧键可选透传；任务 2.2 负责应用绑定、legacy 映射/冲突诊断，以及关闭 Provider SDK 和旧手写 retry，确保 Resilience4j 是唯一 adapter retry owner。本兼容周期继续执行上述 legacy 映射，不能提前静默切断旧 `.env` 配置。
+
+兼容周期后的第一个具名 removal change 必须实现一个完整 tombstone 错误窗口：Compose 继续对 `SUILEARN_AI_MAX_RETRIES` 做无默认值可选透传，Backend 删除 legacy 映射和业务配置绑定，但保留专用 removed-key detector；检测到非空旧键时启动 fail-fast 并记录 `SUILEARN_RETRY_CONFIG_REMOVED`，空值仍视为未提供。只有再后续 cleanup change 在残留扫描和运行态证据确认部署环境、根 `.env`、CI/启动脚本均无 legacy 输入后，才能同时删除 Compose 旧键透传与 Backend removed-key detector。最终清理阶段不再承诺对已移除且无法送达 Backend 的旧键 fail-fast。
 
 ### 12. 安全、韧性与可观测性
 
@@ -230,6 +236,12 @@ Actuator/Micrometer 暴露队列深度、最老消息等待时间、阶段耗时
 - 关键词候选和统一占位 description fallback。
 - import/knowledge/question 在 HTTP 请求线程同步执行的主路径。
 - 密钥、正文、模型原始响应或临时授权地址日志。
+- `.env.example`、Compose、应用配置或启动脚本中残留旧默认 `SUILEARN_AI_MAX_RETRIES=2`，以及 Compose 对 canonical 新键注入 `0` 或对 legacy 旧键注入任何非空默认值。
+- Provider/SDK 内部 retry、自定义/旧手写 retry 与 Resilience4j 形成第二套计数器；Resilience4j 必须是唯一 adapter 即时 retry owner。
+- legacy retry 键超出阶段允许位置：当前兼容期只允许 Compose 无默认可选透传、Backend legacy mapper/detector、测试和迁移文档；tombstone 窗口只允许 Compose 无默认可选透传、Backend removed-key detector、测试和移除文档，禁止继续映射或业务绑定；最终 cleanup 后不得残留透传或 detector。
+- `correlationId`、`taskId`、`materialId`、文件名、object key、错误消息或其他无界/敏感值进入 metric tags；这些 ID 只能进入结构化日志/trace 或受控 exemplar。
+- Markdown raw HTML 未转义、危险/混淆 URL scheme 可点击，或远程图片/外部资源默认产生可加载地址和网络请求。
+- 消息幂等键被误作 adapter operation key、页级 `ProcessingOperation`/claim-result 缺失、成功 operation 在消息重投/重启后仍重复调用 adapter，或把单 operation 调用上限误用为 500 页文档的总调用/页数上限。
 
 ## Open Questions
 
