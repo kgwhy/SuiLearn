@@ -1,13 +1,19 @@
 # 验证计划与记录
 
-状态：待执行（Owner: Test Agent；最终汇总 Owner: Leader Agent）。
+状态：Build 进行中（Owner: Test Agent；最终汇总 Owner: Leader Agent）。
 
-当前仅完成 Spec 文档，不得把下列计划描述为已通过。
+Build 入口基线已执行；下列功能、故障和运行态矩阵仍不得在没有真实证据时描述为已通过。
 
 ## 基线与范围
 
 - base_ref：`ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
-- Spec 阶段业务代码未编辑，模块基线测试不适用。
+- 隔离 worktree：`D:\SuiLearn\.worktrees\build-resilient-knowledge-pipeline`，分支 `codex/build-resilient-knowledge-pipeline`。
+- 2026-07-10 Build 入口基线：
+  - `mvn -f services/api/pom.xml test -q`：退出码 0；测试日志包含预期的迁移异常场景 WARN 和 Mockito/JDK 动态 agent 警告。
+  - `npm --prefix apps/web test`：退出码 0，9/9 通过。
+  - `npm --prefix apps/web run build`：退出码 0，TypeScript 与 Vite production build 成功。
+  - `.\gradlew.bat :app:testDebugUnitTest --no-daemon`：首次因 worktree 缺少已忽略的 `local.properties` 未启动；复用主 checkout 的 Android SDK 路径后重跑退出码 0。
+  - `docker compose config`：退出码 0；Docker CLI 报告用户级 `config.json` 无读取权限的环境警告，不影响静态配置展开。
 - 每个 Build 任务执行前后必须记录 `tasks.md` 指定命令的原始结果。
 - 最终范围只能落在 `policy.md` 最大边界与具体任务 Allowed files 交集内。
 

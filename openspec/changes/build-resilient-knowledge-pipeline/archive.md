@@ -10,7 +10,7 @@
 
 ## 当前阶段
 
-Spec 已形成，等待用户书面审阅与 Build Approval Gate。当前无业务实现引用。
+Build 进行中。用户已于 2026-07-10 通过 Build Approval Gate，当前在隔离 worktree `D:\SuiLearn\.worktrees\build-resilient-knowledge-pipeline`、分支 `codex/build-resilient-knowledge-pipeline` 按 `tasks.md` 执行；尚无业务实现完成引用。
 
 ## 归档前必备条件
 
@@ -30,7 +30,7 @@ Spec 已形成，等待用户书面审阅与 Build Approval Gate。当前无业�
 
 ## 实现引用
 
-当前无：本变更尚未进入 Build。归档时由 Leader 记录提交、PR 或明确 working tree 引用。
+当前实现分支：`codex/build-resilient-knowledge-pipeline`。归档时由 Leader 补充任务提交、PR 或明确 working tree 引用。
 
 ## 验证摘要
 

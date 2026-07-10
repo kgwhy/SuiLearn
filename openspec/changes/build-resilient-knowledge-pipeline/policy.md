@@ -3,12 +3,12 @@
 ## 变更信息
 
 - Change：`build-resilient-knowledge-pipeline`
-- 状态：Spec，等待用户完成书面 Spec Review 和 Build Approval Gate
+- 状态：Build，用户已于 2026-07-10 明确批准进入 Build
 - 等级：Major
 - 默认循环：L3（Implementer → Test → Spec Review → Code Review → Fix）
 - base_ref：`ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
-- Worktree/锁模式：共享契约、配置、持久化与事实文档串行；契约稳定后 Backend 与 Web 仍按任务卡和文件锁顺序执行
-- 业务基线：Spec 文档阶段不编辑业务代码，模块基线测试不适用；进入每个 Build 任务前按 `tasks.md` 执行该任务测试命令
+- Worktree/锁模式：隔离 worktree `D:\SuiLearn\.worktrees\build-resilient-knowledge-pipeline`，分支 `codex/build-resilient-knowledge-pipeline`；当前无 `.agents/locks`，由 Leader 以单 Implementer 和任务卡路径串行锁定共享契约、配置、持久化与事实文档
+- 业务基线：Build 入口已运行 Backend、Web、Android 与 Compose 基线，真实结果见 `verification.md`；进入每个 Build 任务前后仍按 `tasks.md` 执行该任务测试命令
 
 ## 单一 active change home
 
@@ -38,7 +38,7 @@
 4. Parser/OCR、知识点、题目模块只在底座与契约完成后执行；同一实现文件不得并行写。
 5. Web 只在契约与对应 Backend 行为稳定后适配。
 6. Test 与 Reviewer 不与 Implementer 共用完成声明；发现产品/架构/契约歧义立即返回 Spec。
-7. 当前 `.agents/locks` 不存在；进入 Build 时 Leader 必须重新检查并记录真实锁状态。
+7. Build 入口已复查 `.agents/locks` 不存在；Leader 使用单 Implementer 串行循环，并在每张任务卡中声明本轮锁定文件，发现范围重叠时不得并行派发。
 
 ## 允许路径
 
@@ -81,7 +81,7 @@
 
 ## Build Approval Gate
 
-当前未授权业务代码实现。只有用户审阅本 change 的 proposal/design/specs/tasks/policy 后明确批准 Build，Leader 才能按任务顺序派发实现。
+已通过。用户在本 change 的 proposal/design/specs/tasks/policy 逐段确认后，于 2026-07-10 明确要求“进入BUILD”，并随后明确允许创建隔离 worktree。Leader 可按 `tasks.md` 顺序和 Major L3 循环派发实现。
 
 ## 完成门禁
 
