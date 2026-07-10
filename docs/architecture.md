@@ -6,7 +6,7 @@
 
 本文默认描述已实现的当前事实；标有“已批准 Build 目标”的内容是 active change 的规范性实施目标，不表示代码、契约、依赖、配置或运行态已经落地。旧架构、废弃方案和历史取舍通过 Git 历史追溯；未来架构变更先进入 `openspec/changes/<change-name>/**`，批准并实现、验证后再转为未标注的当前事实。
 
-当前状态：`build-resilient-knowledge-pipeline` 处于 Build。本次任务 1.1 只记录目标技术/架构基线；任务 1.2 的 OpenAPI、任务 2.x/3.x 的依赖/配置/持久化/流水线实现，以及任务 6.x 的集成与运行态验证尚未完成。读者不得把这些目标章节当作现有代码或部署能力。
+`build-resilient-knowledge-pipeline` 的实时实施状态以 `openspec/changes/build-resilient-knowledge-pipeline/tasks.md` 为准，验证状态以同目录 `verification.md` 为准；本文不复制会过期的任务进度。目标能力只有在对应任务完成、运行态证据已记录且 Review 闭环后，才可改写为未标注的当前事实。
 
 本文回答：
 
@@ -262,25 +262,25 @@ application -> <module>.infrastructure Store / adapter
 infrastructure -> JPA repository / external implementation
 ```
 
-已批准目标要求 `/api/v2/*` 兼容演进：任务 1.2 尚需先稳定 multipart/202、资产/revision、结构化知识点和题目草稿契约，Backend 才能在后续任务做增量 DB schema 迁移；旧 JSON 文本导入保留一个兼容周期并标记 deprecated，现有资料、知识点和题目不得丢失。
+已批准目标要求 `/api/v2/*` 兼容演进：先稳定 multipart/202、资产/revision、结构化知识点和题目草稿契约，Backend 才能做增量 DB schema 迁移；具体顺序和完成状态以 active change 的 `tasks.md`/`verification.md` 为准。旧 JSON 文本导入保留一个兼容周期并标记 deprecated，现有资料、知识点和题目不得丢失。
 
 ### 3.1.2 已批准 Build 目标：资料知识流水线逻辑边界
 
-以下内容是任务 2.x/3.x/4.x 的目标模块边界，尚不代表当前 package、依赖或运行进程已经存在。实现后这些边界全部位于同一个 `services/api` Backend 中，通过 application/domain port 协作，基础设施实现留在 `infrastructure`；不得据此新建微服务、独立 Worker 项目或第二套部署单元。
+以下内容是 active change 的目标模块边界；其落地与验证状态以 `tasks.md`/`verification.md` 为准，不能仅凭本节推断当前 package、依赖或运行进程。实现后这些边界全部位于同一个 `services/api` Backend 中，通过 application/domain port 协作，基础设施实现留在 `infrastructure`；不得据此新建微服务、独立 Worker 项目或第二套部署单元。
 
 | 逻辑边界 | 归属 | 职责与依赖方向 |
 |---|---|---|
 | Material API | `material` application/api | 校验 multipart 元数据并流式保存原件；原件、Material、ProcessingTask 与 Outbox 提交后返回 `202`，不在请求线程解析、OCR、索引或调用 AI |
 | Asset Storage | `material` domain port + infrastructure adapter | 以 MinIO adapter 保存私有 `ORIGINAL`、`READING`、`PREVIEW`、`OCR_PAGE` 资产；使用临时 object key、校验、提升与孤儿/删除清理，业务层不感知 MinIO SDK |
 | Processing Orchestrator | `task` application/infrastructure | 在 PostgreSQL 事务内创建任务与 Outbox；发布 RabbitMQ 持久化消息，驱动阶段状态、幂等、重试、死信和重启恢复 |
-| Document Parser | `material` domain port + infrastructure adapter | CommonMark 处理 Markdown，Tika 负责格式探测/通用提取，PDFBox 负责 PDF 页数、按页文本与定位，POI 负责 DOC/DOCX 结构提取 |
+| Document Parser | `material` domain port + infrastructure adapter | CommonMark 处理 Markdown，并通过 renderer 内建 HTML 转义与 URL sanitize 生成安全阅读版；Tika 负责格式探测/通用提取，PDFBox 负责 PDF 页数、按页文本与定位，POI 负责 DOC/DOCX 结构提取 |
 | Office Preview Adapter | `material` infrastructure | 以受限 LibreOffice headless 外部进程生成高保真预览；参数固定、资源受限、可超时终止，不能执行宏、脚本或外部嵌入对象 |
-| OCR Adapter | `material` infrastructure | 以受限 Tesseract 外部进程仅处理文本不足页面，并把结果合并回对应 page/block；与普通文档处理分开限流 |
+| OCR Adapter | `material` infrastructure | 以受限 Tesseract 外部进程仅处理文本不足页面，并把结果合并回对应 page/block；每个 page/revision/OCR version 是独立幂等 operation，已成功持久化的页面在任务恢复时直接复用；与普通文档处理分开限流 |
 | Normalizer / Indexer | `material` / `retrieval` | 生成稳定顺序、章节和页码映射的 DocumentBlock，再写入检索索引；解析产物不直接耦合检索实现 |
 | Knowledge Point | `knowledgepoint` | 从当前 revision 的证据异步生成结构化 DRAFT；审核、来源定位和 revision 过期语义由本模块管理 |
 | Question Generation | `generation` | 只接受 CONFIRMED 知识点，异步生成带证据的待审核题目草稿；失败不改变资料或知识点状态 |
 
-目标部署中 RabbitMQ listener 将使用与 HTTP executor 完全隔离的有界线程池；文档处理默认并发 2，OCR 默认并发 1。该 listener 和线程池要到任务 2.2/2.4 实现、任务 6.x 验证后才能视为当前运行事实。将 listener 移到独立进程、拆分 Worker 或微服务属于未来架构变更，不是本 change 的目标部署方式。
+目标部署中 RabbitMQ listener 使用与 HTTP executor 完全隔离的有界线程池；文档处理默认并发 2，OCR 默认并发 1。只有对应实现任务完成且运行态证据记入 `verification.md` 后，listener 和线程池才可视为当前运行事实。将 listener 移到独立进程、拆分 Worker 或微服务属于未来架构变更，不是本 change 的目标部署方式。
 
 ### 3.2 Backend Controller 边界
 
@@ -332,7 +332,7 @@ KnowledgeBase
 
 ### 3.3.1 已批准 Build 目标：持久化模型与异步数据流
 
-本节是任务 2.3-2.5、3.4 和 4.x 的目标模型，不表示当前数据库已经存在这些表/字段，也不表示 RabbitMQ 或 MinIO 已接入。目标持久化关系为：
+本节定义 active change 的目标模型；表/字段、中间件接入和迁移证据的实时状态以 `tasks.md`/`verification.md` 为准，不能仅凭目标模型推断当前数据库或运行依赖。目标持久化关系为：
 
 ```text
 KnowledgeBase
@@ -351,7 +351,7 @@ KnowledgeBase
 
 目标规则：PostgreSQL 保存 Material、资产元数据、不可变 revision/block、结构化知识点、任务、Outbox 和幂等事实；MinIO 保存原件和衍生二进制，数据库不保存大文件正文二进制。`MaterialAsset` 只保存不可猜测的 object key、资产类型、MIME、大小、校验值和生命周期元数据；bucket 保持私有，API 不泄露永久凭据或内部 object key。每次成功处理创建新的不可变 `DocumentRevision` 与有序 `DocumentBlock`，重新处理不覆盖旧 revision；知识点和题目引用固定到生成时的 revision/page/block/excerpt。
 
-任务 1.2 稳定契约、任务 2.x/3.x 完成实现后，目标数据流为：
+在 active change 记录的契约与对应实现门禁满足后，目标数据流为：
 
 ```text
 Web multipart upload
@@ -365,13 +365,13 @@ Web multipart upload
   -> manual ACK
 ```
 
-队列按 `document.processing`、`knowledge-point.generation`、`question.generation` 隔离，每类使用 30 秒、5 分钟 retry queue 和 dead-letter queue。投递语义为至少一次；消费者以 `taskId + stage + documentRevision/processingVersion` 作为幂等键，并在数据库结果与资产元数据提交后 ACK。任务累计最大尝试次数默认 3；永久错误直接失败，暂时错误有界退避，禁止无限叠加 adapter 重试与消息重试。
+队列按 `document.processing`、`knowledge-point.generation`、`question.generation` 隔离，每类使用短/长两级 retry queue 和 dead-letter queue。投递语义为至少一次；消费者以 `taskId + stage + documentRevision/processingVersion` 作为幂等键，并在数据库结果与资产元数据提交后 ACK。永久错误直接失败，暂时错误有界退避；timeout、retry、circuit breaker 的目标默认值、覆盖口、合法范围和总调用上限统一以 `docs/tech-selection.md` 的韧性配置矩阵为准，禁止在架构文档复制参数形成漂移。
 
 PostgreSQL 事务与 MinIO 不能原子提交，因此衍生资产先写临时 key，校验且数据库提交成功后再提升；失败补偿和孤儿扫描负责回收。RabbitMQ 不可用时 Outbox 保留未发送事件，恢复后继续投递；消费者在 ACK 前崩溃时由 RabbitMQ 重投并通过幂等状态恢复。
 
 ### 3.3.2 已批准 Build 目标：默认值与环境覆盖
 
-下表是后续实现必须采用的目标默认值，不表示当前 `application.properties`、`.env.example` 或 Compose 已存在这些配置键。任务 2.1/2.2 负责落盘，任务 6.x 负责运行态验证。
+下表是实现必须采用的目标默认值；配置键是否已落盘以及是否已有运行态证据，分别以 active change 的 `tasks.md` 和 `verification.md` 为准。
 
 | 语义 | 默认值 | 回退/禁用语义 |
 |---|---|---|
@@ -381,11 +381,11 @@ PostgreSQL 事务与 MinIO 不能原子提交，因此衍生资产先写临时 k
 | PDF 最大页数 | 500 | 超限视为永久校验失败，不重试 |
 | 文档处理并发 | 2 | 只改变隔离 consumer executor 并发，不占用 HTTP executor |
 | OCR 并发 | 1 | 独立于普通文档处理并发，避免外部进程耗尽资源 |
-| 任务最大尝试 | 3（含首次） | 达到上限进入 DLQ/FAILED；永久错误不重试 |
+| 任务最大尝试 | 见 `docs/tech-selection.md` 韧性配置矩阵 | 包含首次执行；达到上限进入 DLQ/FAILED，永久错误不重试 |
 | 原始文件保留 | 开启 | 未删除资料必须保留原件；显式关闭时禁用新上传，既有资产仍保留，不能接受上传后丢弃原件 |
 | 知识点自动生成 | 开启 | 关闭只停止自动创建任务，仍允许阅读资料和手动生成 |
 
-环境变量覆盖 RabbitMQ host/port/username/password/vhost，MinIO endpoint/access key/secret key/bucket，以上处理开关与限制，以及 parser/OCR/LibreOffice/AI 超时和重试策略。具体配置键以 `docs/tech-selection.md` 为技术基线，根 `.env.example` 只提供非敏感本地值。启动时必须校验覆盖值；配置缺失、依赖不可用或 adapter 失败均不得产生静默 fallback 或虚假成功。
+环境变量覆盖 RabbitMQ host/port/username/password/vhost，MinIO endpoint/access key/secret key/bucket，以上处理开关与限制，以及 parser/OCR/LibreOffice/AI 的 timeout/retry/circuit breaker。具体键、默认值和合法范围以 `docs/tech-selection.md` 为唯一技术基线，根 `.env.example` 只提供非敏感本地值。启动时必须校验覆盖值；配置缺失、依赖不可用或 adapter 失败均不得产生静默 fallback 或虚假成功。
 
 ### 3.4 AI 与 RAG 边界
 
@@ -505,7 +505,7 @@ Web App
   -> Web UI
 ```
 
-任务 1.2、2.x/3.x、4.x 完成后，目标数据流为：
+active change 的契约和对应实现门禁满足后，目标数据流为：
 
 ```text
 Web App
@@ -574,7 +574,7 @@ Architecture Agent updates contracts
 
 ### 7.5 已批准 Build 目标：故障、回退与安全边界
 
-以下是任务 2.x/3.x/4.x 的实现约束和任务 6.x 的待验证验收语义，不代表这些故障路径当前已经通过运行态验证。
+以下是 active change 的实现约束与验收语义；故障路径是否已经通过运行态验证，只以 `verification.md` 的真实证据为准。
 
 - RabbitMQ 暂时不可用：Outbox 保留且后台处理健康组降级；已完成资料读取和 HTTP liveness 不因消息中间件故障被误判不可用。
 - MinIO 不可用：新上传拒绝或任务明确退避/失败，不创建 READY；不得改存数据库 blob、本地临时目录或丢失原件语义。
@@ -582,19 +582,20 @@ Architecture Agent updates contracts
 - LibreOffice 预览失败：保留原件并明确预览失败；不得执行用户文件中的宏、脚本、外链或嵌入对象。
 - AI 未配置、超时或结构输出不完整：资料阅读不受影响，知识点/题目任务明确不可用或失败；不得生成关键词、统一描述或占位知识点。
 - Resilience4j 只对外部 adapter/AI 提供有界超时、重试和熔断；消息级退避由 RabbitMQ retry queue 与 ProcessingTask 状态管理，两层不得形成无界乘法重试。
+- Markdown 原文是不可信输入：CommonMark renderer 必须优先启用等价于 `escapeHtml(true)`、`sanitizeUrls(true)` 的内建配置，转义或禁用 raw HTML。普通链接只允许 `http`、`https`、`mailto` scheme；`javascript`、`data`、`file`、`vbscript` 及未知 scheme 一律禁止。远程图片和其他外部资源默认不得自动加载，应渲染为无远程 `src` 的占位/替代文本；若未来使用受控代理，必须限制目标 allowlist 并阻断回环、私网和重定向绕过。只有测试证明内建能力不足时，才可另行评估经过测试的 sanitizer，不得在本任务预选大型依赖。
 - 文件扩展名、MIME、签名、大小、页数、解压后大小和嵌套深度必须同时校验；原文视为不可信证据，不能覆盖模型系统指令。
-- 日志和指标只使用 correlationId、taskId、materialId、stage 等低基数标识，不记录完整正文、原始模型响应、密钥、永久凭据或临时授权地址。
-- Actuator/Micrometer 将 HTTP liveness/readiness 与后台处理依赖健康分层：PostgreSQL、RabbitMQ、MinIO 状态和队列/Outbox/DLQ/阶段/OCR/AI 指标必须可区分，依赖降级不得伪装为全系统健康。
+- `correlationId`、`taskId`、`materialId` 只进入结构化日志或 trace；可通过 trace exemplar 关联指标样本，但不得成为 metric tags。日志、trace 和 exemplar 均不得记录完整正文、原始模型响应、密钥、永久凭据或临时授权地址。
+- Actuator/Micrometer 将 HTTP liveness/readiness 与后台处理依赖健康分层：PostgreSQL、RabbitMQ、MinIO 状态和队列/Outbox/DLQ/阶段/OCR/AI 指标必须可区分，依赖降级不得伪装为全系统健康。metric tags 只允许 `stage`、`outcome`、`dependency`、`queue`、`taskType`、`assetType` 等固定集合；其中 `queue`、`taskType`、`assetType` 必须使用代码定义的受控枚举，不得使用 ID、文件名、object key、错误消息或其他无界值。
 
 ## 8. 测试与验证边界
 
 | 范围 | 测试位置 | 验证重点 |
 |---|---|---|
 | Android 本地 | `apps/android/src/test/**`、`apps/android/src/androidTest/**` | JSON 解析、Room 导入、Repository、UseCase、远程 client、Smoke UI |
-| Backend | `services/api/src/test/**` | 当前 Service/任务/AI/RAG 规则；Build 目标还需覆盖格式解析/OCR、资产补偿、Outbox/RabbitMQ 幂等恢复、健康和指标边界 |
+| Backend | `services/api/src/test/**` | 当前 Service/任务/AI/RAG 规则；Build 目标还需覆盖格式解析/OCR、资产补偿、Outbox/RabbitMQ 幂等恢复、健康和指标，以及 Markdown raw HTML、危险/混淆 URL、远程资源不自动加载边界 |
 | Web | `npm --prefix apps/web run build` | TypeScript 类型、Vite 构建、API client 调用形态 |
 | Contracts | `contracts/**` diff 审查 | API 兼容性、字段语义、消费端适配范围 |
-| Compose 运行态（Build 目标，任务 6.x 待执行） | 根 `compose.yml` + Testcontainers / 故障验收矩阵 | PostgreSQL/Outbox、RabbitMQ 中断恢复/重复投递/DLQ、MinIO 临时对象/清理、OCR/AI 超时、API/消费者重启、分层健康和指标 |
+| Compose 运行态（Build 目标，状态见 `verification.md`） | 根 `compose.yml` + Testcontainers / 故障验收矩阵 | PostgreSQL/Outbox、RabbitMQ 中断恢复/重复投递/DLQ、MinIO 临时对象/清理、OCR/AI 超时、API/消费者重启、分层健康和指标 |
 
 文档-only 架构调整不需要运行模块测试，但必须执行 diff/stat 检查并说明原因。
 
@@ -618,5 +619,5 @@ Architecture Agent updates contracts
 
 - Android 仍同时使用 `src/main/java` 和 `src/main/kotlin`，短期允许共存；是否统一迁移需单独任务评估。
 - Web 类型当前手写维护，后续若契约变化频繁，可评估从 OpenAPI 生成类型。
-- 已批准 Build 目标以模块化单体承载 HTTP 与 RabbitMQ listener，并用隔离有界线程池控制任务资源；listener 尚待任务 2.2/2.4 实现和任务 6.x 验证。只有未来出现经验证的独立扩缩容或故障隔离需求时，才通过新架构变更评估拆分 Worker，本 change 不得提前拆分。
+- 已批准 Build 目标以模块化单体承载 HTTP 与 RabbitMQ listener，并用隔离有界线程池控制任务资源；其实现和运行态状态以 active change 的 `tasks.md`/`verification.md` 为准。只有未来出现经验证的独立扩缩容或故障隔离需求时，才通过新架构变更评估拆分 Worker，本 change 不得提前拆分。
 - pgvector 能力仍需按 PostgreSQL 部署环境验证；关键词检索保留为非语义兜底，真实向量能力落地时需要补契约、配置和集成验证。

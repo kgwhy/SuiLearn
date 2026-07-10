@@ -4,11 +4,11 @@
 
 本文是 SuiLearn 的技术选型与版本基线真相源，由架构 Agent 维护。
 
-本文默认描述已落盘并可由当前工程验证的技术；标有“已批准 Build 目标”的内容是 active change 的规范性选型，不表示依赖、配置、中间件或运行态已经存在。`build-resilient-knowledge-pipeline` 当前处于 Build，本次任务 1.1 只记录目标基线；任务 1.2 的 OpenAPI、任务 2.x/3.x 的依赖与实现、任务 6.x 的集成和运行态验证尚未完成。
+本文默认描述已落盘并可由当前工程验证的技术；标有“已批准 Build 目标”的内容是 active change 的规范性选型，不能单独证明依赖、配置、中间件或运行态已经存在。`build-resilient-knowledge-pipeline` 的实时实施状态以 `openspec/changes/build-resilient-knowledge-pipeline/tasks.md` 为准，验证状态以同目录 `verification.md` 为准；目标技术只有在对应任务完成、证据已记录且 Review 闭环后，才可改写为当前技术。
 
 本文回答：
 
-- 当前使用哪些技术栈，以及 active change 已批准但尚未落地的目标技术。
+- 当前使用哪些技术栈，以及 active change 已批准的目标技术。
 - 每项当前技术的最低版本、当前项目版本和升级约束，以及目标技术的版本锁定门禁。
 - 哪些依赖、平台或基础设施暂不引入。
 - 技术升级需要谁确认、修改哪些配置、运行哪些验证。
@@ -32,7 +32,7 @@ SuiLearn 当前采用三端渐进路线：
 
 当前不做 iOS，不做 Flutter，不做账号系统、云同步、社区和多租户权限。
 
-已批准 Build 目标（尚未实现/验证）：Java Backend 将增加多格式原始资料导入和持久化异步任务，并采用 PostgreSQL Transactional Outbox、RabbitMQ、MinIO、受限解析/OCR adapter、Resilience4j、Actuator/Micrometer。Backend 仍是单个模块化单体，不新增独立 Worker/微服务。
+已批准 Build 目标（实时状态见 active change）：Java Backend 增加多格式原始资料导入和持久化异步任务，并采用 PostgreSQL Transactional Outbox、RabbitMQ、MinIO、受限解析/OCR adapter、Resilience4j、Actuator/Micrometer。Backend 仍是单个模块化单体，不新增独立 Worker/微服务。
 
 ## 3. 全局工程基线
 
@@ -116,18 +116,18 @@ Backend 约束：
 - Provider 状态接口只能暴露脱敏配置，例如 base URL、模型名、超时、重试和 API key 环境变量名。
 - 资料导入、embedding、生成内容必须有任务状态或可追踪结果，避免不可解释的后台副作用。
 - RAG 回答必须受知识库或资料范围约束；证据不足时表达不确定。
-- 当前 `pom.xml`、运行配置和 Compose 尚未落盘 RabbitMQ、MinIO、CommonMark、Tika/PDFBox/POI、LibreOffice/Tesseract、Resilience4j 或 Actuator/Micrometer 流水线能力；在对应任务完成并验证前，不得把下述目标选型当作当前运行时依赖。
+- RabbitMQ、MinIO、CommonMark、Tika/PDFBox/POI、LibreOffice/Tesseract、Resilience4j 与 Actuator/Micrometer 的实际落盘和验证状态只以 active change 的 `tasks.md`/`verification.md` 为准；不得把下述目标选型本身当作当前运行时证据。
 
-### 5.1 已批准 Build 目标技术基线（尚未落盘）
+### 5.1 已批准 Build 目标技术基线
 
-状态边界：任务 1.2 尚未稳定 multipart/202 等 OpenAPI；任务 2.1 尚未编排 RabbitMQ/MinIO 与环境示例；任务 2.2 尚未锁定 Maven/镜像依赖和运行配置；任务 2.3-2.5、3.x/4.x 尚未实现持久化、消息、资产、解析/OCR 与生成流水线；任务 6.x 尚未完成集成和运行态验证。
+状态边界：具体契约、Compose/环境示例、Maven/镜像依赖、运行配置、持久化、消息、资产、解析/OCR、生成流水线及集成验证的实时状态，统一读取 active change 的 `tasks.md`/`verification.md`；本节只定义目标选型。
 
 | 项目 | 已批准目标基线 |
 |---|---|
 | 部署形态 | 单个模块化单体 Backend；RabbitMQ listener 与 HTTP API 同应用部署，使用隔离有界线程池，不创建独立 Worker/微服务 |
 | 持久化异步消息 | PostgreSQL Transactional Outbox + RabbitMQ 持久化 exchange/queue、publisher confirm、manual ack、at-least-once、retry queue / DLQ |
 | 文件资产 | MinIO 私有 bucket；保存原件、阅读版、预览和 OCR 页面，PostgreSQL 只保存资产引用和业务事实 |
-| Markdown | CommonMark；生成安全阅读版和结构化 block，不用正则自行解释 Markdown |
+| Markdown | CommonMark；renderer 转义 raw HTML、sanitize URL，并生成安全阅读版和结构化 block，不用正则自行解释 Markdown |
 | PDF / 通用探测 | Apache Tika + PDFBox；Tika 做格式探测/通用提取，PDFBox 做页数、按页文本与定位 |
 | DOC / DOCX | Apache Tika + Apache POI 提取结构；LibreOffice headless adapter 生成高保真预览 |
 | OCR | Tesseract adapter；仅处理文本不足页面，独立并发限制与超时 |
@@ -140,8 +140,9 @@ Backend 约束：
 - RabbitMQ listener 与 HTTP API 属于同一 Backend 应用，只允许通过模块 port/adapter 和隔离有界线程池分离；不得把模块边界误写或实现为独立 Worker/微服务。
 - PostgreSQL 保存业务事实、Outbox、幂等状态、revision/block 和资产元数据；MinIO 保存大文件二进制，bucket 不公开，object key 不使用用户文件名，API 不泄露永久凭据。
 - CommonMark、Tika/PDFBox、POI 是进程内解析依赖；LibreOffice/Tesseract 是受限外部进程 adapter，必须固定参数、禁用宏/脚本/外链、限制资源，并可在超时后终止。
-- Resilience4j 的 adapter 级重试必须有界且受任务最大尝试次数约束，不能与 RabbitMQ retry queue 叠加成无界乘法重试。
-- Actuator/Micrometer 的 liveness、HTTP/read readiness 与 processing dependencies health 必须分层；指标标签不得包含正文、文件名、object key、模型原始响应或其他高基数/敏感值。
+- 不可信 Markdown 必须优先使用 CommonMark renderer 内建的 `escapeHtml(true)`、`sanitizeUrls(true)` 或版本等价配置：raw HTML 转义/禁用；普通链接 scheme allowlist 仅为 `http`、`https`、`mailto`；`javascript`、`data`、`file`、`vbscript` 和未知 scheme 禁止。远程图片/外部资源默认渲染为不带远程 `src` 的占位或替代文本，不自动发起网络请求；受控代理属于后续可选实现，启用时必须有目标 allowlist、回环/私网阻断和重定向复检。只有安全测试证明内建能力不足时，才选择额外 sanitizer 并锁定版本，不默认引入新的大型 sanitizer 依赖。
+- Resilience4j 的 adapter 级 timeout/retry/circuit breaker 必须遵守 5.4 的统一矩阵；RabbitMQ retry queue 是跨 ProcessingTask 尝试的唯一退避调度者，SDK 内部 retry 不得再叠加。
+- Actuator/Micrometer 的 liveness、HTTP/read readiness 与 processing dependencies health 必须分层。`correlationId`、`taskId`、`materialId` 只进入结构化日志/trace，可作为 exemplar 关联但不得成为 metric tags；metric tags 只允许 `stage`、`outcome`、`dependency`、`queue`、`taskType`、`assetType` 等固定集合，且 `queue`、`taskType`、`assetType` 必须是代码定义的受控枚举。正文、文件名、object key、错误消息、模型原始响应及任何 ID 不得进入 tags。
 - Redis、独立向量库、独立 Worker/微服务仍不引入；RabbitMQ 只承载消息，不能替代 PostgreSQL 业务事实或 Outbox。
 
 ### 5.2 已批准 Build 目标：资料知识流水线选型与回退
@@ -157,11 +158,11 @@ Backend 约束：
 | Resilience4j | 标准化外部 adapter/AI 的 timeout、retry、circuit breaker，避免自研状态机 | 手写重试/熔断易造成无界等待和策略不一致 | 只做有界调用级保护；任务级延迟重试和 DLQ 由 RabbitMQ/ProcessingTask 负责，熔断时明确失败或退避 |
 | Actuator + Micrometer | 使用 Spring 原生健康和指标生态，统一分层健康、延迟、失败、重试和积压观测 | 只看日志无法量化队列积压和恢复；自研监控端点增加维护成本 | RabbitMQ 故障只使 processing health 降级，不应误杀 HTTP liveness 或已完成资料读取；指标不得泄露敏感/高基数内容 |
 
-解析库和 Spring 集成依赖版本必须与 Spring Boot 3.5.x/JDK 21 兼容并在 `services/api/pom.xml` 锁定；LibreOffice/Tesseract 镜像或系统包版本必须在 Backend 运行镜像中固定。不得使用浮动 `latest` 作为可复现基线。具体依赖版本由任务 2.2 在构建与测试证据下落盘，不在本文猜测未验证版本号。
+解析库和 Spring 集成依赖版本必须与 Spring Boot 3.5.x/JDK 21 兼容并在 `services/api/pom.xml` 锁定；LibreOffice/Tesseract 镜像或系统包版本必须在 Backend 运行镜像中固定。不得使用浮动 `latest` 作为可复现基线。具体版本及构建/测试证据以 active change 的 `tasks.md`/`verification.md` 为准，不在本文猜测未验证版本号。
 
 ### 5.3 目标默认配置与环境变量覆盖
 
-下表定义后续任务必须落盘的目标配置，不表示当前 `application.properties`、`.env.example` 或 Compose 已支持这些键。任务 2.1/2.2 完成绑定后，仍需任务 6.x 提供运行态证据。
+下表定义实现必须采用的目标配置；`application.properties`、`.env.example`、Compose 的绑定状态和运行态证据分别以 active change 的 `tasks.md`/`verification.md` 为准。
 
 | 配置 | 环境变量 | 默认值 / 约束 |
 |---|---|---|
@@ -171,14 +172,53 @@ Backend 约束：
 | PDF 最大页数 | `SUILEARN_PDF_MAX_PAGES` | `500`；超限永久拒绝 |
 | 文档处理并发 | `SUILEARN_PROCESSING_CONCURRENCY` | `2`；隔离有界 consumer executor |
 | OCR 并发 | `SUILEARN_OCR_CONCURRENCY` | `1`；独立于普通文档并发 |
-| 任务最大尝试 | `SUILEARN_PROCESSING_MAX_ATTEMPTS` | `3`，含首次；达到上限进入 DLQ/FAILED |
 | 原件保留 | `SUILEARN_RETAIN_ORIGINAL` | `true`；设为 `false` 时禁用新上传，既有资产仍保留，不能接受上传后丢弃原件 |
 | 知识点自动生成 | `SUILEARN_KNOWLEDGE_POINT_AUTO_GENERATION_ENABLED` | `true`；AI 不可用时任务失败/不可用，不生成 fallback |
 | RabbitMQ 连接 | `SUILEARN_RABBITMQ_HOST`、`SUILEARN_RABBITMQ_PORT`、`SUILEARN_RABBITMQ_USERNAME`、`SUILEARN_RABBITMQ_PASSWORD`、`SUILEARN_RABBITMQ_VHOST` | 环境覆盖；凭据无生产默认值，不写日志/响应 |
 | MinIO 连接 | `SUILEARN_MINIO_ENDPOINT`、`SUILEARN_MINIO_ACCESS_KEY`、`SUILEARN_MINIO_SECRET_KEY`、`SUILEARN_MINIO_BUCKET` | 环境覆盖；bucket 私有，凭据无生产默认值，不暴露给客户端 |
-| 外部调用超时 | `SUILEARN_PARSER_TIMEOUT_MS`、`SUILEARN_OCR_TIMEOUT_MS`、`SUILEARN_LIBREOFFICE_TIMEOUT_MS`、现有 `SUILEARN_AI_TIMEOUT_MS` | 必须为正的有界值；由运行配置显式给出并受 Resilience4j 约束，超时不得返回虚假成功 |
 
 根 `.env.example` 的编排属于独立任务；它只能承载非敏感本地默认值。配置绑定必须 fail-fast 校验非法数值，生产凭据必须由部署环境注入。RabbitMQ/MinIO 凭据缺失、OCR/LibreOffice 不可执行或 AI 未配置时，系统必须暴露真实健康/任务状态，不能静默改走其他实现。
+
+### 5.4 目标 timeout / retry / circuit breaker 配置矩阵
+
+| 配置语义 | 环境变量 | 目标默认值 | 合法范围与单位 |
+|---|---|---|---|
+| ProcessingTask 最大尝试 | `SUILEARN_PROCESSING_MAX_ATTEMPTS` | `3`（含首次） | 整数 `1..3`；只能降低，最终一次失败后进入 DLQ/FAILED |
+| RabbitMQ 短退避 | `SUILEARN_RABBITMQ_RETRY_SHORT_DELAY_MS` | `30000`（30 秒） | `1000..300000` ms；允许覆盖 |
+| RabbitMQ 长退避 | `SUILEARN_RABBITMQ_RETRY_LONG_DELAY_MS` | `300000`（5 分钟） | `30000..3600000` ms；允许覆盖，且必须大于短退避 |
+| Parser 单文档超时 | `SUILEARN_PARSER_TIMEOUT_MS` | `120000`（2 分钟） | `5000..600000` ms；覆盖 CommonMark/Tika/PDFBox/POI 单次解析 |
+| OCR 单页超时 | `SUILEARN_OCR_TIMEOUT_MS` | `60000`（1 分钟） | `5000..300000` ms；超时必须终止对应 Tesseract 进程 |
+| LibreOffice 单文档超时 | `SUILEARN_LIBREOFFICE_TIMEOUT_MS` | `120000`（2 分钟） | `10000..600000` ms；超时必须终止进程树并清理临时文件 |
+| AI 单调用超时 | `SUILEARN_AI_TIMEOUT_MS` | `30000`（30 秒） | `1000..120000` ms；超时计为暂时错误，不保存不完整结果 |
+| Adapter 即时重试次数 | `SUILEARN_ADAPTER_MAX_RETRIES` | `0` | 整数 `0..1`；Resilience4j 是唯一 retry owner，SDK 内部 retry 必须禁用或计入同一上限 |
+| 熔断失败率阈值 | `SUILEARN_CIRCUIT_BREAKER_FAILURE_RATE_PERCENT` | `50` | 整数 `10..100`，百分比；仅暂时性依赖失败计入，文件校验等永久错误排除 |
+| 熔断滑动窗口 | `SUILEARN_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE` | `10` | 整数 `5..100`，按调用计数 |
+| 熔断最小调用数 | `SUILEARN_CIRCUIT_BREAKER_MINIMUM_CALLS` | `5` | 整数 `1..slidingWindowSize` |
+| OPEN 等待时间 | `SUILEARN_CIRCUIT_BREAKER_OPEN_STATE_MS` | `60000`（1 分钟） | `1000..600000` ms |
+| HALF_OPEN 探测调用数 | `SUILEARN_CIRCUIT_BREAKER_HALF_OPEN_CALLS` | `2` | 整数 `1..10` |
+
+RabbitMQ 退避顺序固定为：首次失败后使用短退避，第二次失败后使用长退避，第三次失败后进入 DLQ/FAILED；若最大尝试被降低，对应后续退避不执行。重试计数单元是一个可幂等恢复的 adapter operation，而不是整个 stage：单次文档解析以 revision/processingVersion 为 operation，单页 OCR 以 revision/pageNumber/OCR version 为 operation，单次预览以 revision/renderVersion 为 operation，单次 AI 请求以 taskId/logicalRequestId/generationVersion 为 operation。
+
+单个 adapter operation 的外部调用硬上限为 `ProcessingTask 最大尝试 × (Adapter 即时重试次数 + 1)`：目标默认 `3 × 1 = 3` 次，所有合法覆盖组合最多 `3 × 2 = 6` 次。文档级 OCR 的理论调用上限为 `待 OCR 页数 × ProcessingTask 最大尝试 × (Adapter 即时重试次数 + 1)`；因此 500 个待 OCR 页面对应目标默认最多 1500 次、所有合法覆盖组合最多 3000 次理论调用，不得用单 operation 的 3/6 次上限限制整份 PDF 页数。
+
+每个 operation 在调用 adapter 前先按幂等键 claim/查询持久化结果；已成功持久化的 OCR 页面、解析 revision、预览或 AI 结果在 ProcessingTask 重试和重启恢复时必须复用，只重新调度未完成或可重试失败的 operation。若实现批处理，必须以 `revision + ordered page set/batch index + adapter version` 定义稳定幂等键，并清楚记录页/批次完成状态；批次设计不能降低 500 页 PDF 验收上限。不得同时启用 Resilience4j、Provider SDK 和自定义循环的独立 retry 计数器。
+
+#### 5.4.1 旧 AI retry 配置迁移
+
+`SUILEARN_ADAPTER_MAX_RETRIES` 是目标流水线唯一的 canonical adapter 即时重试配置，应用层目标默认值为 `0`，合法范围为整数 `0..1`。现有 `SUILEARN_AI_MAX_RETRIES` 保留一个兼容周期但立即标记 deprecated。任务 2.1 必须让根 `.env.example` 只记录 `SUILEARN_ADAPTER_MAX_RETRIES=0`，删除旧键及旧默认 `2`；同时必须在当前无 `env_file`、逐项 `environment` 映射的 Compose 中保留旧键并加入新键，两个键都只做无默认值可选透传。Compose 不得为新键使用 `${SUILEARN_ADAPTER_MAX_RETRIES:-0}` 或等价默认注入，否则会把应用默认伪造成用户显式新键并切断 legacy 映射/冲突检测。缺失时不得合成非空值，空字符串统一按未显式提供处理。
+
+任务 2.2 负责按新旧键的非空显式存在进行应用配置绑定、legacy 映射与冲突诊断，并关闭 AI Provider SDK 的内部 retry 和旧手写 retry，确保 Resilience4j 是唯一 adapter retry owner。默认迁移后，在用户没有非空显式覆盖时有效 adapter retry 为 `0`，不继承旧默认 `2`。
+
+| 启动输入 | 目标行为与诊断 |
+|---|---|
+| 新旧键均缺失或为空 | 使用应用层目标默认 `0`；Compose 空值透传不算显式提供 |
+| 仅非空提供 `SUILEARN_ADAPTER_MAX_RETRIES` | 按 `0..1` 校验并使用；非法值 fail-fast |
+| 仅非空提供 deprecated `SUILEARN_AI_MAX_RETRIES` | 兼容映射 `0 -> 0`、任意正整数 `-> 1`；负数或非整数 fail-fast；启动记录 `SUILEARN_RETRY_CONFIG_LEGACY_MAPPED` 诊断，明确旧值与有效值。旧值 `2` 因而最多产生每 operation `3 × 2 = 6` 次理论调用，不会形成 9 次 |
+| 新旧键同时非空提供 | 无论值是否相同均 fail-fast，诊断码 `SUILEARN_RETRY_CONFIG_CONFLICT`，要求删除 deprecated 旧键；不采用静默优先级 |
+
+兼容周期结束时，后续具名 change 同时删除 Compose 旧键透传和 Backend 旧键读取逻辑；届时出现 `SUILEARN_AI_MAX_RETRIES` 必须作为未知/已移除配置 fail-fast，不得静默忽略。以上迁移只影响 retry 配置，不改变 RabbitMQ/MinIO/AI 凭据无生产默认值的规则。
+
+所有范围、相互关系和时长单位在配置绑定时 fail-fast 校验；不得夹取非法值后继续启动。上述业务/韧性参数允许覆盖，RabbitMQ/MinIO/AI 凭据仍无生产默认值，只能由部署环境注入。
 
 推荐验证：
 
@@ -188,6 +228,8 @@ docker compose config
 ```
 
 RabbitMQ、MinIO、LibreOffice 或 Tesseract 接入完成后，还必须在 Compose/Testcontainers 中验证中断恢复、重复投递、DLQ、临时对象清理、外部进程超时终止和 Actuator/Micrometer 分层健康；静态配置检查或单元测试不能替代运行态证据。
+
+Markdown 安全测试至少覆盖 raw `<script>`/事件属性被转义，大小写或编码混淆的 `javascript:` 以及 `data:`、`file:`、`vbscript:`/未知 scheme 被拒绝，`http`/`https`/`mailto` 普通链接保留，远程图片默认不产生可加载的 `src` 或网络请求；若启用受控代理，还必须覆盖回环、私网与重定向绕过。
 
 ## 6. Web Frontend 基线
 

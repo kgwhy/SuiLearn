@@ -142,10 +142,22 @@ Architect 先更新 OpenAPI，至少覆盖：
 | 文档处理并发 | 2 |
 | OCR 并发 | 1 |
 | 最大尝试次数 | 3 |
+| Adapter 即时重试次数 | 0；合法范围 0..1 |
 | 原始文件保留 | 开启 |
 | 知识点自动生成 | 开启 |
 
 环境变量至少覆盖 RabbitMQ host/port/user/password/vhost、MinIO endpoint/access/secret/bucket、处理/OCR 并发、文件/页数限制、超时、重试和功能开关；`.env.example` 只提供非敏感默认值。配置缺失不得产生虚假成功或静默 fallback。
+
+`SUILEARN_ADAPTER_MAX_RETRIES` 是 adapter 即时重试的 canonical key，应用层默认值为 `0`，只接受整数 `0..1`。deprecated 的 `SUILEARN_AI_MAX_RETRIES` 保留一个兼容周期。兼容周期内，任务 2.1 必须在当前无 `env_file`、逐项 `environment` 映射的 Compose 模型中同时保留新旧两个键的无默认值可选透传：只透传部署环境或根 `.env` 中显式提供的值，不得为新键使用 `${SUILEARN_ADAPTER_MAX_RETRIES:-0}` 或任何等价的 Compose 默认注入；缺失时不得合成非空值，空字符串按未显式提供处理。根 `.env.example` 则只记录 canonical 新键的非敏感目标默认 `0`，不再列出 deprecated 旧键或旧默认 `2`。
+
+Backend 配置绑定以“非空显式存在”判定新旧输入：
+
+- 新旧键均缺失或为空：使用应用层默认 `0`。
+- 仅新键非空：按整数 `0..1` 校验并使用，非法值 fail-fast。
+- 仅旧键非空：旧值 `0` 映射为 `0`，正整数映射为 `1`，并记录 `SUILEARN_RETRY_CONFIG_LEGACY_MAPPED`；负数或非整数 fail-fast。
+- 新旧键同时非空：无论值是否相同均 fail-fast，并记录 `SUILEARN_RETRY_CONFIG_CONFLICT`，不得静默选择优先级。
+
+任务 2.1 只负责 `.env.example` 的新默认和 Compose 新旧键可选透传；任务 2.2 负责应用绑定、legacy 映射/冲突诊断，以及关闭 Provider SDK 和旧手写 retry，确保 Resilience4j 是唯一 adapter retry owner。兼容周期结束后必须由后续具名 change 删除 Compose 旧键透传和 Backend 旧键读取逻辑，本 change 不提前静默切断旧 `.env` 配置。
 
 ### 12. 安全、韧性与可观测性
 

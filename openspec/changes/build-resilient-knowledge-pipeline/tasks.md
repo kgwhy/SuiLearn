@@ -5,7 +5,7 @@
   - Allowed files: `docs/architecture.md`, `docs/tech-selection.md`, `openspec/changes/build-resilient-knowledge-pipeline/**`
   - Forbidden files: `services/api/**`, `apps/web/**`, `apps/android/**`, `contracts/**`, `docs/proposals/**`, `docs/superpowers/**`
   - Test command: `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
-  - Review focus: 技术依赖有明确收益/替代/默认值/覆盖口/回退方式；不把模块边界误写成独立微服务。
+  - Review focus: 技术依赖有明确收益/替代/默认值/覆盖口/回退方式；不把模块边界误写成独立微服务；当前事实与 Build 目标分离；operation 级重试、页级 OCR 幂等、指标基数、Markdown 安全和 retry 配置兼容语义无歧义。
 
 - [ ] 1.2 先更新 OpenAPI，定义 multipart 上传、202 material/task submission、原件/阅读版/revision、结构化知识点审核和知识点面试题批量生成契约。
   - Owner: Architect Agent
@@ -16,19 +16,19 @@
 
 ## 2. 中间件、持久化与可靠任务底座
 
-- [ ] 2.1 在用户已确认的中间件范围内编排 RabbitMQ、MinIO、持久卷、健康检查和根环境变量示例。
+- [ ] 2.1 在用户已确认的中间件范围内编排 RabbitMQ、MinIO、持久卷、健康检查和根环境变量示例，并按兼容周期配置 adapter retry 新旧键的可选透传。
   - Owner: Leader Agent
   - Allowed files: `compose.yml`, `.env.example`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: `services/**`, `apps/**`, `contracts/**`, `docs/**`, 其他 `openspec/changes/**`
   - Test command: `docker compose config`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
-  - Review focus: 本地默认值非敏感；服务名、持久卷、依赖和健康条件稳定；根共享配置不混入业务实现；不新增 Redis 或独立 Worker 服务。
+  - Review focus: 本地默认值非敏感；服务名、持久卷、依赖和健康条件稳定；根共享配置不混入业务实现；不新增 Redis 或独立 Worker 服务；`.env.example` 只记录 `SUILEARN_ADAPTER_MAX_RETRIES=0`，Compose 对新旧 retry 键都使用无默认值可选透传且空值视为未提供，缺失/空值/仅旧键/新旧并存矩阵可由 `docker compose config` 验证。
 
 - [ ] 2.2 以测试先行方式加入 RabbitMQ、MinIO、解析/OCR、Resilience4j、Actuator/Micrometer 和 Testcontainers 依赖及 Backend 运行配置。
   - Owner: Server Backend Agent
-  - Allowed files: `services/api/pom.xml`, `services/api/src/main/resources/**`, `services/api/src/test/**`, `services/api/Dockerfile`, `services/api/config/**`
+  - Allowed files: `services/api/pom.xml`, `services/api/src/main/resources/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/ai/OpenAiCompatibleAiProvider.java`, `services/api/src/main/java/com/suilearn/api/retrieval/OpenAiCompatibleEmbeddingProvider.java`, `services/api/src/test/**`, `services/api/Dockerfile`, `services/api/config/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
-  - Review focus: 异步开关关闭时禁用上传而非同步 fallback；API/消费者线程池隔离；健康检查区分 HTTP 与处理依赖；测试依赖不泄漏到业务接口。
+  - Review focus: 异步开关关闭时禁用上传而非同步 fallback；API/消费者线程池隔离；健康检查区分 HTTP 与处理依赖；测试依赖不泄漏到业务接口；应用层默认 adapter retry 为 0，空值视为未提供，仅旧键执行 `0→0/正整数→1` 映射并诊断，新旧键同时非空以 `SUILEARN_RETRY_CONFIG_CONFLICT` fail-fast，Provider SDK/旧手写 retry 不得形成第二套计数器。
 
 - [ ] 2.3 以失败测试定义并实现 MaterialAsset、DocumentRevision、DocumentBlock、扩展 ProcessingTask、OutboxEvent 和结构化知识点的增量持久化映射。
   - Owner: Server Backend Agent

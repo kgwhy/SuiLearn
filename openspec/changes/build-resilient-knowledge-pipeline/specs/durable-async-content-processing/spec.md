@@ -58,6 +58,25 @@
 - **WHEN** 异步处理功能开关被显式关闭
 - **THEN** 系统禁用新文件上传并说明原因，而不是回退旧同步主路径
 
+### Requirement: Adapter retry 配置兼容迁移
+系统 SHALL 以 `SUILEARN_ADAPTER_MAX_RETRIES` 作为 adapter 即时重试的 canonical key，应用层默认 `0` 且只接受整数 `0..1`。系统 SHALL 将 `SUILEARN_AI_MAX_RETRIES` 保留一个 deprecated 兼容周期；兼容周期内，Compose SHALL 同时对新旧键执行无默认值可选透传，空字符串 SHALL 视为未显式提供，且 `.env.example` SHALL 只记录新键的非敏感目标默认 `0`，不得继续提供旧键或旧默认 `2`。兼容周期结束后，系统 SHALL 通过后续具名 change 删除 Compose 旧键透传和 Backend 旧键读取逻辑。
+
+#### Scenario: 新旧键均未非空提供
+- **WHEN** 新旧 retry 键均缺失、为空或只有 Compose 的空值透传
+- **THEN** Backend 使用应用层默认 `0`，且 Compose 未为新键注入默认值来伪造显式输入
+
+#### Scenario: 仅 canonical 新键非空
+- **WHEN** 仅 `SUILEARN_ADAPTER_MAX_RETRIES` 以非空值显式提供
+- **THEN** Backend 按整数 `0..1` 校验并使用，超出范围或非整数时 fail-fast
+
+#### Scenario: 旧 env 配置在兼容周期继续生效
+- **WHEN** 根 `.env` 或部署环境只以非空值提供 deprecated `SUILEARN_AI_MAX_RETRIES`
+- **THEN** Compose 将旧值透传给 Backend 而不注入新键默认，Backend 将 `0` 映射为 `0`、正整数映射为 `1`，并记录 `SUILEARN_RETRY_CONFIG_LEGACY_MAPPED`
+
+#### Scenario: 新旧键同时非空
+- **WHEN** `SUILEARN_ADAPTER_MAX_RETRIES` 与 `SUILEARN_AI_MAX_RETRIES` 同时以非空值显式提供
+- **THEN** Backend 启动 fail-fast 并记录 `SUILEARN_RETRY_CONFIG_CONFLICT`，无论两个值是否相同都不得静默选择优先级
+
 ### Requirement: 任务可观测与可恢复
 系统 SHALL 记录任务阶段、进度、尝试、关联 ID、错误和时间，并 SHALL 暴露队列、Outbox、死信、OCR/AI、任务耗时与依赖健康指标。
 

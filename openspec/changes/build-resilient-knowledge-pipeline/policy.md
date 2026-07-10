@@ -3,7 +3,7 @@
 ## 变更信息
 
 - Change：`build-resilient-knowledge-pipeline`
-- 状态：Build，用户已于 2026-07-10 明确批准进入 Build
+- 状态：Build，用户已于 2026-07-10 明确批准进入 Build，并批准 Task 1.1 retry 配置兼容语义的 Spec 修订后恢复 Build
 - 等级：Major
 - 默认循环：L3（Implementer → Test → Spec Review → Code Review → Fix）
 - base_ref：`ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
@@ -54,6 +54,7 @@
 - `apps/android/**`（仅任务 6.4 明确的远程契约兼容测试/必要适配）
 - `compose.yml`
 - `.env.example`
+- `.gitignore`（仅限用户已批准创建隔离 worktree 所需的 `.worktrees/` 忽略规则）
 - `scripts/**`（仅 Leader 另行声明的验证脚本）
 
 ## 禁止路径与行为
@@ -76,12 +77,13 @@
 - OCR 默认开启且只处理文本不足页面；默认最大文件 50 MB、PDF 500 页、处理并发 2、OCR 并发 1、最大尝试 3。
 - AI 未配置/失败时资料仍可阅读，但不得生成关键词/占位知识点。
 - 环境变量提供覆盖口；`.env.example` 只含非敏感默认值。
+- Adapter retry 的 canonical key 为 `SUILEARN_ADAPTER_MAX_RETRIES`，应用默认 `0`；兼容周期内 Compose 对新旧 retry 键都只做无默认值可选透传，空值视为未提供，`.env.example` 只记录新键。Backend 对仅旧键执行有界映射并诊断，新旧键同时非空必须 fail-fast，具体语义以 `design.md` 和 durable async spec 为准。
 - `verification.md` 的格式、依赖故障、恢复、重复投递、删除清理和运行态矩阵必须执行或记录真实阻塞。
 - 完成前执行 design 的 Residual Scan，不得以单元测试代替 Compose 运行态证据。
 
 ## Build Approval Gate
 
-已通过。用户在本 change 的 proposal/design/specs/tasks/policy 逐段确认后，于 2026-07-10 明确要求“进入BUILD”，并随后明确允许创建隔离 worktree。Leader 可按 `tasks.md` 顺序和 Major L3 循环派发实现。
+已通过。用户在本 change 的 proposal/design/specs/tasks/policy 逐段确认后，于 2026-07-10 明确要求“进入BUILD”，并随后明确允许创建隔离 worktree。Task 1.1 Review 暴露 retry 配置兼容缺口后，流程按三轮修复门禁暂停并返回 Spec；用户随后明确批准 Compose 可选透传、应用默认、legacy 映射与冲突 fail-fast 修订。相关 design/spec/tasks/policy 同步并验证后，Leader 可恢复按 `tasks.md` 顺序和 Major L3 循环派发实现。
 
 ## 完成门禁
 
