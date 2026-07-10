@@ -4,10 +4,12 @@
 
 本文是 SuiLearn 的技术选型与版本基线真相源，由架构 Agent 维护。
 
+本文默认描述已落盘并可由当前工程验证的技术；标有“已批准 Build 目标”的内容是 active change 的规范性选型，不表示依赖、配置、中间件或运行态已经存在。`build-resilient-knowledge-pipeline` 当前处于 Build，本次任务 1.1 只记录目标基线；任务 1.2 的 OpenAPI、任务 2.x/3.x 的依赖与实现、任务 6.x 的集成和运行态验证尚未完成。
+
 本文回答：
 
-- 当前使用哪些技术栈。
-- 每项技术的最低版本、当前项目版本和升级约束。
+- 当前使用哪些技术栈，以及 active change 已批准但尚未落地的目标技术。
+- 每项当前技术的最低版本、当前项目版本和升级约束，以及目标技术的版本锁定门禁。
 - 哪些依赖、平台或基础设施暂不引入。
 - 技术升级需要谁确认、修改哪些配置、运行哪些验证。
 
@@ -17,7 +19,7 @@
 - 产品范围、验收标准和阶段优先级。这些由 `docs/product-requirements.md` 维护。
 - API 字段细节和跨端 schema。稳定契约由 `contracts/**` 维护。
 
-## 2. 当前技术路线
+## 2. 当前技术路线与已批准 Build 目标
 
 SuiLearn 当前采用三端渐进路线：
 
@@ -29,6 +31,8 @@ SuiLearn 当前采用三端渐进路线：
 | Contracts | 跨端 API 单点真相 | OpenAPI |
 
 当前不做 iOS，不做 Flutter，不做账号系统、云同步、社区和多租户权限。
+
+已批准 Build 目标（尚未实现/验证）：Java Backend 将增加多格式原始资料导入和持久化异步任务，并采用 PostgreSQL Transactional Outbox、RabbitMQ、MinIO、受限解析/OCR adapter、Resilience4j、Actuator/Micrometer。Backend 仍是单个模块化单体，不新增独立 Worker/微服务。
 
 ## 3. 全局工程基线
 
@@ -112,13 +116,78 @@ Backend 约束：
 - Provider 状态接口只能暴露脱敏配置，例如 base URL、模型名、超时、重试和 API key 环境变量名。
 - 资料导入、embedding、生成内容必须有任务状态或可追踪结果，避免不可解释的后台副作用。
 - RAG 回答必须受知识库或资料范围约束；证据不足时表达不确定。
-- Redis、分布式队列、独立向量库、真实 PDF 二进制解析、OCR、Office 解析均为后置能力，不能在未确认时引入。
+- 当前 `pom.xml`、运行配置和 Compose 尚未落盘 RabbitMQ、MinIO、CommonMark、Tika/PDFBox/POI、LibreOffice/Tesseract、Resilience4j 或 Actuator/Micrometer 流水线能力；在对应任务完成并验证前，不得把下述目标选型当作当前运行时依赖。
+
+### 5.1 已批准 Build 目标技术基线（尚未落盘）
+
+状态边界：任务 1.2 尚未稳定 multipart/202 等 OpenAPI；任务 2.1 尚未编排 RabbitMQ/MinIO 与环境示例；任务 2.2 尚未锁定 Maven/镜像依赖和运行配置；任务 2.3-2.5、3.x/4.x 尚未实现持久化、消息、资产、解析/OCR 与生成流水线；任务 6.x 尚未完成集成和运行态验证。
+
+| 项目 | 已批准目标基线 |
+|---|---|
+| 部署形态 | 单个模块化单体 Backend；RabbitMQ listener 与 HTTP API 同应用部署，使用隔离有界线程池，不创建独立 Worker/微服务 |
+| 持久化异步消息 | PostgreSQL Transactional Outbox + RabbitMQ 持久化 exchange/queue、publisher confirm、manual ack、at-least-once、retry queue / DLQ |
+| 文件资产 | MinIO 私有 bucket；保存原件、阅读版、预览和 OCR 页面，PostgreSQL 只保存资产引用和业务事实 |
+| Markdown | CommonMark；生成安全阅读版和结构化 block，不用正则自行解释 Markdown |
+| PDF / 通用探测 | Apache Tika + PDFBox；Tika 做格式探测/通用提取，PDFBox 做页数、按页文本与定位 |
+| DOC / DOCX | Apache Tika + Apache POI 提取结构；LibreOffice headless adapter 生成高保真预览 |
+| OCR | Tesseract adapter；仅处理文本不足页面，独立并发限制与超时 |
+| 韧性 | Resilience4j；外部 adapter 和 AI 使用有界 timeout/retry/circuit breaker，消息退避仍由 RabbitMQ retry queue 管理 |
+| 可观测性 | Spring Boot Actuator + Micrometer；分层健康以及队列、Outbox、DLQ、阶段、OCR、AI 指标 |
+
+目标约束：
+
+- 资料解析、OCR、embedding、知识点和题目生成必须经持久化 ProcessingTask + Outbox + RabbitMQ 执行，不得在 HTTP 请求线程、`@Async` 内存队列或同步 fallback 中运行主流程。
+- RabbitMQ listener 与 HTTP API 属于同一 Backend 应用，只允许通过模块 port/adapter 和隔离有界线程池分离；不得把模块边界误写或实现为独立 Worker/微服务。
+- PostgreSQL 保存业务事实、Outbox、幂等状态、revision/block 和资产元数据；MinIO 保存大文件二进制，bucket 不公开，object key 不使用用户文件名，API 不泄露永久凭据。
+- CommonMark、Tika/PDFBox、POI 是进程内解析依赖；LibreOffice/Tesseract 是受限外部进程 adapter，必须固定参数、禁用宏/脚本/外链、限制资源，并可在超时后终止。
+- Resilience4j 的 adapter 级重试必须有界且受任务最大尝试次数约束，不能与 RabbitMQ retry queue 叠加成无界乘法重试。
+- Actuator/Micrometer 的 liveness、HTTP/read readiness 与 processing dependencies health 必须分层；指标标签不得包含正文、文件名、object key、模型原始响应或其他高基数/敏感值。
+- Redis、独立向量库、独立 Worker/微服务仍不引入；RabbitMQ 只承载消息，不能替代 PostgreSQL 业务事实或 Outbox。
+
+### 5.2 已批准 Build 目标：资料知识流水线选型与回退
+
+| 选型 | 明确收益 | 未采用替代 | 故障与回退语义 |
+|---|---|---|---|
+| PostgreSQL Outbox + RabbitMQ | 业务任务与待投递事件同事务提交；持久化消息、publisher confirm、manual ack 和 at-least-once 支持中断恢复 | 同步请求线程、`@Async`/内存队列会阻塞或丢任务；Redis Streams 增加第二套状态语义；独立 Worker/微服务超出当前规模 | RabbitMQ 不可用时 Outbox 保留，恢复后续投；消费者在 ACK 前崩溃时重投并幂等恢复。绝不回退同步处理 |
+| MinIO | 本地 Compose 与未来部署保持一致对象语义，支持私有访问、校验、临时对象提升和生命周期清理 | PostgreSQL blob 放大数据库与备份；本地挂载目录难以保持一致对象/访问语义；浏览器直传不适合首轮安全边界 | MinIO 不可用时拒绝新上传或明确退避/失败，不改存其他介质、不返回虚假 READY；已保存资产待恢复后继续读取/处理 |
+| CommonMark | 按标准语义解析 Markdown，并可安全生成阅读版/block | 正则或 `File.text()` 不能正确表达 Markdown 结构 | 解析失败使任务明确失败并保留原件，不用纯文本静默冒充成功 |
+| Tika + PDFBox | Tika 统一探测 MIME/容器，PDFBox 提供页数、按页文本和稳定定位，支持先文本后按页 OCR | 仅依赖 Tika 难以控制页面级 OCR；浏览器 `file.text()` 不会解析 PDF；要求用户手工转文本破坏体验 | 损坏、伪造或超限文件永久失败；文本不足页进入 OCR，文本充分页不调用 OCR |
+| Tika + POI + LibreOffice adapter | Tika/POI 提取 DOC/DOCX 结构，LibreOffice 单独提供高保真预览，阅读语义和视觉预览可独立失败 | 只用 LibreOffice 会把结构提取绑到外部进程；自研 Office renderer 成本过高；云转换引入数据外传 | LibreOffice 超时/熔断时明确预览失败并保留原件；不执行宏、脚本、外链或嵌入对象 |
+| Tesseract adapter | 本地可控、无资料外传，适合扫描/混合 PDF 的按页识别 | 全量 OCR 浪费资源且降低文本 PDF 质量；云 OCR 增加隐私、成本和外部依赖 | 默认仅 OCR 文本不足页；最终失败且无足够文本时资料处理失败，但原件可查看、下载和重试，不生成空白 READY |
+| Resilience4j | 标准化外部 adapter/AI 的 timeout、retry、circuit breaker，避免自研状态机 | 手写重试/熔断易造成无界等待和策略不一致 | 只做有界调用级保护；任务级延迟重试和 DLQ 由 RabbitMQ/ProcessingTask 负责，熔断时明确失败或退避 |
+| Actuator + Micrometer | 使用 Spring 原生健康和指标生态，统一分层健康、延迟、失败、重试和积压观测 | 只看日志无法量化队列积压和恢复；自研监控端点增加维护成本 | RabbitMQ 故障只使 processing health 降级，不应误杀 HTTP liveness 或已完成资料读取；指标不得泄露敏感/高基数内容 |
+
+解析库和 Spring 集成依赖版本必须与 Spring Boot 3.5.x/JDK 21 兼容并在 `services/api/pom.xml` 锁定；LibreOffice/Tesseract 镜像或系统包版本必须在 Backend 运行镜像中固定。不得使用浮动 `latest` 作为可复现基线。具体依赖版本由任务 2.2 在构建与测试证据下落盘，不在本文猜测未验证版本号。
+
+### 5.3 目标默认配置与环境变量覆盖
+
+下表定义后续任务必须落盘的目标配置，不表示当前 `application.properties`、`.env.example` 或 Compose 已支持这些键。任务 2.1/2.2 完成绑定后，仍需任务 6.x 提供运行态证据。
+
+| 配置 | 环境变量 | 默认值 / 约束 |
+|---|---|---|
+| 异步资料处理 | `SUILEARN_ASYNC_PROCESSING_ENABLED` | `true`；设为 `false` 时禁用新文件上传，绝不同步 fallback |
+| OCR | `SUILEARN_OCR_ENABLED` | `true`；仅文本不足页面触发 |
+| 最大文件 | `SUILEARN_MAX_FILE_SIZE_MB` | `50`；超限永久拒绝 |
+| PDF 最大页数 | `SUILEARN_PDF_MAX_PAGES` | `500`；超限永久拒绝 |
+| 文档处理并发 | `SUILEARN_PROCESSING_CONCURRENCY` | `2`；隔离有界 consumer executor |
+| OCR 并发 | `SUILEARN_OCR_CONCURRENCY` | `1`；独立于普通文档并发 |
+| 任务最大尝试 | `SUILEARN_PROCESSING_MAX_ATTEMPTS` | `3`，含首次；达到上限进入 DLQ/FAILED |
+| 原件保留 | `SUILEARN_RETAIN_ORIGINAL` | `true`；设为 `false` 时禁用新上传，既有资产仍保留，不能接受上传后丢弃原件 |
+| 知识点自动生成 | `SUILEARN_KNOWLEDGE_POINT_AUTO_GENERATION_ENABLED` | `true`；AI 不可用时任务失败/不可用，不生成 fallback |
+| RabbitMQ 连接 | `SUILEARN_RABBITMQ_HOST`、`SUILEARN_RABBITMQ_PORT`、`SUILEARN_RABBITMQ_USERNAME`、`SUILEARN_RABBITMQ_PASSWORD`、`SUILEARN_RABBITMQ_VHOST` | 环境覆盖；凭据无生产默认值，不写日志/响应 |
+| MinIO 连接 | `SUILEARN_MINIO_ENDPOINT`、`SUILEARN_MINIO_ACCESS_KEY`、`SUILEARN_MINIO_SECRET_KEY`、`SUILEARN_MINIO_BUCKET` | 环境覆盖；bucket 私有，凭据无生产默认值，不暴露给客户端 |
+| 外部调用超时 | `SUILEARN_PARSER_TIMEOUT_MS`、`SUILEARN_OCR_TIMEOUT_MS`、`SUILEARN_LIBREOFFICE_TIMEOUT_MS`、现有 `SUILEARN_AI_TIMEOUT_MS` | 必须为正的有界值；由运行配置显式给出并受 Resilience4j 约束，超时不得返回虚假成功 |
+
+根 `.env.example` 的编排属于独立任务；它只能承载非敏感本地默认值。配置绑定必须 fail-fast 校验非法数值，生产凭据必须由部署环境注入。RabbitMQ/MinIO 凭据缺失、OCR/LibreOffice 不可执行或 AI 未配置时，系统必须暴露真实健康/任务状态，不能静默改走其他实现。
 
 推荐验证：
 
 ```powershell
 mvn -f services/api/pom.xml test -q
+docker compose config
 ```
+
+RabbitMQ、MinIO、LibreOffice 或 Tesseract 接入完成后，还必须在 Compose/Testcontainers 中验证中断恢复、重复投递、DLQ、临时对象清理、外部进程超时终止和 Actuator/Micrometer 分层健康；静态配置检查或单元测试不能替代运行态证据。
 
 ## 6. Web Frontend 基线
 
@@ -168,7 +237,7 @@ Contracts 约束：
 | 平台 | iOS、Flutter | 产品明确需要跨平台移动端 |
 | 账号 | 登录、账号、云同步、多租户权限 | 产品规格进入同步或多人场景 |
 | Android | Hilt、多 Gradle module、SQLite FTS | 手动注入或 Room 查询成为明确瓶颈 |
-| Backend | Redis、分布式 worker、Milvus、Tika、OCR、Office 解析 | 单机 PostgreSQL / 文本解析无法满足已确认需求 |
+| Backend | Redis、独立 Worker/微服务、Milvus 等独立向量库、浏览器直传、云 OCR/Office 转换 | 只有目标 RabbitMQ listener、MinIO 和本地受限 adapter 已实现、验证，且观测证明它们无法满足扩缩容、隔离或质量要求时，才通过新 change 评估 |
 | Web | 完整刷题学习端、复杂状态管理、大型组件库 | Web 工作台之外的学习端进入当前规格 |
 | AI | 多 Provider 路由、成本平台、模型评测系统 | 单 Provider 抽象不足以支撑已确认运营需求 |
 
@@ -188,6 +257,9 @@ Contracts 约束：
 |---|---|
 | AGP / Kotlin / Compose / Room | `.\gradlew.bat :app:testDebugUnitTest --no-daemon` + `.\gradlew.bat :app:assembleDebug --no-daemon` |
 | Java / Spring Boot / JPA | `mvn -f services/api/pom.xml test -q` |
+| RabbitMQ / MinIO / Outbox | `mvn -f services/api/pom.xml test -q` + `docker compose config` + 中断恢复、重复投递、DLQ、对象补偿运行态矩阵 |
+| Tika / PDFBox / POI / LibreOffice / Tesseract | 格式语料测试 + `mvn -f services/api/pom.xml test -q` + 外部进程超时/资源限制运行态验证 |
+| Resilience4j / Actuator / Micrometer | `mvn -f services/api/pom.xml test -q` + 熔断/重试/分层健康和指标验证 |
 | Spring AI starter / model adapter | `mvn -f services/api/pom.xml test -q`，并检查业务模块无 Spring AI 类型 import |
 | React / TypeScript / Vite | `npm --prefix apps/web run build` |
 | OpenAPI 契约 | 契约 diff 审查 + Backend/Web/Android 相关适配测试 |

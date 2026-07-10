@@ -2,9 +2,11 @@
 
 ## 0. 文档职责
 
-本文是 SuiLearn 当前代码结构、模块边界、数据流和契约关系的真相源，由架构 Agent 维护。
+本文是 SuiLearn 当前代码结构、模块边界、数据流和契约关系，以及已批准目标架构基线的真相源，由架构 Agent 维护。
 
-本文只描述当前最新约定，不保留历史版本设计。旧架构、废弃方案和历史取舍通过 Git 历史追溯；未来架构变更先进入 `openspec/changes/<change-name>/**`，批准并实现后再将稳定结论合并回本文。
+本文默认描述已实现的当前事实；标有“已批准 Build 目标”的内容是 active change 的规范性实施目标，不表示代码、契约、依赖、配置或运行态已经落地。旧架构、废弃方案和历史取舍通过 Git 历史追溯；未来架构变更先进入 `openspec/changes/<change-name>/**`，批准并实现、验证后再转为未标注的当前事实。
+
+当前状态：`build-resilient-knowledge-pipeline` 处于 Build。本次任务 1.1 只记录目标技术/架构基线；任务 1.2 的 OpenAPI、任务 2.x/3.x 的依赖/配置/持久化/流水线实现，以及任务 6.x 的集成与运行态验证尚未完成。读者不得把这些目标章节当作现有代码或部署能力。
 
 本文回答：
 
@@ -45,7 +47,8 @@ SuiLearn
 核心原则：
 
 - Android 本地学习闭环必须离线可用，不依赖 Backend 或 Web。
-- Backend 承载 AI、知识库、资料导入、RAG 和跨端持久化。
+- Backend 当前承载 AI、知识库、资料导入、RAG 和跨端持久化。
+- 已批准 Build 目标继续保持一个模块化单体 Backend；计划中的 RabbitMQ listener 与 HTTP API 同应用部署，并使用隔离的有界线程池。目标章节中的模块、port 和 adapter 均不是独立微服务或单独部署的 Worker。
 - Web 当前是知识库工作台，不是完整学习端。
 - Contracts 是跨端 API 单点真相，消费端不得为局部便利私自改变契约语义。
 - 技术版本和依赖升级不写在本文，统一回到 `docs/tech-selection.md`。
@@ -259,7 +262,25 @@ application -> <module>.infrastructure Store / adapter
 infrastructure -> JPA repository / external implementation
 ```
 
-首轮保持 `/api/v2/*` HTTP 契约和 DB schema 不变。
+已批准目标要求 `/api/v2/*` 兼容演进：任务 1.2 尚需先稳定 multipart/202、资产/revision、结构化知识点和题目草稿契约，Backend 才能在后续任务做增量 DB schema 迁移；旧 JSON 文本导入保留一个兼容周期并标记 deprecated，现有资料、知识点和题目不得丢失。
+
+### 3.1.2 已批准 Build 目标：资料知识流水线逻辑边界
+
+以下内容是任务 2.x/3.x/4.x 的目标模块边界，尚不代表当前 package、依赖或运行进程已经存在。实现后这些边界全部位于同一个 `services/api` Backend 中，通过 application/domain port 协作，基础设施实现留在 `infrastructure`；不得据此新建微服务、独立 Worker 项目或第二套部署单元。
+
+| 逻辑边界 | 归属 | 职责与依赖方向 |
+|---|---|---|
+| Material API | `material` application/api | 校验 multipart 元数据并流式保存原件；原件、Material、ProcessingTask 与 Outbox 提交后返回 `202`，不在请求线程解析、OCR、索引或调用 AI |
+| Asset Storage | `material` domain port + infrastructure adapter | 以 MinIO adapter 保存私有 `ORIGINAL`、`READING`、`PREVIEW`、`OCR_PAGE` 资产；使用临时 object key、校验、提升与孤儿/删除清理，业务层不感知 MinIO SDK |
+| Processing Orchestrator | `task` application/infrastructure | 在 PostgreSQL 事务内创建任务与 Outbox；发布 RabbitMQ 持久化消息，驱动阶段状态、幂等、重试、死信和重启恢复 |
+| Document Parser | `material` domain port + infrastructure adapter | CommonMark 处理 Markdown，Tika 负责格式探测/通用提取，PDFBox 负责 PDF 页数、按页文本与定位，POI 负责 DOC/DOCX 结构提取 |
+| Office Preview Adapter | `material` infrastructure | 以受限 LibreOffice headless 外部进程生成高保真预览；参数固定、资源受限、可超时终止，不能执行宏、脚本或外部嵌入对象 |
+| OCR Adapter | `material` infrastructure | 以受限 Tesseract 外部进程仅处理文本不足页面，并把结果合并回对应 page/block；与普通文档处理分开限流 |
+| Normalizer / Indexer | `material` / `retrieval` | 生成稳定顺序、章节和页码映射的 DocumentBlock，再写入检索索引；解析产物不直接耦合检索实现 |
+| Knowledge Point | `knowledgepoint` | 从当前 revision 的证据异步生成结构化 DRAFT；审核、来源定位和 revision 过期语义由本模块管理 |
+| Question Generation | `generation` | 只接受 CONFIRMED 知识点，异步生成带证据的待审核题目草稿；失败不改变资料或知识点状态 |
+
+目标部署中 RabbitMQ listener 将使用与 HTTP executor 完全隔离的有界线程池；文档处理默认并发 2，OCR 默认并发 1。该 listener 和线程池要到任务 2.2/2.4 实现、任务 6.x 验证后才能视为当前运行事实。将 listener 移到独立进程、拆分 Worker 或微服务属于未来架构变更，不是本 change 的目标部署方式。
 
 ### 3.2 Backend Controller 边界
 
@@ -308,6 +329,63 @@ KnowledgeBase
 - 模块 Application Service 通过本模块 `infrastructure` Store / adapter 访问持久化；不得直接注入 `SuiLearnV2Store`。
 - `SuiLearnV2Store` 只作为底层兼容持久化 facade 被模块 Store / adapter 或兼容层使用，后续新增聚合访问优先补充对应模块 Store 方法。
 - Entity/domain mapper 优先归属模块 `infrastructure` 边界；不新增全局大 mapper 包。
+
+### 3.3.1 已批准 Build 目标：持久化模型与异步数据流
+
+本节是任务 2.3-2.5、3.4 和 4.x 的目标模型，不表示当前数据库已经存在这些表/字段，也不表示 RabbitMQ 或 MinIO 已接入。目标持久化关系为：
+
+```text
+KnowledgeBase
+  ├─ LearningMaterial
+  │  ├─ MaterialAsset (ORIGINAL / READING / PREVIEW / OCR_PAGE -> MinIO object reference)
+  │  ├─ DocumentRevision
+  │  │  └─ DocumentBlock
+  │  └─ MaterialChunk / retrieval index
+  ├─ KnowledgePoint
+  ├─ Question
+  ├─ GeneratedContent
+  ├─ AiNote / AiNoteDraft
+  ├─ ProcessingTask / TaskStatus
+  └─ OutboxEvent
+```
+
+目标规则：PostgreSQL 保存 Material、资产元数据、不可变 revision/block、结构化知识点、任务、Outbox 和幂等事实；MinIO 保存原件和衍生二进制，数据库不保存大文件正文二进制。`MaterialAsset` 只保存不可猜测的 object key、资产类型、MIME、大小、校验值和生命周期元数据；bucket 保持私有，API 不泄露永久凭据或内部 object key。每次成功处理创建新的不可变 `DocumentRevision` 与有序 `DocumentBlock`，重新处理不覆盖旧 revision；知识点和题目引用固定到生成时的 revision/page/block/excerpt。
+
+任务 1.2 稳定契约、任务 2.x/3.x 完成实现后，目标数据流为：
+
+```text
+Web multipart upload
+  -> Material API streams ORIGINAL to private MinIO
+  -> one PostgreSQL transaction writes Material + ProcessingTask + OutboxEvent
+  -> API returns 202 materialId/taskId
+  -> Outbox publisher uses publisher confirm to RabbitMQ durable exchange/queue
+  -> same Backend RabbitMQ listener (isolated bounded executor)
+  -> parse / optional page OCR / normalize / index / knowledge point or question generation
+  -> commit derived asset metadata + revision/block/domain result
+  -> manual ACK
+```
+
+队列按 `document.processing`、`knowledge-point.generation`、`question.generation` 隔离，每类使用 30 秒、5 分钟 retry queue 和 dead-letter queue。投递语义为至少一次；消费者以 `taskId + stage + documentRevision/processingVersion` 作为幂等键，并在数据库结果与资产元数据提交后 ACK。任务累计最大尝试次数默认 3；永久错误直接失败，暂时错误有界退避，禁止无限叠加 adapter 重试与消息重试。
+
+PostgreSQL 事务与 MinIO 不能原子提交，因此衍生资产先写临时 key，校验且数据库提交成功后再提升；失败补偿和孤儿扫描负责回收。RabbitMQ 不可用时 Outbox 保留未发送事件，恢复后继续投递；消费者在 ACK 前崩溃时由 RabbitMQ 重投并通过幂等状态恢复。
+
+### 3.3.2 已批准 Build 目标：默认值与环境覆盖
+
+下表是后续实现必须采用的目标默认值，不表示当前 `application.properties`、`.env.example` 或 Compose 已存在这些配置键。任务 2.1/2.2 负责落盘，任务 6.x 负责运行态验证。
+
+| 语义 | 默认值 | 回退/禁用语义 |
+|---|---|---|
+| 异步资料处理 | 开启 | 显式关闭时禁用新文件上传并说明原因；绝不切回同步请求路径 |
+| OCR | 开启 | 仅文本不足页面触发；有足够文本的 PDF 不调用 OCR |
+| 最大文件 | 50 MB | 超限在进入处理流水线前拒绝，不创建虚假 READY |
+| PDF 最大页数 | 500 | 超限视为永久校验失败，不重试 |
+| 文档处理并发 | 2 | 只改变隔离 consumer executor 并发，不占用 HTTP executor |
+| OCR 并发 | 1 | 独立于普通文档处理并发，避免外部进程耗尽资源 |
+| 任务最大尝试 | 3（含首次） | 达到上限进入 DLQ/FAILED；永久错误不重试 |
+| 原始文件保留 | 开启 | 未删除资料必须保留原件；显式关闭时禁用新上传，既有资产仍保留，不能接受上传后丢弃原件 |
+| 知识点自动生成 | 开启 | 关闭只停止自动创建任务，仍允许阅读资料和手动生成 |
+
+环境变量覆盖 RabbitMQ host/port/username/password/vhost，MinIO endpoint/access key/secret key/bucket，以上处理开关与限制，以及 parser/OCR/LibreOffice/AI 超时和重试策略。具体配置键以 `docs/tech-selection.md` 为技术基线，根 `.env.example` 只提供非敏感本地值。启动时必须校验覆盖值；配置缺失、依赖不可用或 adapter 失败均不得产生静默 fallback 或虚假成功。
 
 ### 3.4 AI 与 RAG 边界
 
@@ -413,7 +491,9 @@ Android assets JSON
 
 本闭环不依赖 Backend 或 Web。
 
-### 6.2 知识库工作台
+### 6.2 知识库工作台（当前）与资料知识流水线（Build 目标）
+
+当前数据流：
 
 ```text
 Web App
@@ -425,7 +505,23 @@ Web App
   -> Web UI
 ```
 
-Web 是资料和知识库重流程主入口。
+任务 1.2、2.x/3.x、4.x 完成后，目标数据流为：
+
+```text
+Web App
+  -> api.ts
+  -> Backend Material API (multipart)
+  -> private MinIO ORIGINAL + PostgreSQL Material/Task/Outbox
+  -> 202 + materialId/taskId
+  -> RabbitMQ durable queues
+  -> same Backend isolated listeners
+  -> parser / optional OCR / normalizer / indexer
+  -> DocumentRevision/Block + READING/PREVIEW/OCR_PAGE assets
+  -> structured knowledge point / question draft tasks
+  -> Web polls task and reads versioned results through API
+```
+
+Web 当前是资料和知识库重流程主入口。目标流水线落地后，Web 和 Android 仍不直接访问 RabbitMQ、MinIO、LibreOffice 或 Tesseract；所有外部依赖由 Backend port/adapter 封装。
 
 ### 6.3 Android 远程 AI 入口
 
@@ -476,14 +572,29 @@ Architecture Agent updates contracts
 - Backend 知识库统计以持久化题目、答题记录、错题和笔记计算。
 - 没有记录时正确率应为 null 或省略，不返回看似真实的占位常量。
 
+### 7.5 已批准 Build 目标：故障、回退与安全边界
+
+以下是任务 2.x/3.x/4.x 的实现约束和任务 6.x 的待验证验收语义，不代表这些故障路径当前已经通过运行态验证。
+
+- RabbitMQ 暂时不可用：Outbox 保留且后台处理健康组降级；已完成资料读取和 HTTP liveness 不因消息中间件故障被误判不可用。
+- MinIO 不可用：新上传拒绝或任务明确退避/失败，不创建 READY；不得改存数据库 blob、本地临时目录或丢失原件语义。
+- OCR 最终失败且页面无足够文本：资料处理失败，但已保存原件仍可查看、下载和重试；不得以空白阅读版冒充 READY。
+- LibreOffice 预览失败：保留原件并明确预览失败；不得执行用户文件中的宏、脚本、外链或嵌入对象。
+- AI 未配置、超时或结构输出不完整：资料阅读不受影响，知识点/题目任务明确不可用或失败；不得生成关键词、统一描述或占位知识点。
+- Resilience4j 只对外部 adapter/AI 提供有界超时、重试和熔断；消息级退避由 RabbitMQ retry queue 与 ProcessingTask 状态管理，两层不得形成无界乘法重试。
+- 文件扩展名、MIME、签名、大小、页数、解压后大小和嵌套深度必须同时校验；原文视为不可信证据，不能覆盖模型系统指令。
+- 日志和指标只使用 correlationId、taskId、materialId、stage 等低基数标识，不记录完整正文、原始模型响应、密钥、永久凭据或临时授权地址。
+- Actuator/Micrometer 将 HTTP liveness/readiness 与后台处理依赖健康分层：PostgreSQL、RabbitMQ、MinIO 状态和队列/Outbox/DLQ/阶段/OCR/AI 指标必须可区分，依赖降级不得伪装为全系统健康。
+
 ## 8. 测试与验证边界
 
 | 范围 | 测试位置 | 验证重点 |
 |---|---|---|
 | Android 本地 | `apps/android/src/test/**`、`apps/android/src/androidTest/**` | JSON 解析、Room 导入、Repository、UseCase、远程 client、Smoke UI |
-| Backend | `services/api/src/test/**` | Service 规则、资料切片、任务状态、AI/RAG 边界 |
+| Backend | `services/api/src/test/**` | 当前 Service/任务/AI/RAG 规则；Build 目标还需覆盖格式解析/OCR、资产补偿、Outbox/RabbitMQ 幂等恢复、健康和指标边界 |
 | Web | `npm --prefix apps/web run build` | TypeScript 类型、Vite 构建、API client 调用形态 |
 | Contracts | `contracts/**` diff 审查 | API 兼容性、字段语义、消费端适配范围 |
+| Compose 运行态（Build 目标，任务 6.x 待执行） | 根 `compose.yml` + Testcontainers / 故障验收矩阵 | PostgreSQL/Outbox、RabbitMQ 中断恢复/重复投递/DLQ、MinIO 临时对象/清理、OCR/AI 超时、API/消费者重启、分层健康和指标 |
 
 文档-only 架构调整不需要运行模块测试，但必须执行 diff/stat 检查并说明原因。
 
@@ -507,5 +618,5 @@ Architecture Agent updates contracts
 
 - Android 仍同时使用 `src/main/java` 和 `src/main/kotlin`，短期允许共存；是否统一迁移需单独任务评估。
 - Web 类型当前手写维护，后续若契约变化频繁，可评估从 OpenAPI 生成类型。
-- Backend 当前以单服务承载全部知识库和 AI 能力；当任务处理复杂度上升时，再评估队列或 worker 拆分。
+- 已批准 Build 目标以模块化单体承载 HTTP 与 RabbitMQ listener，并用隔离有界线程池控制任务资源；listener 尚待任务 2.2/2.4 实现和任务 6.x 验证。只有未来出现经验证的独立扩缩容或故障隔离需求时，才通过新架构变更评估拆分 Worker，本 change 不得提前拆分。
 - pgvector 能力仍需按 PostgreSQL 部署环境验证；关键词检索保留为非语义兜底，真实向量能力落地时需要补契约、配置和集成验证。
