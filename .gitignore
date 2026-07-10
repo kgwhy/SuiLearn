@@ -3,6 +3,7 @@
 .idea/
 .codegraph/
 .cursor/
+.worktrees/
 build/
 target/
 .claude/
