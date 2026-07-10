@@ -1,6 +1,6 @@
 ## 1. 架构与契约先行
 
-- [ ] 1.1 更新技术与架构基线，正式记录 RabbitMQ、MinIO、Tika/PDFBox/POI、LibreOffice/Tesseract adapter、Resilience4j、Actuator/Micrometer、模块边界、默认值和回退语义。
+- [x] 1.1 更新技术与架构基线，正式记录 RabbitMQ、MinIO、Tika/PDFBox/POI、LibreOffice/Tesseract adapter、Resilience4j、Actuator/Micrometer、模块边界、默认值和回退语义。
   - Owner: Architect Agent
   - Allowed files: `docs/architecture.md`, `docs/tech-selection.md`, `openspec/changes/build-resilient-knowledge-pipeline/**`
   - Forbidden files: `services/api/**`, `apps/web/**`, `apps/android/**`, `contracts/**`, `docs/proposals/**`, `docs/superpowers/**`

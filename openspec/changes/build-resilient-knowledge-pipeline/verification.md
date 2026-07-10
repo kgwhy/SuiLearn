@@ -116,6 +116,16 @@ docker compose ps
 
 ## Review 闭环
 
+### Task 1.1：技术与架构基线
+
+- 状态：完成（2026-07-10）。
+- 实现引用：`591d51e`、`25fbfbe`、`79dac27`。
+- Implementer：Architect Agent；修改 `docs/architecture.md`、`docs/tech-selection.md` 及经用户批准的同一 active change design/spec/policy/tasks/verification 修订。
+- Test：纯文档任务，模块测试不适用；`openspec validate build-resilient-knowledge-pipeline --strict`、SuiLearn Workflow checker、`git diff --check` 均退出码 0，并独立验证 retry 四态、Compose 可选透传、ProcessingOperation/OCR 页级恢复、CommonMark 安全、metric tag 基数、任务文件边界和残留矩阵。
+- Spec Review：最终 `✅ Spec compliant`；用户批准 retry 配置 Spec 修订后，design/spec/tasks/policy 已同步且 OpenSpec 状态为 ready。
+- Code Review：最终 `Ready to merge: Yes`，P0/P1/P2 均为 0；先前发现的当前事实误写、指标高基数、Markdown 安全、韧性默认/迁移、operation 幂等、tombstone、任务范围和验收矩阵问题均已修复并复审。
+- 文件范围：Task 1.1 只修改 Architect 文档与本 active change 产物；未修改业务代码、契约、Compose 或 `.env.example`。
+
 - Spec Review：未执行（Owner: Reviewer Agent）。
 - Code Review：未执行（Owner: Reviewer Agent）。
 - P0/P1/P2 处置：Task 1.1/Spec 修订 Review 已发现并修复配置、幂等、安全与任务边界问题；后续 Build 继续逐任务据实记录，任何 P2 也必须修复或经用户批准迁移到具名 follow-up change。
