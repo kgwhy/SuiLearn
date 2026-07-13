@@ -1,6 +1,7 @@
 param(
     [string]$BaseRef = "",
-    [string]$ClosingChange = ""
+    [string]$ClosingChange = "",
+    [switch]$SelfTestEfficientBatchPolicy
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,6 +74,41 @@ function Test-ArchivedChangeInCurrentDiffExists {
 function Add-ClosingChangeIssue {
     param([string]$Message)
     $script:changed += "Closing change check failed: $Message"
+}
+
+function Test-EfficientBatchPolicy {
+    param([hashtable]$ContentOverrides = @{})
+
+    $requiredClauses = @(
+        @{ Path = "docs/development-workflow.md"; Pattern = "\u98ce\u9669\u81ea\u9002\u5e94\u6279\u6b21" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "\u5373\u65f6\u5ba1\u67e5\u89e6\u53d1\u6761\u4ef6" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "RED -> GREEN -> REFACTOR" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "Test -> Spec Review -> Code Review" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "\u6700\u7ec8 Verify" },
+        @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "\u7d27\u51d1\u8bc1\u636e" },
+        @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "P0/P1" },
+        @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "P2" },
+        @{ Path = "agents/leader.md"; Pattern = "\u6279\u6b21\u9a8c\u6536\u547d\u4ee4" },
+        @{ Path = "agents/leader.md"; Pattern = "\u6210\u529f\u8fd4\u56de\u7d27\u51d1\u8bc1\u636e" },
+        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "MUST" },
+        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "P0/P1/P2" }
+    )
+
+    foreach ($clause in $requiredClauses) {
+        if ($ContentOverrides.ContainsKey($clause.Path)) {
+            $text = [string]$ContentOverrides[$clause.Path]
+        } elseif (-not (Test-Path $clause.Path)) {
+            $script:changed += "Efficient batch policy file missing: $($clause.Path)"
+            continue
+        } else {
+            $text = Get-Content -Raw -Encoding UTF8 $clause.Path
+        }
+        if ($text -notmatch $clause.Pattern) {
+            $script:changed += "Efficient batch policy clause missing in $($clause.Path): $($clause.Pattern)"
+        }
+    }
+
+    return $requiredClauses.Count
 }
 
 function Test-ClosingChange {
@@ -186,7 +222,26 @@ if ($protectedChanged.Count -gt 0 -and -not (Test-ActiveChangeExists) -and -not 
     }
 }
 
+if ($SelfTestEfficientBatchPolicy) {
+    $beforeSelfTest = $changed.Count
+    $emptyPolicyFiles = @{
+        "docs/development-workflow.md" = ""
+        ".agents/skills/suilearn-workflow/references/subagent-loop.md" = ""
+        "agents/leader.md" = ""
+        "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md" = ""
+    }
+    $expectedMissingClauseCount = Test-EfficientBatchPolicy -ContentOverrides $emptyPolicyFiles
+    $actualMissingClauseCount = $changed.Count - $beforeSelfTest
+    if ($actualMissingClauseCount -ne $expectedMissingClauseCount) {
+        Write-Output "Efficient batch policy negative self-test failed: detected $actualMissingClauseCount of $expectedMissingClauseCount missing clauses."
+        exit 1
+    }
+    Write-Output "Efficient batch policy negative self-test passed."
+    exit 0
+}
+
 Test-ClosingChange $ClosingChange
+$null = Test-EfficientBatchPolicy
 
 if ($changed.Count -gt 0) {
     Write-Output "SuiLearn Workflow policy check failed:"

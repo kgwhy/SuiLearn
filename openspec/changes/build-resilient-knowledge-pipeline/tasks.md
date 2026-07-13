@@ -25,6 +25,13 @@
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 兼容旧 JSON 导入一个周期并标记 deprecated；契约字段足以表达异步任务、版本来源和批量草稿，且无密钥/对象 key 泄露。
 
+- [x] 1.3 固化风险自适应批次工作流，在不降低 TDD、独立审查、问题闭环和最终验证的前提下，减少重复上下文、重复全量测试、重复审查与冗长日志传递。
+  - Owner: Leader Agent
+  - Allowed files: `docs/development-workflow.md`, `agents/leader.md`, `.agents/skills/suilearn-workflow/references/subagent-loop.md`, `scripts/check-suilearn-workflow.ps1`, `openspec/changes/build-resilient-knowledge-pipeline/**`
+  - Forbidden files: `services/**`, `apps/**`, `contracts/**`, `docs/product-requirements.md`, `docs/architecture.md`, `docs/tech-selection.md`, `docs/proposals/**`, `docs/superpowers/**`
+  - Test command: `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -SelfTestEfficientBatchPolicy`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`; `openspec validate build-resilient-knowledge-pipeline --strict`; `git diff --check`
+  - Review focus: 批次按依赖、文件重叠和风险域划分；高风险事件即时审查；任务内局部测试、批次独立审查和最终全量验证不被省略；成功证据紧凑但可追溯，失败证据保留关键原始输出。
+
 ## 2. 中间件、持久化与可靠任务底座
 
 - [ ] 2.1 在用户已确认的中间件范围内编排 RabbitMQ、MinIO、持久卷、健康检查和根环境变量示例，并按兼容周期配置 adapter retry 新旧键的可选透传。

@@ -67,13 +67,16 @@
 - `.env.example`
 - `.gitignore`（仅限用户已批准创建隔离 worktree 所需的 `.worktrees/` 忽略规则）
 - `scripts/**`（仅 Leader 另行声明的验证脚本）
+- `agents/leader.md`（仅 Task 1.3 的调度规则）
+- `.agents/skills/suilearn-workflow/references/subagent-loop.md`（仅 Task 1.3）
+- `docs/development-workflow.md`（仅 Task 1.3）
 
 ## 禁止路径与行为
 
 - `docs/proposals/**`
 - `docs/superpowers/**`
 - 其他 `openspec/changes/**` 或 `openspec/changes/archive/**`
-- `AGENTS.md`、`agents/**`、`.agents/skills/**`、`docs/development-workflow.md`
+- `AGENTS.md`、Task 1.3 未明确授权的其他 `agents/**`、`.agents/skills/**` 和工作流文档
 - 未经扩展声明修改 Android 本地题库、Room、刷题 UI、答题/错题/收藏/统计逻辑
 - 新建独立微服务/Worker 项目、引入 Redis、账号、多租户、云同步或知识库市场
 - 用同步请求线程、`@Async` 内存队列、关键词 fallback 或虚假 READY 绕过已批准设计

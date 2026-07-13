@@ -138,6 +138,16 @@ docker compose ps
 - 文件范围：`contracts/openapi/suilearn-v2.yaml` 及同 active change 的 design/spec/policy/tasks/verification；未修改 Backend、Web 或 Android 实现。
 - 暂停点：按用户要求，Batch A 完成后暂停，不进入 Batch B。
 
+### Workflow batch / Task 1.3：风险自适应批次工作流
+
+- 状态：完成（2026-07-13）。
+- 范围：稳定工作流、Leader 调度规则、轻量 Build reference、工作流检查器，以及同一 active change 的 task/policy/delta spec/verification；未修改 Backend、Web、Android、契约或产品事实。
+- RED：新增检查器断言后，首次运行准确报告缺少“风险自适应批次、即时审查触发条件、紧凑证据、批次验收命令”并退出 1。
+- Test：负向自测、正常 Workflow checker、`openspec validate build-resilient-knowledge-pipeline --strict`、`git diff --check` 最终均退出 0；纯工作流变更，业务模块测试不适用。
+- Test 修复：Strict OpenSpec 首轮因 3 条 Requirement 缺少字面 `MUST/SHALL` 退出 1；按仓库既有模式补 `MUST` 后独立复测 3/3 通过。
+- Spec/Code Review：首轮发现 1 个 P2——检查器只守四个关键词；已扩展为 TDD、独立三段审查、最终 Verify、P0/P1/P2 和 delta spec 核心语义断言，并加入逐条缺失计数的负向自测。复审结论：P0/P1/P2 均为 0，`Ready to merge: Yes`。
+- 暂停点：按用户要求，本工作流批次完成并提交后暂停；不进入 Batch B。
+
 - Spec Review：未执行（Owner: Reviewer Agent）。
 - Code Review：未执行（Owner: Reviewer Agent）。
 - P0/P1/P2 处置：Task 1.1/Spec 修订 Review 已发现并修复配置、幂等、安全与任务边界问题；后续 Build 继续逐任务据实记录，任何 P2 也必须修复或经用户批准迁移到具名 follow-up change。
