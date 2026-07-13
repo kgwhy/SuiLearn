@@ -1,3 +1,14 @@
+## 执行批次
+
+- Batch A：1.2 契约。
+- Batch B：2.1–2.5 可靠底座。
+- Batch C：3.1–3.4 导入/OCR。
+- Batch D：4.1–4.3 知识点/出题。
+- Batch E：5.1–5.3 Web。
+- Batch F：6.1–7.3 集成收口。
+
+每个任务仍执行任务内 TDD/局部测试；独立 Test、Spec Review、Code Review 在批次末统一执行。批次审查通过后再统一勾选该批次任务，Task 1.1 已按原逐任务 L3 完成。
+
 ## 1. 架构与契约先行
 
 - [x] 1.1 更新技术与架构基线，正式记录 RabbitMQ、MinIO、Tika/PDFBox/POI、LibreOffice/Tesseract adapter、Resilience4j、Actuator/Micrometer、模块边界、默认值和回退语义。

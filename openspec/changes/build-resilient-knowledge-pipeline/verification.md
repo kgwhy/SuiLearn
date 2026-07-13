@@ -116,6 +116,8 @@ docker compose ps
 
 ## Review 闭环
 
+- 审查策略：用户于 2026-07-10 明确要求减少时间和 Token 消耗，后续改为 Batch A–F 里程碑批次审查；任务内 TDD/局部测试保留，独立 Test/Spec Review/Code Review 在批次末统一执行。
+
 ### Task 1.1：技术与架构基线
 
 - 状态：完成（2026-07-10）。

@@ -5,10 +5,10 @@
 - Change：`build-resilient-knowledge-pipeline`
 - 状态：Build，用户已于 2026-07-10 明确批准进入 Build，并批准 Task 1.1 retry 配置兼容语义的 Spec 修订后恢复 Build
 - 等级：Major
-- 默认循环：L3（Implementer → Test → Spec Review → Code Review → Fix）
+- 默认循环：L3 批次审查（批次内 Implementer 串行 + 任务内 TDD/局部验证；批次末统一 Test → Spec Review → Code Review → Fix）
 - base_ref：`ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
 - Worktree/锁模式：隔离 worktree `D:\SuiLearn\.worktrees\build-resilient-knowledge-pipeline`，分支 `codex/build-resilient-knowledge-pipeline`；当前无 `.agents/locks`，由 Leader 以单 Implementer 和任务卡路径串行锁定共享契约、配置、持久化与事实文档
-- 业务基线：Build 入口已运行 Backend、Web、Android 与 Compose 基线，真实结果见 `verification.md`；进入每个 Build 任务前后仍按 `tasks.md` 执行该任务测试命令
+- 业务基线：Build 入口已运行 Backend、Web、Android 与 Compose 基线，真实结果见 `verification.md`；每个任务仍按 `tasks.md` 执行局部测试，独立 Test/Spec Review/Code Review 改在所属批次末统一执行
 
 ## 单一 active change home
 
@@ -39,6 +39,17 @@
 5. Web 只在契约与对应 Backend 行为稳定后适配。
 6. Test 与 Reviewer 不与 Implementer 共用完成声明；发现产品/架构/契约歧义立即返回 Spec。
 7. Build 入口已复查 `.agents/locks` 不存在；Leader 使用单 Implementer 串行循环，并在每张任务卡中声明本轮锁定文件，发现范围重叠时不得并行派发。
+
+## Build 批次与审查
+
+- Batch A 契约：Task 1.2。
+- Batch B 可靠底座：Task 2.1–2.5。
+- Batch C 导入/OCR：Task 3.1–3.4。
+- Batch D 知识点/出题：Task 4.1–4.3。
+- Batch E Web：Task 5.1–5.3。
+- Batch F 集成收口：Task 6.1–7.3。
+
+批次内按任务顺序、角色和文件锁串行实现，业务行为仍执行 RED→GREEN→REFACTOR 和任务局部测试。批次内任务先记录“实现完成、待批次审查”，不得由 Implementer 自证最终完成；批次末只执行一轮独立 Test、Spec Review、Code Review。发现 P0/P1/P2 后由对应 Implementer 集中修复并复审，最多三轮。Task 1.1 已按原逐任务 L3 完成，不重复审查。
 
 ## 允许路径
 
@@ -85,7 +96,7 @@
 
 ## Build Approval Gate
 
-已通过。用户在本 change 的 proposal/design/specs/tasks/policy 逐段确认后，于 2026-07-10 明确要求“进入BUILD”，并随后明确允许创建隔离 worktree。Task 1.1 Review 暴露 retry 配置兼容缺口后，流程按三轮修复门禁暂停并返回 Spec；用户随后明确批准 Compose 可选透传、应用默认、legacy 映射与冲突 fail-fast 修订。相关 design/spec/tasks/policy 同步并验证后，Leader 可恢复按 `tasks.md` 顺序和 Major L3 循环派发实现。
+已通过。用户在本 change 的 proposal/design/specs/tasks/policy 逐段确认后，于 2026-07-10 明确要求“进入BUILD”，并随后明确允许创建隔离 worktree。Task 1.1 Review 暴露 retry 配置兼容缺口后，流程按三轮修复门禁暂停并返回 Spec；用户随后明确批准相关修订。为减少时间和 Token 消耗，用户又明确批准改为上述里程碑批次审查；Leader 可按 `tasks.md` 顺序和批次 L3 循环继续实现。
 
 ## 完成门禁
 

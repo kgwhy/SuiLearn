@@ -1,8 +1,13 @@
 openapi: 3.0.3
 info:
   title: SuiLearn V2 API
-  version: 0.1.0
-  description: API contract for Java backend AI/RAG and the React Web knowledge base workbench.
+  version: 0.2.0
+  description: >
+    API contract for the Java backend AI/RAG service and the React Web knowledge base workbench.
+    File ingestion, document reprocessing, knowledge-point generation, and knowledge-point interview
+    question generation use persisted asynchronous tasks. API responses expose only user-safe resource
+    references and API hrefs; internal queues, object-storage keys, credentials, and raw model output are
+    never part of this contract.
 servers:
   - url: http://localhost:8080
 paths:
@@ -135,34 +140,57 @@ paths:
                 items:
                   $ref: "#/components/schemas/LearningMaterial"
     post:
-      summary: Import Markdown, TXT, or PDF material
+      summary: Upload an original material file
       description: >
-        Imports material into the knowledge base. MVP implementations accept normalized text content plus
-        title, fileName, and sourceType. multipart/form-data is reserved as the cross-client upload shape,
-        but the MVP must not claim that raw PDF binary parsing is available; PDF binary parsing is a later
-        document-parser adapter concern. When sourceType is PDF during MVP, content is the already textified
-        PDF content supplied by the client or another upstream extractor.
+        The primary path streams a Markdown, TXT, PDF, DOC, or DOCX original file, persists the original,
+        and submits durable asynchronous processing. It returns after the material, task, and delivery intent
+        are committed; parsing, OCR, indexing, and AI work never run to completion in this request thread.
+        application/json remains for one compatibility cycle only and is deprecated; new clients must use
+        multipart/form-data. The legacy JSON path may retain its historical 200 response while it is supported.
       parameters:
         - $ref: "#/components/parameters/KnowledgeBaseId"
       requestBody:
         required: true
         content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ImportMaterialRequest"
           multipart/form-data:
             schema:
               $ref: "#/components/schemas/UploadMaterialFormData"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportMaterialRequest"
       responses:
+        "202":
+          description: Original saved and durable material-processing task submitted
+          headers:
+            Location:
+              description: API href for the submitted task.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialTaskSubmission"
         "200":
-          description: Imported material
+          description: >
+            Deprecated compatibility response for application/json text import only. It records the historical
+            synchronous response shape and is not the success semantics for the multipart primary path.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/LearningMaterial"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
   /api/v2/materials/{materialId}:
     get:
       summary: Get material detail
+      description: >
+        Returns processing state, current revision metadata, and user-safe asset availability. Large reading
+        content and binaries are fetched through dedicated API endpoints. Internal object-storage identifiers,
+        credentials, and permanent signed URLs are never returned.
       parameters:
         - $ref: "#/components/parameters/MaterialId"
       responses:
@@ -194,12 +222,156 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MaterialDeletionResult"
+  /api/v2/materials/{materialId}/original:
+    get:
+      summary: View the original material through the API
+      description: >
+        Proxies the original binary with inline content disposition. Legacy text-only materials return 404
+        with error code MATERIAL_ORIGINAL_UNAVAILABLE and reason LEGACY_NO_ORIGINAL. No MinIO object key,
+        credential, or permanent signed URL is exposed.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "200":
+          description: Original file binary
+          headers:
+            Content-Disposition:
+              description: Inline disposition with a safely encoded display filename.
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/MaterialOriginalUnavailable"
+  /api/v2/materials/{materialId}/original/download:
+    get:
+      summary: Download the original material through the API
+      description: >
+        Proxies the private original binary as an attachment. Legacy text-only materials have no original
+        and return MATERIAL_ORIGINAL_UNAVAILABLE rather than a fabricated file reference.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "200":
+          description: Original file download
+          headers:
+            Content-Disposition:
+              description: Attachment disposition with a safely encoded display filename.
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/MaterialOriginalUnavailable"
+  /api/v2/materials/{materialId}/reading:
+    get:
+      summary: Get the complete reading representation
+      description: >
+        Returns the complete safe reading representation for the current revision by default, or for a
+        specified immutable revision. The response is separate from list/detail payloads so large documents
+        are not embedded in ordinary material responses.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+        - in: query
+          name: revisionId
+          schema:
+            type: string
+          description: Immutable revision to read. Omit to use the material's current revision.
+      responses:
+        "200":
+          description: Complete reading representation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialReadingDocument"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v2/materials/{materialId}/revisions/current:
+    get:
+      summary: Get the current immutable material revision
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "200":
+          description: Current revision with ordered blocks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentRevision"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v2/materials/{materialId}/revisions/{revisionId}:
+    get:
+      summary: Get a specified immutable material revision
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+        - $ref: "#/components/parameters/RevisionId"
+      responses:
+        "200":
+          description: Specified revision with ordered blocks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentRevision"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v2/materials/{materialId}/reprocess:
+    post:
+      summary: Submit asynchronous material reprocessing
+      description: >
+        Creates a new durable task. Successful processing creates a new immutable revision and never overwrites
+        prior revisions. The request returns before parsing, OCR, normalization, or indexing completes. A
+        LEGACY_TEXT material has no original asset to reprocess and returns 409 with code LEGACY_NO_ORIGINAL;
+        clients may instead generate structured knowledge points from its existing immutable legacy revision.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      responses:
+        "202":
+          description: Reprocessing task submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmission"
+        "409":
+          $ref: "#/components/responses/LegacyMaterialReprocessConflict"
+  /api/v2/materials/{materialId}/knowledge-point-generations:
+    post:
+      summary: Submit asynchronous structured knowledge-point generation
+      description: >
+        Generates a new batch of DRAFT knowledge points from a READY material revision. Existing CONFIRMED
+        knowledge points are never overwritten. The request returns before AI generation completes. A
+        LEGACY_TEXT revision is a valid evidence source for creating a new structured batch even though its
+        legacy knowledge-point records and missing original asset remain ineligible for direct question generation.
+      parameters:
+        - $ref: "#/components/parameters/MaterialId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateKnowledgePointsRequest"
+      responses:
+        "202":
+          description: Knowledge-point generation task submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmission"
+        "409":
+          $ref: "#/components/responses/Conflict"
   /api/v2/materials/{materialId}/extract-knowledge-points:
     post:
-      summary: Extract editable knowledge points from material
+      summary: Extract editable knowledge points from material (deprecated)
+      deprecated: true
       description: >
-        Creates a persisted generation task even when the MVP executes synchronously.
-        The returned task id can be queried through /api/v2/tasks/{taskId}.
+        Deprecated compatibility endpoint for one cycle. It may preserve the historical 200 result shape,
+        but new clients must POST /api/v2/materials/{materialId}/knowledge-point-generations and poll the
+        returned task. This endpoint is not the asynchronous primary path.
       parameters:
         - $ref: "#/components/parameters/MaterialId"
       responses:
@@ -224,8 +396,22 @@ paths:
                 items:
                   $ref: "#/components/schemas/KnowledgePoint"
   /api/v2/knowledge-points/{knowledgePointId}:
+    get:
+      summary: Get structured knowledge-point detail
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      responses:
+        "200":
+          description: Knowledge-point detail with immutable source citations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgePoint"
+        "404":
+          $ref: "#/components/responses/NotFound"
     patch:
-      summary: Edit extracted knowledge point
+      summary: Edit a knowledge-point draft or reviewable structured content
+      description: Status transitions are performed by the explicit confirm or reject review endpoints.
       parameters:
         - $ref: "#/components/parameters/KnowledgePointId"
       requestBody:
@@ -242,18 +428,91 @@ paths:
               schema:
                 $ref: "#/components/schemas/KnowledgePoint"
     delete:
-      summary: Delete extracted knowledge point
+      summary: Archive a knowledge point
+      description: Soft-archives the knowledge point as ARCHIVED so it cannot be used as a formal source.
       parameters:
         - $ref: "#/components/parameters/KnowledgePointId"
       responses:
         "204":
           description: Deleted
+  /api/v2/knowledge-points/{knowledgePointId}/confirm:
+    post:
+      summary: Confirm a reviewed knowledge point
+      description: >
+        Transitions a valid reviewed DRAFT to CONFIRMED. Only CONFIRMED knowledge points may be used for
+        formal search, focused learning, or interview-question generation.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgePointReviewRequest"
+      responses:
+        "200":
+          description: Confirmed knowledge point
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgePoint"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v2/knowledge-points/{knowledgePointId}/reject:
+    post:
+      summary: Reject a reviewed knowledge point
+      description: Rejects a draft while retaining the necessary audit state; it is not a formal source.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgePointReviewRequest"
+      responses:
+        "200":
+          description: Rejected knowledge point
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgePoint"
+        "409":
+          $ref: "#/components/responses/Conflict"
+  /api/v2/knowledge-points/{knowledgePointId}/interview-question-generations:
+    post:
+      summary: Submit asynchronous interview-question generation for a knowledge point
+      x-suilearn-resource-precondition-schema: "#/components/schemas/QuestionGenerationEligibleKnowledgePoint"
+      description: >
+        Accepts only StructuredKnowledgePoint records with legacy=false, status=CONFIRMED,
+        sourceOutdated=false, and at least one currently valid immutable citation. Legacy knowledge points must
+        be regenerated as structured drafts and confirmed first. The default request generates one MEDIUM
+        SHORT_ANSWER question. A successful submission returns before AI work completes; generated items remain
+        PENDING_REVIEW until the existing save or discard review gate is used.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePointId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateKnowledgePointQuestionsRequest"
+      responses:
+        "202":
+          description: Interview-question generation task submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskSubmission"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/KnowledgePointQuestionGenerationConflict"
   /api/v2/ai/generated-questions:
     post:
-      summary: Generate question draft from source
+      summary: Generate one question draft from source (deprecated)
+      deprecated: true
       description: >
-        Creates a persisted generation task. MVP implementations may execute synchronously,
-        but must still write a SUCCEEDED or FAILED task row before returning.
+        Deprecated compatibility endpoint for generic single-draft generation. New knowledge-point interview
+        questions use /api/v2/knowledge-points/{knowledgePointId}/interview-question-generations, which always
+        returns a durable 202 task submission and supports batches.
       requestBody:
         required: true
         content:
@@ -329,6 +588,16 @@ paths:
           name: status
           schema:
             $ref: "#/components/schemas/GeneratedContentStatus"
+        - in: query
+          name: generationTaskId
+          schema:
+            type: string
+          description: Limit results to one asynchronous generation batch.
+        - in: query
+          name: knowledgePointId
+          schema:
+            type: string
+          description: Limit results to drafts generated from one knowledge point.
       responses:
         "200":
           description: Generated contents
@@ -341,6 +610,11 @@ paths:
   /api/v2/ai/generated-contents/{generatedContentId}:
     patch:
       summary: Save, edit, or discard generated content
+      description: >
+        Request schema is selected from the persisted generated-content kind, not from a client-controlled
+        source identifier. Knowledge-point interview-question drafts use the locked review branch and cannot
+        modify knowledgePointId, citations, sourceRefs, generationTaskId, or their plural aliases. Other existing
+        generated-question drafts continue through the deprecated generic compatibility branch.
       parameters:
         - $ref: "#/components/parameters/GeneratedContentId"
       requestBody:
@@ -437,9 +711,9 @@ paths:
     get:
       summary: Get generation, material import, or embedding task status
       description: >
-        Unified task status endpoint. MVP implementations may execute work synchronously,
-        but every material import, embedding, and AI generation flow must persist a task
-        row and expose its final status here.
+        Unified persisted task status endpoint for document processing, embedding, knowledge-point generation,
+        and question generation. Work is performed outside the HTTP request thread and can remain queued,
+        running, or waiting for retry across process restarts.
       parameters:
         - $ref: "#/components/parameters/TaskId"
       responses:
@@ -449,6 +723,44 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskStatus"
+  /api/v2/tasks/{taskId}/knowledge-points:
+    get:
+      summary: List structured knowledge-point drafts produced by a generation task
+      description: >
+        Returns only the new StructuredKnowledgePoint records created by this task. Every item has
+        generationTaskId equal to taskId and status DRAFT; pre-existing or CONFIRMED knowledge points are excluded.
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Structured DRAFT knowledge-point batch for this task
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GeneratedKnowledgePointDraft"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v2/tasks/{taskId}/question-drafts:
+    get:
+      summary: List question drafts produced by a generation task
+      description: >
+        Returns the batch produced so far. Every generated item remains PENDING_REVIEW until explicitly saved
+        or discarded through /api/v2/ai/generated-contents/{generatedContentId}.
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Pending-review question draft batch
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PendingReviewKnowledgePointQuestionDraft"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   parameters:
     KnowledgeBaseId:
@@ -481,7 +793,129 @@ components:
       required: true
       schema:
         type: string
+    RevisionId:
+      in: path
+      name: revisionId
+      required: true
+      schema:
+        type: string
+      description: Immutable document revision identifier.
+  responses:
+    BadRequest:
+      description: Invalid request or field validation failure
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Resource not found or unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Conflict:
+      description: Resource state does not allow the requested transition
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    PayloadTooLarge:
+      description: Uploaded file exceeds the configured size or document limits
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    UnsupportedMediaType:
+      description: File extension, declared MIME, detected signature, or supported format validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    MaterialOriginalUnavailable:
+      description: Original material asset is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/MaterialOriginalUnavailableError"
+    LegacyMaterialReprocessConflict:
+      description: Legacy text-only material has no original asset to reprocess
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LegacyMaterialReprocessError"
+    KnowledgePointQuestionGenerationConflict:
+      description: Knowledge point is not eligible for interview-question generation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/KnowledgePointQuestionGenerationConflictError"
   schemas:
+    NonBlankText:
+      type: string
+      minLength: 1
+      pattern: '^[\s\S]*\S[\s\S]*$'
+      description: >
+        Must contain at least one non-whitespace character after trim validation. The pattern supports multiline
+        content; the server must also trim and reject Unicode-only blank input before persistence.
+    ApiError:
+      type: object
+      required: [code, message]
+      description: >
+        User-safe API error. message and fieldErrors are sanitized and never contain file bodies, object keys,
+        credentials, authorization headers, internal queue names, or raw model/adapter responses.
+      properties:
+        code:
+          $ref: "#/components/schemas/NonBlankText"
+          description: Stable machine-readable error code.
+        message:
+          $ref: "#/components/schemas/NonBlankText"
+          description: Short user-safe corrective message.
+        correlationId:
+          type: string
+          description: Opaque support correlation id; safe to provide to operators.
+        fieldErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+    FieldError:
+      type: object
+      required: [field, code, message]
+      properties:
+        field:
+          type: string
+        code:
+          type: string
+        message:
+          $ref: "#/components/schemas/NonBlankText"
+    MaterialOriginalUnavailableError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          required: [code, reason]
+          properties:
+            code:
+              type: string
+              enum: [MATERIAL_ORIGINAL_UNAVAILABLE]
+            reason:
+              $ref: "#/components/schemas/AssetUnavailableReason"
+    LegacyMaterialReprocessError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+              enum: [LEGACY_NO_ORIGINAL]
+    KnowledgePointQuestionGenerationConflictError:
+      allOf:
+        - $ref: "#/components/schemas/ApiError"
+        - type: object
+          required: [code]
+          properties:
+            code:
+              type: string
+              enum: [KNOWLEDGE_POINT_NOT_CONFIRMED, LEGACY_KNOWLEDGE_POINT_REQUIRES_REGENERATION, KNOWLEDGE_POINT_SOURCE_OUTDATED, KNOWLEDGE_POINT_CITATIONS_INVALID]
     CreateKnowledgeBaseRequest:
       type: object
       required: [name]
@@ -540,7 +974,16 @@ components:
     QuestionSummary:
       type: object
       required: [id, knowledgeBaseId, questionType, stem, categoryId, categoryName, knowledgePointIds, createdAt, sourceRefs]
-      description: Saved formal question summary. Saved AI-generated questions must retain formal category and knowledge point attribution from the reviewed draft.
+      description: >
+        Saved formal question summary. Existing difficulty values remain on the 1..5 scale. A question saved
+        from a knowledge-point interview draft includes difficultyLevel and uses EASY=2, MEDIUM=3, HARD=4;
+        the server performs this mapping and clients never infer it.
+      oneOf:
+        - not:
+            required: [difficultyLevel]
+        - allOf:
+            - required: [difficulty, difficultyLevel]
+            - $ref: "#/components/schemas/FormalQuestionDifficultyMapping"
       properties:
         id:
           type: string
@@ -549,7 +992,7 @@ components:
         questionType:
           $ref: "#/components/schemas/QuestionType"
         stem:
-          type: string
+          $ref: "#/components/schemas/NonBlankText"
         categoryId:
           type: string
         categoryName:
@@ -558,6 +1001,9 @@ components:
           type: integer
           minimum: 1
           maximum: 5
+          description: Formal persisted difficulty. Generated mapping is EASY=2, MEDIUM=3, HARD=4.
+        difficultyLevel:
+          $ref: "#/components/schemas/QuestionDifficulty"
         knowledgePointIds:
           type: array
           items:
@@ -668,10 +1114,11 @@ components:
           format: date-time
     ImportMaterialRequest:
       type: object
+      deprecated: true
       required: [title, sourceType, content]
       description: >
-        JSON import shape for MVP. content is normalized plain text or Markdown content, even when
-        sourceType is PDF. Raw PDF binary parsing is intentionally not promised by this contract version.
+        Deprecated JSON text-import shape retained for one compatibility cycle. content is already-textified
+        material and does not carry an original file asset. New clients must use UploadMaterialFormData.
       properties:
         title:
           type: string
@@ -679,37 +1126,32 @@ components:
           type: string
           description: Original client-side file name when the material came from a file.
         sourceType:
-          $ref: "#/components/schemas/MaterialSourceType"
+          $ref: "#/components/schemas/LegacyMaterialSourceType"
         content:
           type: string
-          description: Textified material content used for chunking, embedding, search, and RAG in the MVP.
+          description: Legacy text body migrated to an immutable LEGACY_TEXT revision.
     UploadMaterialFormData:
       type: object
-      required: [title, sourceType, content]
+      required: [file]
       description: >
-        multipart/form-data shape kept for Web/Android upload compatibility. The MVP server consumes
-        title, sourceType, fileName, and textified content. The optional file part may be sent for future
-        compatibility, but raw PDF binary parsing is not part of the MVP behavior until a parser adapter
-        is wired in.
+        Primary raw-file upload shape. The server validates extension, declared MIME, detected signature,
+        size, and format before durable submission. The original filename is taken from the file part and
+        retained only as display metadata; it is never used as an object-storage key.
       properties:
         title:
           type: string
-        fileName:
-          type: string
-          description: Original file name to display and keep for traceability.
+          description: Optional display title; the safely normalized filename is used when omitted.
         sourceType:
           $ref: "#/components/schemas/MaterialSourceType"
-        content:
-          type: string
-          description: Textified Markdown, TXT, or PDF content consumed by the MVP.
+          description: Optional client hint. Server-side format detection remains authoritative.
         file:
           type: string
           format: binary
-          description: Optional original file part retained for client compatibility; MVP behavior must not depend on parsing PDF binary content.
+          description: Markdown, TXT, PDF, DOC, or DOCX original file, up to the configured upload limit.
     LearningMaterial:
       type: object
-      required: [id, knowledgeBaseId, title, sourceType, status, importTaskId, createdAt]
-      description: Material list item. It intentionally excludes original content; call material detail for content or chunk data.
+      required: [id, knowledgeBaseId, title, sourceType, status, originalAvailable, createdAt]
+      description: Material list item. Original binaries and full reading content are never embedded here.
       properties:
         id:
           type: string
@@ -723,13 +1165,25 @@ components:
           $ref: "#/components/schemas/MaterialStatus"
         importTaskId:
           type: string
-          description: Material import task id. Present even when import completed synchronously.
+          deprecated: true
+          description: Deprecated alias for processingTaskId retained for existing clients.
+        processingTaskId:
+          type: string
+          description: Most recent document-processing task id.
+        currentRevisionId:
+          type: string
+          description: Current immutable revision id after successful processing.
         embeddingTaskId:
           type: string
           description: Embedding task id once chunk embedding has started or completed.
         errorMessage:
           type: string
-          description: Short user-safe failure summary when status is FAILED.
+          description: Sanitized failure summary when status is FAILED; never raw adapter/model output.
+        originalAvailable:
+          type: boolean
+          description: False for legacy text-only materials and unavailable/deleted original assets.
+        originalUnavailableReason:
+          $ref: "#/components/schemas/AssetUnavailableReason"
         createdAt:
           type: string
           format: date-time
@@ -740,22 +1194,187 @@ components:
       allOf:
         - $ref: "#/components/schemas/LearningMaterial"
         - type: object
-          description: Material detail may include the normalized source content used by the MVP and derived chunks.
+          required: [assets]
+          description: >
+            Processing and version metadata. Full reading content and binaries use dedicated endpoints.
+            For a legacy material, assets includes ORIGINAL with UNAVAILABLE/LEGACY_NO_ORIGINAL.
           properties:
             content:
               type: string
-              description: Full normalized text content when the caller is allowed to inspect the material body.
+              deprecated: true
+              description: Deprecated legacy body field. Use /materials/{materialId}/reading.
             contentPreview:
               type: string
               description: Short preview for clients that do not need or cannot fetch full content.
+            processingTask:
+              $ref: "#/components/schemas/TaskStatus"
+            currentRevision:
+              $ref: "#/components/schemas/DocumentRevisionSummary"
+            assets:
+              type: array
+              items:
+                $ref: "#/components/schemas/MaterialAsset"
             chunks:
               type: array
+              deprecated: true
+              description: Deprecated compatibility projection; ordered revision blocks are authoritative.
               items:
                 $ref: "#/components/schemas/MaterialChunk"
             extractedKnowledgePoints:
               type: array
               items:
                 $ref: "#/components/schemas/KnowledgePoint"
+    MaterialAsset:
+      oneOf:
+        - $ref: "#/components/schemas/AvailableMaterialAsset"
+        - $ref: "#/components/schemas/UnavailableMaterialAsset"
+      description: Exactly one available or unavailable user-safe asset representation.
+    MaterialAssetBase:
+      type: object
+      required: [materialId, type, availability]
+      description: >
+        User-safe asset metadata. href and downloadHref are API endpoints or short-lived server-managed
+        access paths; internal bucket names, object keys, credentials, and permanent signed URLs are forbidden.
+      properties:
+        id:
+          type: string
+        materialId:
+          type: string
+          minLength: 1
+        revisionId:
+          type: string
+          minLength: 1
+        type:
+          $ref: "#/components/schemas/MaterialAssetType"
+        availability:
+          $ref: "#/components/schemas/AssetAvailability"
+        unavailableReason:
+          $ref: "#/components/schemas/AssetUnavailableReason"
+        mediaType:
+          type: string
+        sizeBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        href:
+          type: string
+          description: Relative API href for inline viewing when available.
+        downloadHref:
+          type: string
+          description: Relative API href for attachment download when available.
+        createdAt:
+          type: string
+          format: date-time
+    AvailableMaterialAsset:
+      allOf:
+        - $ref: "#/components/schemas/MaterialAssetBase"
+        - type: object
+          required: [id, href]
+          properties:
+            availability:
+              type: string
+              enum: [AVAILABLE]
+          not:
+            required: [unavailableReason]
+    UnavailableMaterialAsset:
+      allOf:
+        - $ref: "#/components/schemas/MaterialAssetBase"
+        - type: object
+          required: [unavailableReason]
+          properties:
+            availability:
+              type: string
+              enum: [PENDING, FAILED, UNAVAILABLE, DELETED]
+    MaterialAssetType:
+      type: string
+      enum: [ORIGINAL, READING, PREVIEW, OCR_PAGE]
+    AssetAvailability:
+      type: string
+      enum: [PENDING, AVAILABLE, FAILED, UNAVAILABLE, DELETED]
+    AssetUnavailableReason:
+      type: string
+      enum: [LEGACY_NO_ORIGINAL, PROCESSING, GENERATION_FAILED, DELETED]
+    DocumentRevisionSummary:
+      type: object
+      required: [id, materialId, origin, processingVersion, createdAt]
+      description: Immutable parsed-document version metadata.
+      properties:
+        id:
+          type: string
+        materialId:
+          type: string
+        origin:
+          $ref: "#/components/schemas/DocumentRevisionOrigin"
+        processingVersion:
+          type: string
+          description: Sanitized parser/normalization pipeline version, not an internal object reference.
+        blockCount:
+          type: integer
+          minimum: 0
+        pageCount:
+          type: integer
+          minimum: 0
+        createdByTaskId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    DocumentRevision:
+      allOf:
+        - $ref: "#/components/schemas/DocumentRevisionSummary"
+        - type: object
+          required: [blocks]
+          description: Immutable revision with blocks ordered by ordinal.
+          properties:
+            blocks:
+              type: array
+              items:
+                $ref: "#/components/schemas/DocumentBlock"
+    DocumentBlock:
+      type: object
+      required: [id, revisionId, ordinal, content]
+      properties:
+        id:
+          type: string
+        revisionId:
+          type: string
+        ordinal:
+          type: integer
+          minimum: 0
+          description: Stable zero-based order within the immutable revision.
+        sectionPath:
+          type: array
+          items:
+            type: string
+        pageNumber:
+          type: integer
+          minimum: 1
+        content:
+          type: string
+    DocumentRevisionOrigin:
+      type: string
+      enum: [FILE_IMPORT, REPROCESS, LEGACY_TEXT_MIGRATION]
+    MaterialReadingDocument:
+      type: object
+      required: [materialId, revisionId, origin, mediaType, content, blocks]
+      description: Complete safe reading representation for exactly one immutable revision.
+      properties:
+        materialId:
+          type: string
+        revisionId:
+          type: string
+        origin:
+          $ref: "#/components/schemas/DocumentRevisionOrigin"
+        mediaType:
+          type: string
+          enum: [text/html, text/plain]
+        content:
+          type: string
+          description: Complete server-sanitized reading body; never an object-storage URL or raw Office/PDF binary.
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentBlock"
     MaterialChunk:
       type: object
       required: [id, knowledgeBaseId, materialId, content, ordinal, embeddingStatus]
@@ -819,17 +1438,39 @@ components:
           type: string
           format: date-time
     KnowledgePoint:
+      oneOf:
+        - $ref: "#/components/schemas/StructuredKnowledgePoint"
+        - $ref: "#/components/schemas/LegacyKnowledgePoint"
+      description: >
+        A knowledge point is exactly one structured or legacy representation. The legacy boolean is constrained
+        by each branch instead of being used as an OpenAPI discriminator. Only status=CONFIRMED is eligible for
+        formal search, focused learning, or interview-question generation.
+    KnowledgePointBase:
       type: object
-      required: [id, knowledgeBaseId, name, description]
+      required: [id, knowledgeBaseId, status, sourceOutdated, legacy]
+      description: >
+        Shared identity, review state, source freshness, and compatibility fields. Structured learning content
+        is defined only by StructuredKnowledgePoint; legacy rows are not silently upgraded from keywords.
       properties:
         id:
           type: string
+          minLength: 1
         knowledgeBaseId:
           type: string
+          minLength: 1
+        status:
+          $ref: "#/components/schemas/KnowledgePointStatus"
+        sourceOutdated:
+          type: boolean
+          description: True when no citation points to the material's current revision.
         name:
           type: string
+          deprecated: true
+          description: Deprecated compatibility name used by legacy knowledge points.
         description:
           type: string
+          deprecated: true
+          description: Deprecated compatibility description; not a substitute for structured fields.
         sourceMaterialId:
           type: string
           deprecated: true
@@ -837,6 +1478,99 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SourceRef"
+    StructuredKnowledgePoint:
+      allOf:
+        - $ref: "#/components/schemas/KnowledgePointBase"
+        - type: object
+          required: [generationTaskId, title, shortSummary, definition, principles, applicationScenarios, pitfalls, citations]
+          description: >
+            Machine-validatable structured learning content. DRAFT and CONFIRMED records both carry complete,
+            non-empty structure and immutable evidence; review status controls formal consumption.
+          properties:
+            legacy:
+              type: boolean
+              enum: [false]
+            generationTaskId:
+              type: string
+              minLength: 1
+              description: Durable task that created this structured knowledge-point batch.
+            title:
+              $ref: "#/components/schemas/NonBlankText"
+            shortSummary:
+              $ref: "#/components/schemas/NonBlankText"
+            definition:
+              $ref: "#/components/schemas/NonBlankText"
+            principles:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/NonBlankText"
+            applicationScenarios:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/NonBlankText"
+            pitfalls:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/NonBlankText"
+            citations:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/SourceCitation"
+    GeneratedKnowledgePointDraft:
+      allOf:
+        - $ref: "#/components/schemas/StructuredKnowledgePoint"
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [DRAFT]
+    QuestionGenerationEligibleKnowledgePoint:
+      allOf:
+        - $ref: "#/components/schemas/StructuredKnowledgePoint"
+        - type: object
+          description: >
+            Persisted resource precondition for interview-question generation. Legacy, unconfirmed, outdated,
+            or citation-invalid knowledge points fail with a stable 409 error code.
+          properties:
+            legacy:
+              type: boolean
+              enum: [false]
+            status:
+              type: string
+              enum: [CONFIRMED]
+            sourceOutdated:
+              type: boolean
+              enum: [false]
+            citations:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/ActiveSourceCitation"
+    LegacyKnowledgePoint:
+      allOf:
+        - $ref: "#/components/schemas/KnowledgePointBase"
+        - type: object
+          required: [name, description]
+          description: >
+            Migrated name/description knowledge point retained for compatibility. It has no fabricated
+            structured fields and must be regenerated and reviewed to become structured learning content.
+          properties:
+            legacy:
+              type: boolean
+              enum: [true]
+          not:
+            anyOf:
+              - required: [title]
+              - required: [shortSummary]
+              - required: [definition]
+              - required: [principles]
+              - required: [applicationScenarios]
+              - required: [pitfalls]
+              - required: [citations]
     KnowledgePointExtractionResult:
       type: object
       required: [taskId, task, knowledgePoints]
@@ -850,15 +1584,90 @@ components:
           items:
             $ref: "#/components/schemas/KnowledgePoint"
     UpdateKnowledgePointRequest:
+      oneOf:
+        - $ref: "#/components/schemas/StructuredKnowledgePointUpdate"
+        - $ref: "#/components/schemas/LegacyKnowledgePointUpdate"
+      description: >
+        Partial edit for exactly one representation. Status transitions remain on confirm/reject endpoints;
+        a request cannot mix structured fields with deprecated legacy name/description fields.
+    StructuredKnowledgePointUpdate:
       type: object
-      required: [name, description]
+      additionalProperties: false
+      anyOf:
+        - required: [title]
+        - required: [shortSummary]
+        - required: [definition]
+        - required: [principles]
+        - required: [applicationScenarios]
+        - required: [pitfalls]
+        - required: [citations]
+      description: >
+        Partial structured edit. Every supplied value is non-empty, and the resulting aggregate must still
+        satisfy StructuredKnowledgePoint before it is returned or confirmed.
+      properties:
+        title:
+          $ref: "#/components/schemas/NonBlankText"
+        shortSummary:
+          $ref: "#/components/schemas/NonBlankText"
+        definition:
+          $ref: "#/components/schemas/NonBlankText"
+        principles:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NonBlankText"
+        applicationScenarios:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NonBlankText"
+        pitfalls:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NonBlankText"
+        citations:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SourceCitation"
+    LegacyKnowledgePointUpdate:
+      type: object
+      deprecated: true
+      additionalProperties: false
+      anyOf:
+        - required: [name]
+        - required: [description]
+      description: Deprecated partial edit retained for legacy name/description clients.
       properties:
         name:
           type: string
+          minLength: 1
+          deprecated: true
         description:
           type: string
+          minLength: 1
+          deprecated: true
+    KnowledgePointReviewRequest:
+      type: object
+      properties:
+        reviewComment:
+          type: string
+          maxLength: 1000
+          description: Optional user review note; not sent to future generation as authoritative source text.
+    GenerateKnowledgePointsRequest:
+      type: object
+      properties:
+        revisionId:
+          type: string
+          description: Immutable source revision. Omit to use the material's current revision at submission time.
+    KnowledgePointStatus:
+      type: string
+      enum: [DRAFT, CONFIRMED, REJECTED, ARCHIVED]
     GenerateQuestionRequest:
       type: object
+      deprecated: true
+      description: Deprecated generic single-question request retained for compatibility.
       required: [knowledgeBaseId, sourceRefs]
       properties:
         knowledgeBaseId:
@@ -889,6 +1698,28 @@ components:
             type: string
         prompt:
           type: string
+    GenerateKnowledgePointQuestionsRequest:
+      type: object
+      additionalProperties: false
+      description: >
+        Bounded generation settings. Omitting the body or all fields is the default one-click action:
+        count=1, difficulty=MEDIUM, questionType=SHORT_ANSWER. The knowledgePointId is taken from the path;
+        clients do not provide prompts, category ids, or source citations. count values above 10 are rejected
+        with HTTP 400 to bound AI cost and the personal-stage review workload.
+      properties:
+        count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+        difficulty:
+          allOf:
+            - $ref: "#/components/schemas/QuestionDifficulty"
+          default: MEDIUM
+        questionType:
+          allOf:
+            - $ref: "#/components/schemas/QuestionType"
+          default: SHORT_ANSWER
     GenerateExplanationRequest:
       type: object
       required: [knowledgeBaseId, knowledgePointId, sourceRefs]
@@ -926,47 +1757,100 @@ components:
         prompt:
           type: string
     ReviewGeneratedContentRequest:
-      type: object
-      required: [status]
+      oneOf:
+        - $ref: "#/components/schemas/ReviewKnowledgePointQuestionDraftRequest"
+        - $ref: "#/components/schemas/ReviewGenericGeneratedQuestionRequest"
       description: >
-        Review action for generated content. When saving a generated question, clients may edit the
-        formal classification fields; the saved question must retain categoryId/categoryName and
-        knowledgePointIds.
+        The server selects the branch from the persisted generated-content kind. A client cannot relabel a
+        knowledge-point interview draft as generic to modify locked attribution or evidence.
+    ReviewKnowledgePointQuestionDraftRequest:
+      type: object
+      additionalProperties: false
+      required: [contentKind, action]
+      description: >
+        Closed review shape for a knowledge-point interview draft. Only approved question content can change.
+        knowledgePointId, knowledgePointIds, sourceRefs, citations, generationTaskId, and other attribution
+        fields are deliberately absent and rejected. Changing difficulty causes the server to apply the fixed
+        EASY=2, MEDIUM=3, HARD=4 persisted mapping.
       properties:
-        status:
-          $ref: "#/components/schemas/GeneratedContentStatus"
-        stem:
+        contentKind:
           type: string
+          enum: [KNOWLEDGE_POINT_INTERVIEW_QUESTION]
+        action:
+          $ref: "#/components/schemas/GeneratedContentReviewAction"
+        stem:
+          $ref: "#/components/schemas/NonBlankText"
         options:
           type: array
+          minItems: 2
           items:
-            type: string
+            $ref: "#/components/schemas/NonBlankText"
         answer:
           type: array
+          minItems: 1
           items:
-            type: string
+            $ref: "#/components/schemas/NonBlankText"
         explanation:
-          type: string
+          $ref: "#/components/schemas/NonBlankText"
+        difficulty:
+          $ref: "#/components/schemas/QuestionDifficulty"
+        questionType:
+          $ref: "#/components/schemas/QuestionType"
         categoryId:
           type: string
         categoryName:
+          $ref: "#/components/schemas/NonBlankText"
+    ReviewGenericGeneratedQuestionRequest:
+      type: object
+      deprecated: true
+      additionalProperties: false
+      required: [status]
+      description: Deprecated compatibility review shape for existing non-knowledge-point generated questions.
+      properties:
+        status:
+          $ref: "#/components/schemas/GeneratedContentReviewStatus"
+        stem:
+          $ref: "#/components/schemas/NonBlankText"
+        options:
+          type: array
+          minItems: 2
+          items:
+            $ref: "#/components/schemas/NonBlankText"
+        answer:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/NonBlankText"
+        explanation:
+          $ref: "#/components/schemas/NonBlankText"
+        difficulty:
+          $ref: "#/components/schemas/QuestionDifficulty"
+        categoryId:
           type: string
+        categoryName:
+          $ref: "#/components/schemas/NonBlankText"
         knowledgePointIds:
           type: array
+          minItems: 1
           items:
             type: string
         sourceRefs:
           type: array
+          minItems: 1
           items:
             $ref: "#/components/schemas/SourceRef"
     GeneratedQuestionDraft:
+      oneOf:
+        - $ref: "#/components/schemas/GenericGeneratedQuestionDraft"
+        - $ref: "#/components/schemas/KnowledgePointQuestionDraft"
+      description: Exactly one generic compatibility draft or knowledge-point interview-question draft.
+    GeneratedQuestionDraftBase:
       type: object
-      required: [id, knowledgeBaseId, generationTaskId, status, sourceRefs, questionType, stem, answer, explanation, categoryId, categoryName, knowledgePointIds]
+      required: [id, knowledgeBaseId, generationTaskId, status, questionType, stem, answer, explanation, categoryId, categoryName]
       description: >
-        Pending or reviewed AI-generated question. Drafts must carry the same formal classification
-        fields that saved questions use, so review and save flows do not lose category or knowledge point
-        attribution. If the source material is later deleted, pending drafts are DELETED by default unless
-        pendingContentPolicy explicitly keeps them with deleted SourceRef metadata.
+        Shared generated-question content and review lifecycle. AI output fields are trim-validated and reject
+        whitespace-only or multiline-blank values before a draft is persisted. If any required generated text
+        is blank after trimming, the generation task fails and no draft is created.
       properties:
         id:
           type: string
@@ -974,42 +1858,31 @@ components:
           type: string
         generationTaskId:
           type: string
-          description: Persisted generation task id. Present even when generation completed synchronously.
+          description: Persisted asynchronous generation task id.
         status:
           $ref: "#/components/schemas/GeneratedContentStatus"
-        sourceRefs:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/SourceRef"
-        sourceType:
-          $ref: "#/components/schemas/SourceType"
-          deprecated: true
-        sourceId:
-          type: string
-          deprecated: true
         questionType:
           $ref: "#/components/schemas/QuestionType"
         stem:
-          type: string
+          $ref: "#/components/schemas/NonBlankText"
         categoryId:
           type: string
         categoryName:
-          type: string
-        knowledgePointIds:
-          type: array
-          items:
-            type: string
+          $ref: "#/components/schemas/NonBlankText"
+        difficulty:
+          $ref: "#/components/schemas/QuestionDifficulty"
         options:
           type: array
+          minItems: 2
           items:
-            type: string
+            $ref: "#/components/schemas/NonBlankText"
         answer:
           type: array
+          minItems: 1
           items:
-            type: string
+            $ref: "#/components/schemas/NonBlankText"
         explanation:
-          type: string
+          $ref: "#/components/schemas/NonBlankText"
         savedQuestionId:
           type: string
           description: Present after the generated question is saved as a formal question.
@@ -1023,6 +1896,66 @@ components:
         updatedAt:
           type: string
           format: date-time
+    GenericGeneratedQuestionDraft:
+      allOf:
+        - $ref: "#/components/schemas/GeneratedQuestionDraftBase"
+        - type: object
+          required: [sourceRefs, knowledgePointIds]
+          properties:
+            sourceRefs:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/SourceRef"
+            sourceType:
+              $ref: "#/components/schemas/SourceType"
+              deprecated: true
+            sourceId:
+              type: string
+              deprecated: true
+            knowledgePointIds:
+              type: array
+              minItems: 1
+              items:
+                type: string
+          not:
+            anyOf:
+              - required: [knowledgePointId]
+              - required: [citations]
+              - required: [difficultyValue]
+    KnowledgePointQuestionDraft:
+      allOf:
+        - $ref: "#/components/schemas/GeneratedQuestionDraftBase"
+        - $ref: "#/components/schemas/QuestionDifficultyMapping"
+        - type: object
+          required: [knowledgePointId, citations]
+          description: >
+            Interview-question draft generated from one eligible structured knowledge point. Attribution and
+            evidence are immutable through review; after SAVE the response keeps the same difficulty mapping and
+            exposes savedQuestionId while the formal question uses knowledgePointIds=[knowledgePointId].
+          properties:
+            knowledgePointId:
+              type: string
+              minLength: 1
+            citations:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/SourceCitation"
+          not:
+            anyOf:
+              - required: [knowledgePointIds]
+              - required: [sourceRefs]
+              - required: [sourceType]
+              - required: [sourceId]
+    PendingReviewKnowledgePointQuestionDraft:
+      allOf:
+        - $ref: "#/components/schemas/KnowledgePointQuestionDraft"
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [PENDING_REVIEW]
     AiNoteDraft:
       type: object
       required: [id, knowledgeBaseId, generationTaskId, type, title, content, sourceRefs, createdAt]
@@ -1033,7 +1966,7 @@ components:
           type: string
         generationTaskId:
           type: string
-          description: Persisted generation task id. Present even when generation completed synchronously.
+          description: Persisted generation task id.
         type:
           $ref: "#/components/schemas/AiNoteType"
         title:
@@ -1094,7 +2027,7 @@ components:
       required: [id, type, title, summary, score]
       description: >
         Search result after explicit knowledgeBaseId/materialId scope filtering. Semantic
-        results use server-side embedding similarity over material chunk embeddings in the MVP; other
+        results use server-side embedding similarity over material chunk embeddings; other
         result types may be matched by linked chunk/source metadata or keyword fallback.
       properties:
         id:
@@ -1187,10 +2120,18 @@ components:
             type: integer
     MaterialSourceType:
       type: string
+      enum: [MARKDOWN, TXT, PDF, DOC, DOCX]
+    LegacyMaterialSourceType:
+      type: string
+      deprecated: true
       enum: [MARKDOWN, TXT, PDF]
+      description: Deprecated text-import source hint. DOC/DOCX require the multipart original-file path.
     MaterialStatus:
       type: string
-      enum: [UPLOADED, PARSING, CHUNKING, INDEXING, READY, FAILED, DELETED]
+      enum: [UPLOADED, PROCESSING, READY, FAILED, DELETED, PARSING, CHUNKING, INDEXING]
+      description: >
+        New asynchronous flows expose UPLOADED, PROCESSING, READY, FAILED, or DELETED. PARSING, CHUNKING,
+        and INDEXING are deprecated compatibility values; detailed execution belongs in TaskStatus.currentStep.
     EmbeddingStatus:
       type: string
       enum: [PENDING, INDEXING, READY, FAILED, INVALIDATED]
@@ -1220,6 +2161,14 @@ components:
         PENDING_REVIEW drafts await user confirmation. SAVED drafts have been converted to formal saved
         content. DISCARDED is an explicit user rejection. DELETED is a soft-deleted generated item,
         including pending drafts removed because their source material was deleted.
+    GeneratedContentReviewStatus:
+      type: string
+      enum: [SAVED, DISCARDED]
+      description: Explicit user review action for a PENDING_REVIEW generated draft.
+    GeneratedContentReviewAction:
+      type: string
+      enum: [SAVE, DISCARD]
+      description: Closed review action for knowledge-point interview-question drafts.
     AiNoteType:
       type: string
       enum: [KNOWLEDGE_POINT_EXPLANATION, REVIEW_SUGGESTION, RAG_ANSWER, MANUAL_NOTE]
@@ -1285,18 +2234,136 @@ components:
           description: True when the referenced source, such as a material or material chunk, has been soft deleted and must no longer be used for new search, RAG, or generation.
         excerpt:
           type: string
+    SourceCitation:
+      type: object
+      required: [materialId, revisionId, excerpt]
+      anyOf:
+        - required: [pageNumber]
+        - required: [blockId]
+      description: >
+        Immutable evidence pointer used by structured knowledge points and generated interview questions.
+        revisionId never follows the material's current revision automatically. At least pageNumber or blockId
+        is required so clients can navigate to a precise reading position.
+      properties:
+        materialId:
+          type: string
+          minLength: 1
+        revisionId:
+          type: string
+          minLength: 1
+        pageNumber:
+          type: integer
+          minimum: 1
+        blockId:
+          type: string
+          minLength: 1
+        excerpt:
+          $ref: "#/components/schemas/NonBlankText"
+        deleted:
+          type: boolean
+          description: True when the source material was later soft-deleted; the citation remains for auditability.
+    ActiveSourceCitation:
+      allOf:
+        - $ref: "#/components/schemas/SourceCitation"
+        - type: object
+          required: [deleted]
+          description: Current immutable evidence eligible for new generation; deleted sources are never eligible.
+          properties:
+            deleted:
+              type: boolean
+              enum: [false]
     QuestionType:
       type: string
       enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, TRUE_FALSE, SHORT_ANSWER]
+    QuestionDifficulty:
+      type: string
+      enum: [EASY, MEDIUM, HARD]
+      description: Generated difficulty level. Persisted formal mapping is EASY=2, MEDIUM=3, HARD=4.
+    QuestionDifficultyMapping:
+      type: object
+      required: [difficulty, difficultyValue]
+      properties:
+        difficulty:
+          $ref: "#/components/schemas/QuestionDifficulty"
+        difficultyValue:
+          type: integer
+          enum: [2, 3, 4]
+          description: Deterministic formal value; clients do not calculate it.
+      oneOf:
+        - properties:
+            difficulty:
+              type: string
+              enum: [EASY]
+            difficultyValue:
+              type: integer
+              enum: [2]
+        - properties:
+            difficulty:
+              type: string
+              enum: [MEDIUM]
+            difficultyValue:
+              type: integer
+              enum: [3]
+        - properties:
+            difficulty:
+              type: string
+              enum: [HARD]
+            difficultyValue:
+              type: integer
+              enum: [4]
+    FormalQuestionDifficultyMapping:
+      type: object
+      required: [difficulty, difficultyLevel]
+      oneOf:
+        - properties:
+            difficulty:
+              type: integer
+              enum: [2]
+            difficultyLevel:
+              type: string
+              enum: [EASY]
+        - properties:
+            difficulty:
+              type: integer
+              enum: [3]
+            difficultyLevel:
+              type: string
+              enum: [MEDIUM]
+        - properties:
+            difficulty:
+              type: integer
+              enum: [4]
+            difficultyLevel:
+              type: string
+              enum: [HARD]
     SearchResultType:
       type: string
       enum: [QUESTION, KNOWLEDGE_POINT, MATERIAL_CHUNK, GENERATED_CONTENT]
     TaskStatus:
+      oneOf:
+        - $ref: "#/components/schemas/QueuedTaskStatus"
+        - $ref: "#/components/schemas/RunningTaskStatus"
+        - $ref: "#/components/schemas/RetryWaitTaskStatus"
+        - $ref: "#/components/schemas/SucceededTaskStatus"
+        - $ref: "#/components/schemas/FailedTaskStatus"
+        - $ref: "#/components/schemas/CancelledTaskStatus"
+      discriminator:
+        propertyName: status
+        mapping:
+          QUEUED: "#/components/schemas/QueuedTaskStatus"
+          RUNNING: "#/components/schemas/RunningTaskStatus"
+          RETRY_WAIT: "#/components/schemas/RetryWaitTaskStatus"
+          SUCCEEDED: "#/components/schemas/SucceededTaskStatus"
+          FAILED: "#/components/schemas/FailedTaskStatus"
+          CANCELLED: "#/components/schemas/CancelledTaskStatus"
+      description: Exactly one lifecycle-specific persisted asynchronous task state.
+    TaskStatusBase:
       type: object
-      required: [id, kind, status, createdAt, updatedAt]
+      required: [id, kind, status, currentStep, progress, attempt, maxAttempts, correlationId, processingVersion, createdAt, updatedAt]
       description: >
-        Persisted status for material import, embedding, and AI generation work. Synchronous
-        MVP execution still creates a task and finishes it before returning from the initiating API.
+        Persisted asynchronous status for document processing, embedding, knowledge-point generation, and
+        question generation. It exposes only user-safe progress, sanitized errors, and API resource references;
+        internal exchange/queue names, object keys, credentials, and raw adapter/model responses are forbidden.
       properties:
         id:
           type: string
@@ -1310,6 +2377,8 @@ components:
           type: string
         generatedContentId:
           type: string
+          deprecated: true
+          description: Deprecated singular result shortcut. Use resultRefs for batches.
         providerType:
           $ref: "#/components/schemas/AiProviderType"
         model:
@@ -1317,20 +2386,52 @@ components:
           description: Chat or embedding model used by this task; never contains secrets.
         progressPercent:
           type: integer
+          deprecated: true
+          description: Deprecated compatibility shortcut for progress.percent.
           minimum: 0
           maximum: 100
         currentStep:
+          $ref: "#/components/schemas/TaskCurrentStep"
+        progress:
+          $ref: "#/components/schemas/TaskProgress"
+        attempt:
+          type: integer
+          minimum: 0
+          description: Current persisted task attempt; 0 while queued before the first claim.
+        maxAttempts:
+          type: integer
+          minimum: 1
+          maximum: 3
+        nextRetryAt:
           type: string
-          description: User-safe step label such as PARSING, CHUNKING, EMBEDDING, GENERATING.
+          format: date-time
+          description: Present only while status is RETRY_WAIT.
+        correlationId:
+          type: string
+          description: Stable opaque correlation id retained across retries and process restarts.
+        processingVersion:
+          type: string
+          description: Sanitized logical processing/generation version used to relate idempotent results.
         errorCode:
-          type: string
+          allOf:
+            - $ref: "#/components/schemas/NonBlankText"
+          description: Stable sanitized error classification; never an internal queue or storage identifier.
         errorMessage:
-          type: string
-          description: User-safe error summary. Do not store or return provider raw secrets.
+          allOf:
+            - $ref: "#/components/schemas/NonBlankText"
+          description: User-safe sanitized error summary; never raw adapter/model output, body text, or secrets.
         retryCount:
           type: integer
+          deprecated: true
+          description: Deprecated compatibility counter. Use attempt and maxAttempts.
         resultRef:
           $ref: "#/components/schemas/TaskResultRef"
+          deprecated: true
+        resultRefs:
+          type: array
+          description: API-addressable material, revision, knowledge-point batch, or question-draft batch results.
+          items:
+            $ref: "#/components/schemas/TaskResultRef"
         createdAt:
           type: string
           format: date-time
@@ -1343,19 +2444,214 @@ components:
         updatedAt:
           type: string
           format: date-time
+    QueuedTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          properties:
+            status:
+              type: string
+              enum: [QUEUED]
+          not:
+            anyOf:
+              - required: [startedAt]
+              - required: [finishedAt]
+              - required: [nextRetryAt]
+              - required: [errorCode]
+              - required: [errorMessage]
+              - required: [resultRef]
+              - required: [resultRefs]
+              - required: [generatedContentId]
+    RunningTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          required: [startedAt]
+          properties:
+            status:
+              type: string
+              enum: [RUNNING]
+          not:
+            anyOf:
+              - required: [finishedAt]
+              - required: [nextRetryAt]
+              - required: [errorCode]
+              - required: [errorMessage]
+              - required: [resultRef]
+              - required: [resultRefs]
+              - required: [generatedContentId]
+    RetryWaitTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          required: [startedAt, nextRetryAt, errorCode, errorMessage]
+          properties:
+            status:
+              type: string
+              enum: [RETRY_WAIT]
+          not:
+            anyOf:
+              - required: [finishedAt]
+              - required: [resultRef]
+              - required: [resultRefs]
+              - required: [generatedContentId]
+    SucceededTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          required: [startedAt, finishedAt, resultRefs]
+          properties:
+            status:
+              type: string
+              enum: [SUCCEEDED]
+            progress:
+              allOf:
+                - $ref: "#/components/schemas/TaskProgress"
+                - type: object
+                  properties:
+                    percent:
+                      type: integer
+                      enum: [100]
+            progressPercent:
+              type: integer
+              enum: [100]
+              deprecated: true
+              description: Deprecated compatibility shortcut fixed to 100 for a succeeded task.
+            resultRefs:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/TaskResultRef"
+          not:
+            anyOf:
+              - required: [nextRetryAt]
+              - required: [errorCode]
+              - required: [errorMessage]
+    FailedTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          required: [startedAt, finishedAt, errorCode, errorMessage]
+          properties:
+            status:
+              type: string
+              enum: [FAILED]
+          not:
+            anyOf:
+              - required: [nextRetryAt]
+              - required: [resultRef]
+              - required: [resultRefs]
+              - required: [generatedContentId]
+    CancelledTaskStatus:
+      allOf:
+        - $ref: "#/components/schemas/TaskStatusBase"
+        - type: object
+          required: [finishedAt]
+          properties:
+            status:
+              type: string
+              enum: [CANCELLED]
+          not:
+            anyOf:
+              - required: [nextRetryAt]
+              - required: [errorCode]
+              - required: [errorMessage]
+              - required: [resultRef]
+              - required: [resultRefs]
+              - required: [generatedContentId]
     TaskResultRef:
       type: object
+      required: [type, href]
+      description: >
+        User-safe result pointer. href is an API resource path; it is never a MinIO object key, queue name,
+        credential-bearing URL, or model response reference.
       properties:
         type:
-          type: string
-          enum: [MATERIAL, MATERIAL_CHUNKS, GENERATED_CONTENT, AI_NOTE_DRAFT, KNOWLEDGE_POINTS]
+          $ref: "#/components/schemas/TaskResultType"
         id:
+          type: string
+        href:
+          type: string
+        materialId:
+          type: string
+        revisionId:
           type: string
         count:
           type: integer
+          minimum: 0
+      oneOf:
+        - title: Knowledge-point generation batch
+          required: [count]
+          properties:
+            type:
+              type: string
+              enum: [KNOWLEDGE_POINT_BATCH]
+            href:
+              type: string
+              pattern: '^/api/v2/tasks/[^/]+/knowledge-points$'
+        - title: Question-draft generation batch
+          required: [count]
+          properties:
+            type:
+              type: string
+              enum: [QUESTION_DRAFT_BATCH]
+            href:
+              type: string
+              pattern: '^/api/v2/tasks/[^/]+/question-drafts$'
+        - title: Compatible non-batch result
+          properties:
+            type:
+              type: string
+              enum: [MATERIAL, DOCUMENT_REVISION, MATERIAL_CHUNKS, GENERATED_CONTENT, AI_NOTE_DRAFT, KNOWLEDGE_POINTS]
+    TaskResultType:
+      type: string
+      enum: [MATERIAL, DOCUMENT_REVISION, MATERIAL_CHUNKS, GENERATED_CONTENT, AI_NOTE_DRAFT, KNOWLEDGE_POINTS, KNOWLEDGE_POINT_BATCH, QUESTION_DRAFT_BATCH]
+    TaskSubmission:
+      type: object
+      required: [taskId, status, taskHref]
+      description: Durable asynchronous task submission returned with HTTP 202.
+      properties:
+        taskId:
+          type: string
+        status:
+          $ref: "#/components/schemas/TaskLifecycleStatus"
+        taskHref:
+          type: string
+          description: Relative API href, normally /api/v2/tasks/{taskId}.
+    MaterialTaskSubmission:
+      allOf:
+        - $ref: "#/components/schemas/TaskSubmission"
+        - type: object
+          required: [materialId, materialHref]
+          properties:
+            materialId:
+              type: string
+            materialHref:
+              type: string
+              description: Relative API href for material processing state and asset availability.
     TaskKind:
       type: string
-      enum: [MATERIAL_IMPORT, EMBEDDING, QUESTION_GENERATION, KNOWLEDGE_POINT_EXTRACTION, EXPLANATION_GENERATION, REVIEW_SUGGESTION_GENERATION]
+      enum: [MATERIAL_IMPORT, MATERIAL_REPROCESS, EMBEDDING, QUESTION_GENERATION, KNOWLEDGE_POINT_GENERATION, KNOWLEDGE_POINT_EXTRACTION, KNOWLEDGE_POINT_QUESTION_GENERATION, EXPLANATION_GENERATION, REVIEW_SUGGESTION_GENERATION]
     TaskLifecycleStatus:
       type: string
-      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED]
+      enum: [QUEUED, RUNNING, RETRY_WAIT, SUCCEEDED, FAILED, CANCELLED]
+    TaskCurrentStep:
+      type: string
+      enum: [QUEUED, VALIDATING, STORING_ORIGINAL, PARSING, OCR, NORMALIZING, CHUNKING, INDEXING, EMBEDDING, GENERATING_KNOWLEDGE_POINTS, GENERATING_QUESTIONS, GENERATING_EXPLANATION, GENERATING_REVIEW_SUGGESTION, FINALIZING, COMPLETED]
+    TaskProgress:
+      type: object
+      required: [percent]
+      properties:
+        percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        completedUnits:
+          type: integer
+          minimum: 0
+        totalUnits:
+          type: integer
+          minimum: 0
+        message:
+          type: string
+          description: Optional localized or user-safe progress message; never source body or raw adapter output.
