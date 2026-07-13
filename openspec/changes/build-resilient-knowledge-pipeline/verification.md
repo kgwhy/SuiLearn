@@ -128,6 +128,16 @@ docker compose ps
 - Code Review：最终 `Ready to merge: Yes`，P0/P1/P2 均为 0；先前发现的当前事实误写、指标高基数、Markdown 安全、韧性默认/迁移、operation 幂等、tombstone、任务范围和验收矩阵问题均已修复并复审。
 - 文件范围：Task 1.1 只修改 Architect 文档与本 active change 产物；未修改业务代码、契约、Compose 或 `.env.example`。
 
+### Batch A / Task 1.2：OpenAPI 契约
+
+- 状态：完成（2026-07-10）；实现引用：`3094ac7`、`253b437`。
+- 契约：multipart 原始资料上传与 202 material/task、原件/阅读版/revision/block、结构化/legacy 知识点、审核门禁、按 task 寻址的知识点/题目批次、最多 10 道面试题、TaskStatus 状态变体及 deprecated legacy JSON 兼容。
+- Test：Maven 74/74 通过；SnakeYAML duplicate-key 安全解析、264 个 `$ref` 闭包、路径/响应与 schema 正反例、敏感字段和同步主路径残留检查通过。
+- Spec Review：`✅ Spec compliant`。
+- Code Review：最终 `Ready to merge: Yes`，P0/P1/P2 均为 0；generic sourceRefs-only 草稿兼容修复已复审。
+- 文件范围：`contracts/openapi/suilearn-v2.yaml` 及同 active change 的 design/spec/policy/tasks/verification；未修改 Backend、Web 或 Android 实现。
+- 暂停点：按用户要求，Batch A 完成后暂停，不进入 Batch B。
+
 - Spec Review：未执行（Owner: Reviewer Agent）。
 - Code Review：未执行（Owner: Reviewer Agent）。
 - P0/P1/P2 处置：Task 1.1/Spec 修订 Review 已发现并修复配置、幂等、安全与任务边界问题；后续 Build 继续逐任务据实记录，任何 P2 也必须修复或经用户批准迁移到具名 follow-up change。

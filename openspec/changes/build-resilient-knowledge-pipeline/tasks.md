@@ -18,7 +18,7 @@
   - Test command: `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
   - Review focus: 技术依赖有明确收益/替代/默认值/覆盖口/回退方式；不把模块边界误写成独立微服务；当前事实与 Build 目标分离；operation 级重试、页级 OCR 幂等、指标基数、Markdown 安全和 retry 配置兼容语义无歧义。
 
-- [ ] 1.2 先更新 OpenAPI，定义 multipart 上传、202 material/task submission、原件/阅读版/revision、结构化知识点审核和知识点面试题批量生成契约。
+- [x] 1.2 先更新 OpenAPI，定义 multipart 上传、202 material/task submission、原件/阅读版/revision、结构化知识点审核和知识点面试题批量生成契约。
   - Owner: Architect Agent
   - Allowed files: `contracts/openapi/suilearn-v2.yaml`, `openspec/changes/build-resilient-knowledge-pipeline/**`
   - Forbidden files: `services/api/**`, `apps/web/**`, `apps/android/**`, `docs/proposals/**`, `docs/superpowers/**`
