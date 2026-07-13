@@ -40,6 +40,7 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 | 准备编辑或完成声明 | `references/policy-gates.md` |
 | 执行已批准的 Build 任务 | `references/subagent-loop.md` |
 | 声明完成或关闭变更 | `references/verification.md` |
+| 按技术能力域归档 change | `references/archive-organization.md` |
 
 确定性检查优先运行 `scripts/check-skill.ps1`，再按项目要求运行 OpenSpec 和工作流检查器。
 
@@ -57,7 +58,7 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 - 已批准任务进入 Build。主 Agent 负责协调；循环等级需要时，由聚焦 Agent
   分别实现、测试、审查和修复。
 - 声明完成前先进入 Verify。证据先于成功声明。
-- 稳定事实已同步或标记为不受影响后，完成的变更进入 Archive。
+- 稳定事实已同步或标记为不受影响后，完成的变更进入 Archive。归档时按需加载 `references/archive-organization.md`，使用项目内命令选择唯一主技术能力域。
 
 ## 不可协商项
 

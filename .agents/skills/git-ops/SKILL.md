@@ -1,149 +1,33 @@
 ---
 name: git-ops
-description: Git operation workflow for inspecting repository state, creating or switching branches, staging intentional changes, writing Conventional Commits messages, committing, pushing, and preparing PR handoff notes. Use when Codex is asked to perform git status/diff/log/branch/stage/commit/push operations, draft commit messages, split changes into commits, or verify git hygiene before handing work back.
+description: 当用户要求查看或操作 Git 状态、差异、分支、暂存、提交、推送、提交信息或交接时使用。
 ---
 
-# Git Ops
+# Git 操作
 
-## Core Rules
+以最小、可审查的 Git 操作完成用户请求。未提交的变更默认属于用户；只暂存本次请求涉及的文件。
 
-- Inspect repository state before every write operation with `git status --short --branch`.
-- Treat uncommitted changes as user-owned unless this session created them or the user explicitly says otherwise.
-- Stage only files that belong to the requested change. Do not stage unrelated edits just because they are present.
-- Prefer non-interactive commands. Avoid interactive rebase, patch staging prompts, or editor-driven commit flows unless the user asks.
-- When committing and publishing work, use the order `commit -> pull --rebase -> push`.
-- Do not run destructive history or working-tree commands (`reset --hard`, `checkout -- <file>`, force push, branch delete, rebase) unless the user clearly requested that operation and the risk is understood.
-- When creating a branch in Codex desktop, use the project branch prefix `codex/` unless the user requested another prefix.
+## 固定规则
 
-## Workflow
+- 每次写操作前运行 `git status --short --branch`，再查看相关的 `git diff` 与 `git diff --cached`。
+- 避免交互式命令；未经用户明确授权，不执行强制推送、删除分支、`reset --hard`、历史改写或恢复工作区文件。
+- 创建 Codex 分支时默认使用 `codex/` 前缀；发布顺序为 `commit -> pull --rebase -> push`。
+- 任何提交都必须在暂存审阅后检查要提交代码是否暴露 key、secret 或 access token：运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/git-ops/scripts/scan-staged-secrets.ps1`。预检命中或无法安全完成时，停止提交，不回显匹配内容，并请用户决定处置方式。
 
-1. Read the current state:
+## 按需加载
 
-```powershell
-git status --short --branch
-```
+| 场景 | 读取内容 |
+| --- | --- |
+| 只读状态、差异、日志、分支查询 | 本文件即可 |
+| 暂存、提交、检查待提交内容 | [提交前预检](references/commit-preflight.md) 与 [提交信息](references/commit-messages.md) |
+| 需要选择提交类型或破坏性变更标记 | [Conventional Commits](references/conventional-commits.md) |
+| 创建/切换分支、拉取、推送或处理冲突 | [分支与发布](references/branches-and-publishing.md) |
 
-2. Inspect changes before staging:
+## 提交顺序
 
-```powershell
-git diff -- <path>
-git diff --cached -- <path>
-```
+1. 检查状态与相关 diff，确认提交边界。
+2. 有意暂存指定文件。
+3. 运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/git-ops/scripts/scan-staged-secrets.ps1`，检查暂存代码是否暴露 key、secret 或 access token；只有退出码为 `0` 才准备提交信息并运行 `git commit`。
+4. 仅在用户要求发布时，执行 `git pull --rebase` 后再推送。
 
-3. Decide commit boundaries:
-
-- Keep unrelated work in separate commits.
-- If the user asks for one commit and the changed files are coherent, make one commit.
-- If files cross clear responsibilities, propose or create multiple commits only when the user asked for commit splitting.
-
-4. Validate before committing when practical:
-
-- Run the smallest relevant test, build, formatter, or static check for the changed area.
-- If validation is unavailable or too expensive, state that in the handoff.
-
-5. Stage intentionally:
-
-```powershell
-git add -- <path1> <path2>
-```
-
-6. Commit with Conventional Commits:
-
-```powershell
-git commit -m "type(scope): 中文提交说明" `
-  -m "变更摘要：
-- 说明主要改动 1
-- 说明主要改动 2
-
-验证：
-- 说明已运行的验证命令或未运行原因
-
-风险与备注：
-- 说明兼容性、迁移、遗留风险或“无”"
-```
-
-7. Pull after committing and before pushing:
-
-```powershell
-git pull --rebase
-```
-
-If pull reports conflicts, stop, inspect the conflict files, resolve only conflicts related to the committed work, rerun the relevant validation, and continue only after the rebase completes cleanly.
-
-8. Push only when requested:
-
-```powershell
-git push -u origin <branch>
-```
-
-## Commit Message Standard
-
-Use Conventional Commits 1.0.0 with Chinese commit message text. See `references/conventional-commits.md` for details and examples.
-
-Format:
-
-```text
-<type>[optional scope][optional !]: <description>
-
-<required body>
-
-[optional footer(s)]
-```
-
-Default rule: do **not** create title-only commits. Every commit created by this skill should include a body unless the user explicitly asks for a title-only commit.
-
-The commit body must be concise but useful, and should include these sections in Chinese:
-
-```text
-变更摘要：
-- <说明用户可见或架构相关的主要改动>
-- <说明第二个关键改动；没有则省略>
-
-验证：
-- <已运行的测试、构建、检查命令及结果；或说明未运行原因>
-
-风险与备注：
-- <兼容性、迁移、未验证范围、遗留风险；没有则写“无”>
-```
-
-For very small commits, keep the same section headers but use one bullet per section. Do not pad with vague text.
-
-Choose the type by intent:
-
-- `feat`: introduces a user-visible or API feature.
-- `fix`: patches a bug.
-- `docs`: documentation-only change.
-- `style`: formatting-only change with no behavior impact.
-- `refactor`: code change that is neither a feature nor a bug fix.
-- `perf`: performance improvement.
-- `test`: adds or corrects tests.
-- `build`: build system or dependency change.
-- `ci`: CI configuration or pipeline change.
-- `chore`: maintenance that does not fit the above.
-- `revert`: reverts a previous commit.
-
-Use a scope when it clarifies the affected area, such as `android`, `server`, `docs`, `gradle`, `ui`, `auth`, or a package/module name.
-
-Write the commit description, body, and explanatory footer values in Chinese. Keep the Conventional Commits type, scope, `!`, and footer tokens such as `BREAKING CHANGE` in English for tooling compatibility.
-
-Mark breaking changes in either of these ways:
-
-```text
-feat(api)!: 调整课程进度响应结构
-```
-
-```text
-BREAKING CHANGE: 课程进度现在返回检查点对象，而不是 ID 列表。
-```
-
-## Handoff
-
-After git operations, report:
-
-- branch name when created or switched;
-- files staged or committed;
-- commit hash and message when a commit succeeds;
-- pull result before push, including any conflict resolution;
-- push destination when a push succeeds;
-- validation command and result;
-- any unrelated dirty files left untouched.
+交接时报告分支、已暂存或提交的文件、提交哈希、拉取/推送结果、已运行的检查以及保持未动的无关脏文件。
