@@ -1,6 +1,7 @@
 package com.suilearn.api.material.application;
 
 import com.suilearn.api.dto.ImportMaterialRequest;
+import com.suilearn.api.config.AsyncProcessingAdmissionGuard;
 import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.EmbeddingStatus;
@@ -32,6 +33,7 @@ public class MaterialImportService {
     private final MaterialStore materials;
     private final TaskExecutor taskExecutor;
     private final TaskService taskService;
+    private final AsyncProcessingAdmissionGuard asyncAdmission;
 
     public MaterialImportService(
         KnowledgeBaseStore knowledgeBases,
@@ -42,7 +44,8 @@ public class MaterialImportService {
         EmbeddingProvider embeddingProvider,
         Clock clock,
         TaskService taskService,
-        TaskExecutor taskExecutor
+        TaskExecutor taskExecutor,
+        AsyncProcessingAdmissionGuard asyncAdmission
     ) {
         this.clock = clock;
         this.embeddingProvider = embeddingProvider;
@@ -53,9 +56,11 @@ public class MaterialImportService {
         this.materials = materials;
         this.taskExecutor = taskExecutor;
         this.taskService = taskService;
+        this.asyncAdmission = asyncAdmission;
     }
 
     public LearningMaterial importMaterial(String knowledgeBaseId, ImportMaterialRequest request) {
+        asyncAdmission.requireNewImportAdmission();
         requireKnowledgeBase(knowledgeBaseId);
         var importTask = taskService.createTask(
             TaskKind.MATERIAL_IMPORT,

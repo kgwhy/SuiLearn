@@ -1,12 +1,15 @@
 package com.suilearn.api.config;
 
 import java.time.Clock;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 
 @Configuration
 public class AppConfig {
+    private static final Logger logger = LoggerFactory.getLogger(AppConfig.class);
     @Bean
     Clock clock() {
         return Clock.systemUTC();
@@ -14,6 +17,14 @@ public class AppConfig {
 
     @Bean
     SuiLearnAiProperties suiLearnAiProperties(Environment environment) {
+        var retryConfiguration = AdapterRetryConfigurationResolver.resolve(
+            environment.getProperty("suilearn.adapter.max-retries"),
+            environment.getProperty("suilearn.ai.max-retries")
+        );
+        if (retryConfiguration.diagnosticCode() != null) {
+            logger.warn("{}: mapped deprecated SUILEARN_AI_MAX_RETRIES to SUILEARN_ADAPTER_MAX_RETRIES",
+                retryConfiguration.diagnosticCode());
+        }
         return new SuiLearnAiProperties(
             environment.getProperty("suilearn.ai.provider", "openai-compatible"),
             environment.getProperty("suilearn.ai.base-url", ""),
@@ -25,7 +36,17 @@ public class AppConfig {
             environment.getProperty("suilearn.ai.chat-model", ""),
             environment.getProperty("suilearn.ai.embedding-model", ""),
             environment.getProperty("suilearn.ai.timeout-ms", Integer.class, 30000),
-            environment.getProperty("suilearn.ai.max-retries", Integer.class, 2)
+            retryConfiguration.maxRetries()
         );
+    }
+
+    @Bean
+    SuiLearnProcessingProperties suiLearnProcessingProperties(Environment environment) {
+        return SuiLearnProcessingProperties.from(environment);
+    }
+
+    @Bean
+    AsyncProcessingAdmissionGuard asyncProcessingAdmissionGuard(SuiLearnProcessingProperties properties) {
+        return new AsyncProcessingAdmissionGuard(properties.asyncProcessingEnabled());
     }
 }

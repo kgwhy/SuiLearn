@@ -32,6 +32,49 @@ git diff ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0 --stat
 
 Owner: 各模块 Test Agent；最终复核 Leader/Reviewer。
 
+## Task 2.1 配置验收矩阵
+
+### Batch B 已验证证据（2026-07-14）
+
+- `docker compose config` 与 retry 缺失、空值、legacy-only、canonical-only、双非空矩阵均退出码 0；Compose 保持新旧键无默认透传。
+- `mvn -f services/api/pom.xml test -q` 退出码 0，129 tests、0 failures、0 errors。
+- 独立 Test、Spec Review、Code Review 均完成；最终 P0/P1/P2 为 0。
+- 已验证 Outbox confirm 后 ACK、bounded retry/DLQ、DLQ 受控重放 confirm、两级幂等、恢复、私有 MinIO 流式存储与 promotion 恢复、异步关闭时导入前 503 准入、adapter retry 运行态 0/1 次数语义和脱敏错误持久化。
+- 未执行 `docker compose up` 与故障注入；端到端导入/OCR、Broker/MinIO 故障矩阵仍由 Batch C/Task 6.3 按本文件运行态计划完成，不得将静态配置或单元测试表述为运行态通过。
+
+本节只定义配置与后续运行态验收计划；尚未执行 `docker compose up` 或故障注入，不得据此宣称中间件可运行。
+
+| 场景 | `docker compose config` 的期望 | 状态/证据 Owner |
+| --- | --- | --- |
+| 默认本地编排 | `postgres`、`rabbitmq`、`minio`、`api`、`web` 均存在；三个持久卷与各服务健康检查存在；API 依赖三个健康服务 | 待执行 — Leader Agent |
+| RabbitMQ/MinIO 覆盖 | RabbitMQ host/port/user/password/vhost、MinIO endpoint/access/secret/bucket 及宿主机端口均可由环境覆盖 | 待执行 — Leader Agent |
+| retry 键缺失 | 两个 retry 键均不得被 Compose 注入非空默认；Backend 后续采用应用层默认 `0` | 待执行 — Leader Agent + Server Backend Agent |
+| retry 键为空 | Compose 仅传递空值，Backend 后续按未提供处理；不得转换为 Compose 默认 | 待执行 — Leader Agent + Server Backend Agent |
+| 仅旧 retry 键 | Compose 只透传 `SUILEARN_AI_MAX_RETRIES`，不补 canonical 键；Backend 2.2 负责兼容映射和诊断 | 待执行 — Leader Agent + Server Backend Agent |
+| 仅 canonical retry 键 | Compose 只透传 `SUILEARN_ADAPTER_MAX_RETRIES`；Backend 2.2 负责 `0..1` 校验 | 待执行 — Leader Agent + Server Backend Agent |
+| 两个 retry 键同时非空 | Compose 原样透传两键；Backend 2.2 必须以 `SUILEARN_RETRY_CONFIG_CONFLICT` fail-fast | 待执行 — Leader Agent + Server Backend Agent |
+
+### 默认值语义与覆盖口
+
+- `.env.example` 仅保存非生产、非敏感的本地编排默认值；部署凭据必须由部署环境覆盖，且不得写入日志、响应或本变更记录。
+- RabbitMQ/MinIO 的 API 连接变量、处理开关、并发、文件/页数限制、任务和 adapter 超时/retry、熔断参数均以同名 `SUILEARN_*` 环境变量覆盖；Compose 将其逐项映射给 API。
+- `SUILEARN_ADAPTER_MAX_RETRIES=0` 是根环境示例的唯一 retry 默认。deprecated `SUILEARN_AI_MAX_RETRIES` 不得出现在 `.env.example`。
+- Compose 对两个 retry 键分别使用无默认值透传 `${SUILEARN_ADAPTER_MAX_RETRIES-}` 与 `${SUILEARN_AI_MAX_RETRIES-}`。缺失或空值均不代表显式 retry 输入；应用层绑定、legacy 映射和双键冲突处理由 Task 2.2 验证。
+
+### Task 2.1 残留扫描
+
+- `compose.yml`、`.env.example`、启动脚本和 CI 中不存在 `SUILEARN_AI_MAX_RETRIES=2` 或其他旧 retry 默认。
+- Compose 中不存在 `${SUILEARN_ADAPTER_MAX_RETRIES:-0}`、legacy retry 的非空默认，或 Redis/独立 Worker 服务。
+- RabbitMQ、MinIO 与 PostgreSQL 均有持久卷、健康检查；API `depends_on` 以健康条件连接这些依赖。
+- `.env.example` 不含真实生产凭据、API key 或 MinIO/RabbitMQ 的生产 secret。
+
+### Task 2.1 运行态验证计划
+
+1. 运行 `docker compose up -d --build` 和 `docker compose ps`，确认 PostgreSQL、RabbitMQ、MinIO 与 API 的健康状态；记录实际镜像拉取或启动阻塞。
+2. 暂停并恢复 RabbitMQ，验证 API 重启后未发送 Outbox 可恢复；Task 2.4/6.3 实现后记录真实消息、ACK、DLQ 证据。
+3. 使 MinIO 不可用，验证新上传明确失败且不返回虚假 READY；Task 2.5/6.3 实现后记录对象清理与恢复证据。
+4. 在缺失、空值、legacy-only、canonical-only、both-nonempty 五种 retry 输入下运行 Compose 配置矩阵；Task 2.2 实现后补充启动/diagnostic 的真实结果。
+
 ## 格式验收矩阵
 
 | 场景 | 期望 | 状态/证据 Owner |

@@ -34,35 +34,35 @@
 
 ## 2. 中间件、持久化与可靠任务底座
 
-- [ ] 2.1 在用户已确认的中间件范围内编排 RabbitMQ、MinIO、持久卷、健康检查和根环境变量示例，并按兼容周期配置 adapter retry 新旧键的可选透传。
+- [x] 2.1 在用户已确认的中间件范围内编排 RabbitMQ、MinIO、持久卷、健康检查和根环境变量示例，并按兼容周期配置 adapter retry 新旧键的可选透传。
   - Owner: Leader Agent
   - Allowed files: `compose.yml`, `.env.example`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: `services/**`, `apps/**`, `contracts/**`, `docs/**`, 其他 `openspec/changes/**`
   - Test command: `docker compose config`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
   - Review focus: 本地默认值非敏感；服务名、持久卷、依赖和健康条件稳定；根共享配置不混入业务实现；不新增 Redis 或独立 Worker 服务；`.env.example` 只记录 `SUILEARN_ADAPTER_MAX_RETRIES=0`，Compose 对新旧 retry 键都使用无默认值可选透传且空值视为未提供，缺失/空值/仅旧键/新旧并存矩阵可由 `docker compose config` 验证。
 
-- [ ] 2.2 以测试先行方式加入 RabbitMQ、MinIO、解析/OCR、Resilience4j、Actuator/Micrometer 和 Testcontainers 依赖及 Backend 运行配置。
+- [x] 2.2 以测试先行方式加入 RabbitMQ、MinIO、解析/OCR、Resilience4j、Actuator/Micrometer 和 Testcontainers 依赖及 Backend 运行配置。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/pom.xml`, `services/api/src/main/resources/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/ai/OpenAiCompatibleAiProvider.java`, `services/api/src/main/java/com/suilearn/api/retrieval/OpenAiCompatibleEmbeddingProvider.java`, `services/api/src/test/**`, `services/api/Dockerfile`, `services/api/config/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 异步开关关闭时禁用上传而非同步 fallback；API/消费者线程池隔离；健康检查区分 HTTP 与处理依赖；测试依赖不泄漏到业务接口；应用层默认 adapter retry 为 0，空值视为未提供，仅旧键执行 `0→0/正整数→1` 映射并诊断，新旧键同时非空以 `SUILEARN_RETRY_CONFIG_CONFLICT` fail-fast，Provider SDK/旧手写 retry 不得形成第二套计数器。
 
-- [ ] 2.3 以失败测试定义并实现 MaterialAsset、DocumentRevision、DocumentBlock、扩展 ProcessingTask、ProcessingOperation、OutboxEvent 和结构化知识点的增量持久化映射。
+- [x] 2.3 以失败测试定义并实现 MaterialAsset、DocumentRevision、DocumentBlock、扩展 ProcessingTask、ProcessingOperation、OutboxEvent 和结构化知识点的增量持久化映射。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/main/java/com/suilearn/api/**/infrastructure/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: schema 只增量演进；revision 不可变；ProcessingOperation 持久化 operationKey、task/stage、状态、attempt、result reference、adapterVersion、时间和脱敏错误；唯一约束保护消息级与 operation 级幂等；现有资料/知识点/题目不丢失。
 
-- [ ] 2.4 以失败测试定义并实现 Transactional Outbox、RabbitMQ publisher confirm/manual ack、队列隔离、有界 retry/DLQ、消息与 adapter operation 两级幂等 claim 和重启恢复。
+- [x] 2.4 以失败测试定义并实现 Transactional Outbox、RabbitMQ publisher confirm/manual ack、队列隔离、有界 retry/DLQ、消息与 adapter operation 两级幂等 claim 和重启恢复。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/task/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 业务提交与事件投递无丢失窗口；ACK 在结果提交后；重复消息不重复写；operation 只调度未完成或可重试失败项并复用成功 result reference；永久错误不重试；死信可追踪/可人工重试。
 
-- [ ] 2.5 以失败测试定义并实现 MinIO AssetStorage port、流式上传、私有读取、校验、临时对象提升、孤儿清理和删除清理任务。
+- [x] 2.5 以失败测试定义并实现 MinIO AssetStorage port、流式上传、私有读取、校验、临时对象提升、孤儿清理和删除清理任务。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）

@@ -1,6 +1,7 @@
 package com.suilearn.api.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.config.SuiLearnAiProperties;
@@ -14,6 +15,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,6 +25,10 @@ class OpenAiCompatibleAiProviderTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AtomicReference<String> lastChatRequest = new AtomicReference<>("");
     private final AtomicReference<String> lastEmbeddingRequest = new AtomicReference<>("");
+    private final AtomicInteger chatRequestCount = new AtomicInteger();
+    private final AtomicInteger embeddingRequestCount = new AtomicInteger();
+    private final AtomicInteger chatTransientFailuresRemaining = new AtomicInteger();
+    private final AtomicInteger embeddingTransientFailuresRemaining = new AtomicInteger();
     private HttpServer server;
     private SuiLearnAiProperties properties;
 
@@ -185,6 +191,56 @@ class OpenAiCompatibleAiProviderTest {
             .contains("\\\"citationNumber\\\":1");
     }
 
+    @Test
+    void retriesEachAdapterHttpInvocationAtMostOnceWhenAdapterRetriesAreOne() {
+        chatTransientFailuresRemaining.set(1);
+        embeddingTransientFailuresRemaining.set(1);
+        var retryingProperties = propertiesWithRetries(1);
+        var aiProvider = new OpenAiCompatibleAiProvider(retryingProperties, objectMapper);
+        var embeddingProvider = new OpenAiCompatibleEmbeddingProvider(retryingProperties, objectMapper);
+
+        var note = aiProvider.generateReviewSuggestion(new AiProvider.ReviewSuggestionPrompt(
+            "kb_1", List.of(sourceRef()), List.of("kp_1"), List.of("q_1"), null));
+        var embedding = embeddingProvider.embed("HashMap source");
+
+        assertThat(note.title()).isEqualTo("Review HashMap");
+        assertThat(embedding.values()).containsExactly(0.1, 0.2, 0.3);
+        assertThat(chatRequestCount.get()).isEqualTo(2);
+        assertThat(embeddingRequestCount.get()).isEqualTo(2);
+    }
+
+    @Test
+    void makesOneAdapterHttpInvocationWhenAdapterRetriesAreZero() {
+        chatTransientFailuresRemaining.set(1);
+        embeddingTransientFailuresRemaining.set(1);
+        var noRetryProperties = propertiesWithRetries(0);
+        var aiProvider = new OpenAiCompatibleAiProvider(noRetryProperties, objectMapper);
+        var embeddingProvider = new OpenAiCompatibleEmbeddingProvider(noRetryProperties, objectMapper);
+
+        assertThatThrownBy(() -> aiProvider.generateReviewSuggestion(new AiProvider.ReviewSuggestionPrompt(
+            "kb_1", List.of(sourceRef()), List.of("kp_1"), List.of("q_1"), null)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("HTTP 503");
+        assertThatThrownBy(() -> embeddingProvider.embed("HashMap source"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("HTTP 503");
+
+        assertThat(chatRequestCount.get()).isEqualTo(1);
+        assertThat(embeddingRequestCount.get()).isEqualTo(1);
+    }
+
+    private SuiLearnAiProperties propertiesWithRetries(int maxRetries) {
+        return new SuiLearnAiProperties(
+            "openai-compatible",
+            "http://127.0.0.1:" + server.getAddress().getPort(),
+            "test-key",
+            "test-chat",
+            "test-embedding",
+            5000,
+            maxRetries
+        );
+    }
+
     private SourceRef sourceRef() {
         return new SourceRef(
             SourceType.MATERIAL,
@@ -199,7 +255,12 @@ class OpenAiCompatibleAiProviderTest {
     }
 
     private void handleChatCompletion(HttpExchange exchange) throws IOException {
+        chatRequestCount.incrementAndGet();
         lastChatRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        if (chatTransientFailuresRemaining.getAndUpdate(remaining -> Math.max(0, remaining - 1)) > 0) {
+            respond(exchange, 503, "{\"error\":\"temporary chat failure\"}");
+            return;
+        }
         var content = lastChatRequest.get().contains("generate_question")
             ? """
                 {"questionType":"SINGLE_CHOICE","categoryId":"java","categoryName":"Java","knowledgePointIds":["kp_1"],"stem":"What does HashMap use for lookup?","options":["A. Hash table","B. Linked only"],"answer":["A"],"explanation":"The answer is grounded in the source."}
@@ -216,16 +277,25 @@ class OpenAiCompatibleAiProviderTest {
     }
 
     private void handleEmbedding(HttpExchange exchange) throws IOException {
+        embeddingRequestCount.incrementAndGet();
         lastEmbeddingRequest.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        if (embeddingTransientFailuresRemaining.getAndUpdate(remaining -> Math.max(0, remaining - 1)) > 0) {
+            respond(exchange, 503, "{\"error\":\"temporary embedding failure\"}");
+            return;
+        }
         respond(exchange, """
             {"data":[{"embedding":[0.1,0.2,0.3]}]}
             """);
     }
 
     private void respond(HttpExchange exchange, String body) throws IOException {
+        respond(exchange, 200, body);
+    }
+
+    private void respond(HttpExchange exchange, int status, String body) throws IOException {
         var bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.sendResponseHeaders(status, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
     }

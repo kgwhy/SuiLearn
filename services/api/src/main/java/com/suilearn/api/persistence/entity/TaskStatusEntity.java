@@ -23,6 +23,11 @@ public class TaskStatusEntity {
     private String errorCode;
     private String errorMessage;
     private Integer retryCount;
+    private Integer attemptCount;
+    private Instant nextRetryAt;
+    private String correlationId;
+    private String processingVersion;
+    private String idempotencyKey;
     @Column(columnDefinition = "text")
     private String resultRefJson;
     private Instant createdAt;
@@ -66,6 +71,11 @@ public class TaskStatusEntity {
         this.errorCode = errorCode;
         this.errorMessage = errorMessage;
         this.retryCount = retryCount;
+        this.attemptCount = 0;
+        this.nextRetryAt = null;
+        this.correlationId = id;
+        this.processingVersion = "v1";
+        this.idempotencyKey = id;
         this.resultRefJson = resultRefJson;
         this.createdAt = createdAt;
         this.startedAt = startedAt;
@@ -124,6 +134,12 @@ public class TaskStatusEntity {
     public Integer getRetryCount() {
         return retryCount;
     }
+
+    public Integer getAttemptCount() { return attemptCount; }
+    public Instant getNextRetryAt() { return nextRetryAt; }
+    public String getCorrelationId() { return correlationId; }
+    public String getProcessingVersion() { return processingVersion; }
+    public String getIdempotencyKey() { return idempotencyKey; }
 
     public String getResultRefJson() {
         return resultRefJson;

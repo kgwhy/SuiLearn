@@ -13,6 +13,18 @@ public class KnowledgePointEntity {
     private String knowledgeBaseId;
     private String name;
     private String description;
+    private String shortSummary;
+    @Column(columnDefinition = "text")
+    private String definition;
+    @Column(columnDefinition = "text")
+    private String principlesJson;
+    @Column(columnDefinition = "text")
+    private String applicationScenariosJson;
+    @Column(columnDefinition = "text")
+    private String pitfallsJson;
+    private String reviewStatus;
+    private String revisionId;
+    private Boolean sourceOutdated;
     private String sourceMaterialId;
     @Column(columnDefinition = "text")
     private String sourceRefsJson;

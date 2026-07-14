@@ -6,6 +6,7 @@ import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.SourceRef;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,6 +16,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import io.github.resilience4j.retry.Retry;
+import io.github.resilience4j.retry.RetryConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -30,6 +33,7 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SuiLearnAiProperties properties;
+    private final Retry retry;
 
     @Autowired
     public OpenAiCompatibleAiProvider(SuiLearnAiProperties properties, ObjectMapper objectMapper) {
@@ -46,6 +50,7 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
+        this.retry = adapterRetry(properties.maxRetries());
     }
 
     @Override
@@ -168,22 +173,44 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();
-        RuntimeException lastFailure = null;
-        for (var attempt = 0; attempt <= Math.max(0, properties.maxRetries()); attempt++) {
-            try {
-                var response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                    return parseAssistantJson(response.body());
-                }
-                lastFailure = new IllegalStateException("OpenAI-compatible provider returned HTTP " + response.statusCode());
-            } catch (IOException exception) {
-                lastFailure = new IllegalStateException("OpenAI-compatible provider request failed", exception);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("OpenAI-compatible provider request interrupted", exception);
+        try {
+            var response = retry.executeSupplier(() -> send(request));
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return parseAssistantJson(response.body());
             }
+            throw new IllegalStateException("OpenAI-compatible provider returned HTTP " + response.statusCode());
+        } catch (UncheckedIOException exception) {
+            throw new IllegalStateException("OpenAI-compatible provider request failed", exception);
+        } catch (RequestInterruptedException exception) {
+            throw new IllegalStateException("OpenAI-compatible provider request interrupted", exception);
         }
-        throw lastFailure == null ? new IllegalStateException("OpenAI-compatible provider request failed") : lastFailure;
+    }
+
+    private HttpResponse<String> send(HttpRequest request) {
+        try {
+            return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new RequestInterruptedException(exception);
+        }
+    }
+
+    private Retry adapterRetry(int maxRetries) {
+        if (maxRetries < 0 || maxRetries > 1) {
+            throw new IllegalArgumentException("Adapter max retries must be between 0 and 1");
+        }
+        return Retry.of("openai-compatible-chat", RetryConfig.<HttpResponse<String>>custom()
+            .maxAttempts(maxRetries + 1)
+            .waitDuration(Duration.ZERO)
+            .retryOnResult(response -> isTransientStatus(response.statusCode()))
+            .retryOnException(exception -> exception instanceof UncheckedIOException)
+            .build());
+    }
+
+    private boolean isTransientStatus(int statusCode) {
+        return statusCode == 408 || statusCode == 429 || statusCode >= 500;
     }
 
     private String requestBody(String instruction, Map<String, Object> payload) {
@@ -403,6 +430,12 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
 
         Map<String, Object> toMap() {
             return values;
+        }
+    }
+
+    private static final class RequestInterruptedException extends RuntimeException {
+        private RequestInterruptedException(InterruptedException cause) {
+            super(cause);
         }
     }
 }
