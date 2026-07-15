@@ -32,13 +32,15 @@ class JpaAssetRecordStoreTest {
     void persistsPendingPromotionWithoutAnAvailableFinalObjectReference() {
         var repository = mock(MaterialAssetJpaRepository.class);
         var store = new JpaAssetRecordStore(repository);
-        var pending = StoredAssetRecord.pending("asset_1", "tmp/key", "assets/key", "mat_1", "ORIGINAL", "checksum", 12, "application/pdf");
+        var pending = StoredAssetRecord.pending("asset_1", "tmp/key", "assets/key", "mat_1", "ORIGINAL", "checksum", 12, "application/pdf", "user.pdf");
         when(repository.findByPromotionState("PENDING")).thenReturn(List.of(MaterialAssetEntity.from(pending)));
         when(repository.findById("asset_1")).thenReturn(java.util.Optional.of(MaterialAssetEntity.from(pending)));
 
         assertThat(store.save(pending).objectKey()).isNull();
         assertThat(store.pendingPromotions()).containsExactly(pending);
-        assertThat(store.markPromoted("asset_1").objectKey()).isEqualTo("assets/key");
+        var promoted = store.markPromoted("asset_1");
+        assertThat(promoted.objectKey()).isEqualTo("assets/key");
+        assertThat(promoted.originalFilename()).isEqualTo("user.pdf");
 
         verify(repository, times(2)).save(any(MaterialAssetEntity.class));
     }

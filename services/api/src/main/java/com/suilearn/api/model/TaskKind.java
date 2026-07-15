@@ -2,6 +2,7 @@ package com.suilearn.api.model;
 
 public enum TaskKind {
     MATERIAL_IMPORT,
+    MATERIAL_REPROCESS,
     EMBEDDING,
     QUESTION_GENERATION,
     KNOWLEDGE_POINT_EXTRACTION,

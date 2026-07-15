@@ -1,0 +1,2 @@
+Plain text has no heading syntax.
+It is normalized into an ordered text block.

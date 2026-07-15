@@ -11,7 +11,7 @@ public final class AssetPromotionCoordinator {
         var planned = StoredAssetRecord.pending(
             "asset_" + java.util.UUID.randomUUID().toString().replace("-", ""), staged.temporaryKey(),
             "assets/" + staged.temporaryKey().substring("tmp/".length()), materialId, assetType,
-            staged.checksum(), staged.sizeBytes(), staged.mimeType()
+            staged.checksum(), staged.sizeBytes(), staged.mimeType(), upload.originalFilename()
         );
         try {
             records.save(planned);

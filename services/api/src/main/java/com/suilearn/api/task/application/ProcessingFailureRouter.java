@@ -20,19 +20,30 @@ final class ProcessingFailureRouter {
     private final RetryPolicy retryPolicy;
     private final DeadLetterReplayService deadLetters;
     private final ConfirmationAwaiter confirmationAwaiter;
+    private final TaskRetryRoutingState retryRoutingState;
 
     @Autowired
-    ProcessingFailureRouter(RabbitTemplate rabbitTemplate, RetryPolicy retryPolicy, DeadLetterReplayService deadLetters) {
-        this(rabbitTemplate, retryPolicy, deadLetters, null);
+    ProcessingFailureRouter(
+        RabbitTemplate rabbitTemplate, RetryPolicy retryPolicy, DeadLetterReplayService deadLetters, TaskRetryRoutingState retryRoutingState
+    ) {
+        this(rabbitTemplate, retryPolicy, deadLetters, null, retryRoutingState);
     }
 
     ProcessingFailureRouter(
         RabbitTemplate rabbitTemplate, RetryPolicy retryPolicy, DeadLetterReplayService deadLetters, ConfirmationAwaiter confirmationAwaiter
     ) {
+        this(rabbitTemplate, retryPolicy, deadLetters, confirmationAwaiter, null);
+    }
+
+    ProcessingFailureRouter(
+        RabbitTemplate rabbitTemplate, RetryPolicy retryPolicy, DeadLetterReplayService deadLetters, ConfirmationAwaiter confirmationAwaiter,
+        TaskRetryRoutingState retryRoutingState
+    ) {
         this.rabbitTemplate = rabbitTemplate;
         this.retryPolicy = retryPolicy;
         this.deadLetters = deadLetters;
         this.confirmationAwaiter = confirmationAwaiter;
+        this.retryRoutingState = retryRoutingState;
     }
 
     void route(Message message, RuntimeException failure) {
@@ -49,6 +60,9 @@ final class ProcessingFailureRouter {
         String suffix = retries == 0 ? ".short" : ".long";
         Message retry = MessageBuilder.fromMessage(traceable).setHeader(RETRY_COUNT_HEADER, retries + 1).build();
         publishConfirmed(RETRY_EXCHANGE, queue + suffix, retry);
+        if (retryRoutingState != null) {
+            retryRoutingState.retryAccepted(taskId(traceable), retries + 1);
+        }
     }
 
     static boolean hasValidMessageId(String messageId) {
@@ -98,6 +112,11 @@ final class ProcessingFailureRouter {
             catch (NumberFormatException ignored) { return 0; }
         }
         return 0;
+    }
+
+    private String taskId(Message message) {
+        Object value = message.getMessageProperties().getHeaders().get(TaskDispatchMessageHandler.TASK_ID_HEADER);
+        return value instanceof String taskId && !taskId.isBlank() ? taskId : null;
     }
 
     @FunctionalInterface

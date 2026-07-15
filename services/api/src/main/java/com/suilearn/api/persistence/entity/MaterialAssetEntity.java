@@ -16,6 +16,7 @@ public class MaterialAssetEntity {
     private String assetType;
     private String objectKey;
     private String mimeType;
+    private String originalFilename;
     private Long sizeBytes;
     private String checksum;
     private String temporaryKey;
@@ -34,6 +35,7 @@ public class MaterialAssetEntity {
         entity.assetType = asset.assetType();
         entity.objectKey = asset.objectKey();
         entity.mimeType = asset.mimeType();
+        entity.originalFilename = asset.originalFilename();
         entity.checksum = asset.checksum();
         entity.sizeBytes = asset.sizeBytes();
         entity.temporaryKey = asset.temporaryKey();
@@ -51,7 +53,7 @@ public class MaterialAssetEntity {
 
     public StoredAssetRecord toRecord() {
         return new StoredAssetRecord(id, objectKey, materialId, assetType, checksum, sizeBytes == null ? 0 : sizeBytes, revisionId, mimeType,
-            temporaryKey, plannedObjectKey, com.suilearn.api.material.storage.AssetPromotionState.valueOf(promotionState));
+            temporaryKey, plannedObjectKey, com.suilearn.api.material.storage.AssetPromotionState.valueOf(promotionState), originalFilename);
     }
 
     public void markPromoted() {

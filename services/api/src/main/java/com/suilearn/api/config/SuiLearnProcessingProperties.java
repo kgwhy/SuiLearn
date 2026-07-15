@@ -20,7 +20,8 @@ public record SuiLearnProcessingProperties(
     String minioEndpoint,
     String minioAccessKey,
     String minioSecretKey,
-    String minioBucket
+    String minioBucket,
+    int pdfOcrTextDensityThreshold
 ) {
     public static SuiLearnProcessingProperties from(Environment environment) {
         return new SuiLearnProcessingProperties(
@@ -41,7 +42,8 @@ public record SuiLearnProcessingProperties(
             environment.getProperty("suilearn.minio.endpoint", "http://localhost:9000"),
             environment.getProperty("suilearn.minio.access-key", ""),
             environment.getProperty("suilearn.minio.secret-key", ""),
-            environment.getProperty("suilearn.minio.bucket", "suilearn-assets")
+            environment.getProperty("suilearn.minio.bucket", "suilearn-assets"),
+            environment.getProperty("suilearn.pdf.ocr-text-density-threshold", Integer.class, 16)
         );
     }
 

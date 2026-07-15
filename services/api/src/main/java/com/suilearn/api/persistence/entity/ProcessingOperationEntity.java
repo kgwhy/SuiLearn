@@ -1,5 +1,6 @@
 package com.suilearn.api.persistence.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -11,6 +12,7 @@ import java.util.Locale;
 @Table(name = "processing_operations", uniqueConstraints = @UniqueConstraint(columnNames = "operationKey"))
 public class ProcessingOperationEntity {
     private static final int MAX_ERROR_SUMMARY_LENGTH = 120;
+    private static final java.time.Duration DEFAULT_LEASE = java.time.Duration.ofMinutes(2);
 
     @Id private String id;
     private String operationKey;
@@ -18,6 +20,7 @@ public class ProcessingOperationEntity {
     private String stage;
     private String state;
     private Integer attemptCount;
+    @Column(columnDefinition = "text")
     private String resultReference;
     private String adapterVersion;
     private String errorCode;
@@ -25,6 +28,7 @@ public class ProcessingOperationEntity {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant startedAt;
+    private Instant leaseExpiresAt;
     private Instant finishedAt;
 
     protected ProcessingOperationEntity() { }
@@ -53,6 +57,7 @@ public class ProcessingOperationEntity {
         operation.createdAt = now;
         operation.updatedAt = now;
         operation.startedAt = now;
+        operation.leaseExpiresAt = now.plus(DEFAULT_LEASE);
         return operation;
     }
 
@@ -61,11 +66,14 @@ public class ProcessingOperationEntity {
     public String resultReference() { return resultReference; }
     public String errorCode() { return errorCode; }
     public String errorMessage() { return errorMessage; }
+    /** Null leases are historical interrupted rows and must be recoverable on their next delivery. */
+    public boolean leaseExpiredAt(Instant now) { return leaseExpiresAt == null || !leaseExpiresAt.isAfter(now); }
 
     public void restart(Instant now) {
         state = "STARTED";
         attemptCount = (attemptCount == null ? 0 : attemptCount) + 1;
         startedAt = now;
+        leaseExpiresAt = now.plus(DEFAULT_LEASE);
         updatedAt = now;
     }
 

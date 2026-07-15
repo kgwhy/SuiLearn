@@ -19,7 +19,7 @@ class PersistentProcessingOperationClaimsTest {
         var operations = mock(ProcessingOperationJpaRepository.class);
         var completed = ProcessingOperationEntity.completed("operation_1", "ocr:revision_1:page_1:v1", "task_1", "OCR",
             "tesseract-v1", "block_1", Instant.EPOCH);
-        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
             .thenReturn(0);
         when(operations.findByOperationKey("ocr:revision_1:page_1:v1")).thenReturn(Optional.of(completed));
         var claims = new PersistentProcessingOperationClaims(operations, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
@@ -35,7 +35,7 @@ class PersistentProcessingOperationClaimsTest {
         var operations = mock(ProcessingOperationJpaRepository.class);
         var running = ProcessingOperationEntity.started("operation_1", "ocr:revision_1:page_1:v1", "task_1", "OCR",
             "tesseract-v1", Instant.EPOCH);
-        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
             .thenReturn(0);
         when(operations.findByOperationKey("ocr:revision_1:page_1:v1")).thenReturn(Optional.of(running));
         var claims = new PersistentProcessingOperationClaims(operations, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
@@ -46,12 +46,31 @@ class PersistentProcessingOperationClaimsTest {
     }
 
     @Test
+    void reclaimsAnExpiredStartedOperationOnRedeliveryWithoutAnApplicationRestart() {
+        var operations = mock(ProcessingOperationJpaRepository.class);
+        var operationKey = "ocr:revision_1:page_1:v1";
+        var stale = ProcessingOperationEntity.started("operation_1", operationKey, "task_1", "OCR", "tesseract-v1", Instant.EPOCH);
+        var now = Instant.parse("2026-07-15T00:03:00Z");
+        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(operationKey),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(0);
+        when(operations.findByOperationKey(operationKey)).thenReturn(Optional.of(stale));
+        when(operations.reclaimExpiredStarted(org.mockito.ArgumentMatchers.eq(operationKey), org.mockito.ArgumentMatchers.eq(now), org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        var claims = new PersistentProcessingOperationClaims(operations, Clock.fixed(now, ZoneOffset.UTC));
+
+        var claim = claims.claim(operationKey, "task_1", "OCR", "tesseract-v1");
+
+        assertThat(claim.disposition()).isEqualTo(OperationClaimDisposition.CLAIMED);
+        verify(operations).reclaimExpiredStarted(org.mockito.ArgumentMatchers.eq(operationKey), org.mockito.ArgumentMatchers.eq(now), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void persistsPermanentFailureWithSanitizedErrorAndNeverReschedulesItAfterRestart() {
         var operations = mock(ProcessingOperationJpaRepository.class);
         var failed = ProcessingOperationEntity.started("operation_1", "ocr:revision_1:page_1:v1", "task_1", "OCR",
             "tesseract-v1", Instant.EPOCH);
         when(operations.findById("operation_1")).thenReturn(Optional.of(failed));
-        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
             .thenReturn(0);
         when(operations.findByOperationKey("ocr:revision_1:page_1:v1")).thenReturn(Optional.of(failed));
         var claims = new PersistentProcessingOperationClaims(operations, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
@@ -68,7 +87,7 @@ class PersistentProcessingOperationClaimsTest {
             .doesNotContain("bearer-secret", "api-key-secret", "database-secret", "full source", "<html>");
         assertThat(reclaimed.disposition()).isEqualTo(OperationClaimDisposition.ALREADY_RUNNING);
         verify(operations).findByState("STARTED");
-        org.mockito.Mockito.verify(operations, org.mockito.Mockito.never()).restartRetryable("ocr:revision_1:page_1:v1", Instant.EPOCH);
+        org.mockito.Mockito.verify(operations, org.mockito.Mockito.never()).restartRetryable(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -77,10 +96,10 @@ class PersistentProcessingOperationClaimsTest {
         var failed = ProcessingOperationEntity.started("operation_1", "ocr:revision_1:page_1:v1", "task_1", "OCR",
             "tesseract-v1", Instant.EPOCH);
         when(operations.findById("operation_1")).thenReturn(Optional.of(failed));
-        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+        when(operations.insertStartedIfAbsent(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
             .thenReturn(0);
         when(operations.findByOperationKey("ocr:revision_1:page_1:v1")).thenReturn(Optional.of(failed));
-        when(operations.restartRetryable("ocr:revision_1:page_1:v1", Instant.EPOCH)).thenReturn(1);
+        when(operations.restartRetryable(org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.eq(Instant.EPOCH), org.mockito.ArgumentMatchers.any())).thenReturn(1);
         var claims = new PersistentProcessingOperationClaims(operations, Clock.fixed(Instant.EPOCH, ZoneOffset.UTC));
 
         claims.fail("operation_1", FailureKind.TRANSIENT, "adapter temporarily unavailable");
@@ -88,6 +107,6 @@ class PersistentProcessingOperationClaimsTest {
 
         assertThat(failed.state()).isEqualTo("RETRYABLE");
         assertThat(reclaimed.disposition()).isEqualTo(OperationClaimDisposition.CLAIMED);
-        verify(operations).restartRetryable("ocr:revision_1:page_1:v1", Instant.EPOCH);
+        verify(operations).restartRetryable(org.mockito.ArgumentMatchers.eq("ocr:revision_1:page_1:v1"), org.mockito.ArgumentMatchers.eq(Instant.EPOCH), org.mockito.ArgumentMatchers.any());
     }
 }

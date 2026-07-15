@@ -70,7 +70,7 @@ Backend 仍为 `services/api` 单应用，内部划分 Material API、Asset Stor
 - Markdown：CommonMark 解析并生成安全 HTML/结构化 block。
 - TXT：字符集检测、规范化文本和段落 block。
 - PDF：Apache Tika/PDFBox 提取文本、页数和页面映射。
-- DOC/DOCX：Apache Tika/POI 提取结构；LibreOffice headless 生成高保真预览资产。
+- DOC/DOCX：Apache Tika/POI 提取结构；DOCX 使用既有 `org.apache.poi:poi-ooxml`，二进制 OLE `.doc` 还需要 `org.apache.poi:poi-scratchpad`；LibreOffice headless 生成高保真预览资产。
 - OCR：Tesseract adapter 对文本密度不足页面识别，并合并回对应页 block。
 
 先直接提取 PDF 文本，再按页判断是否 OCR；混合 PDF 只处理缺失页面。默认最大文件 50 MB、PDF 500 页，防止资源滥用。解析器不得执行宏、脚本或外部嵌入对象。

@@ -43,6 +43,20 @@ class ProcessingFailureRouterTest {
     }
 
     @Test
+    void advancesTheDurableTaskOnlyAfterAConfirmedRetryAndLeavesFinalDeadLetterFailed() {
+        var template = mock(RabbitTemplate.class);
+        var retryState = mock(TaskRetryRoutingState.class);
+        var router = new ProcessingFailureRouter(template, new RetryPolicy(3), mock(DeadLetterReplayService.class),
+            () -> new CorrelationData.Confirm(true, null), retryState);
+
+        router.route(message("document.processing", null, "task_1"), new IllegalStateException("temporary"));
+        router.route(message("document.processing", 2, "task_1"), new IllegalStateException("temporary"));
+
+        verify(retryState).retryAccepted("task_1", 1);
+        org.mockito.Mockito.verifyNoMoreInteractions(retryState);
+    }
+
+    @Test
     void rejectsARejectedBrokerConfirmationSoTheOriginalMessageIsNotAcknowledged() {
         var template = mock(RabbitTemplate.class);
         var router = new ProcessingFailureRouter(template, new RetryPolicy(3), mock(DeadLetterReplayService.class),
@@ -86,9 +100,14 @@ class ProcessingFailureRouterTest {
     }
 
     private Message message(String queue, Integer retryCount) {
+        return message(queue, retryCount, null);
+    }
+
+    private Message message(String queue, Integer retryCount, String taskId) {
         var properties = new MessageProperties();
         properties.setConsumerQueue(queue);
         if (retryCount != null) properties.setHeader("x-suilearn-retry-count", retryCount);
+        if (taskId != null) properties.setHeader(TaskDispatchMessageHandler.TASK_ID_HEADER, taskId);
         return new Message("{}".getBytes(), properties);
     }
 }

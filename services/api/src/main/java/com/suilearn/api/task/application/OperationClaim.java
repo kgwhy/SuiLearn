@@ -1,3 +1,4 @@
 package com.suilearn.api.task.application;
 
-record OperationClaim(String operationId, OperationClaimDisposition disposition, String resultReference) { }
+/** Result of a durable adapter-operation claim. */
+public record OperationClaim(String operationId, OperationClaimDisposition disposition, String resultReference) { }

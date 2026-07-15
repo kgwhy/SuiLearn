@@ -1,0 +1,3 @@
+Source: https://raw.githubusercontent.com/apache/poi/trunk/test-data/document/Word6.doc
+License: Apache-2.0
+Fetched: 2026-07-14
