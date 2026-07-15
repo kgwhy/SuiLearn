@@ -5,6 +5,7 @@ import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
 import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
+import com.suilearn.api.dto.ReviewKnowledgePointQuestionDraftRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.GeneratedContentStatus;
@@ -294,6 +295,9 @@ public class GeneratedContentService {
         ReviewGeneratedContentRequest request
     ) {
         var existing = requireGeneratedContent(generatedContentId);
+        if (existing.sourceType() == SourceType.KNOWLEDGE_POINT && existing.knowledgePointId() != null) {
+            throw new IllegalStateException("KNOWLEDGE_POINT_DRAFT_REVIEW_REQUIRES_CLOSED_ENDPOINT");
+        }
         if (request.status() == GeneratedContentStatus.SAVED
             && (existing.status() == GeneratedContentStatus.DELETED || existing.status() == GeneratedContentStatus.DISCARDED)) {
             throw new IllegalArgumentException("Deleted or discarded generated content cannot be saved: " + generatedContentId);
@@ -335,6 +339,43 @@ public class GeneratedContentService {
             savedAt,
             existing.createdAt(),
             clock.instant()
+        );
+        generatedContents.save(updated);
+        if (updated.status() == GeneratedContentStatus.SAVED) {
+            questions.save(toQuestionSummary(updated));
+        }
+        return updated;
+    }
+
+    /** Reviews a knowledge-point draft without accepting client replacements for ownership or evidence. */
+    public GeneratedQuestionDraft reviewKnowledgePointQuestionDraft(
+        String generatedContentId, ReviewKnowledgePointQuestionDraftRequest request
+    ) {
+        var existing = requireGeneratedContent(generatedContentId);
+        if (existing.sourceType() != SourceType.KNOWLEDGE_POINT || existing.knowledgePointId() == null) {
+            throw new IllegalArgumentException("Generated content is not a knowledge point question draft: " + generatedContentId);
+        }
+        if (request.status() == GeneratedContentStatus.SAVED
+            && (existing.status() == GeneratedContentStatus.DELETED || existing.status() == GeneratedContentStatus.DISCARDED)) {
+            throw new IllegalArgumentException("Deleted or discarded generated content cannot be saved: " + generatedContentId);
+        }
+        var savedQuestionId = existing.savedQuestionId();
+        var savedAt = existing.savedAt();
+        if (request.status() == GeneratedContentStatus.SAVED && savedQuestionId == null) {
+            sourceService.ensureUsable(existing.sourceRefs());
+            savedQuestionId = newId("q");
+            savedAt = clock.instant();
+        } else if (request.status() == GeneratedContentStatus.SAVED) {
+            sourceService.ensureUsable(existing.sourceRefs());
+        }
+        var updated = new GeneratedQuestionDraft(
+            existing.id(), existing.knowledgeBaseId(), existing.generationTaskId(), request.status(), existing.sourceRefs(),
+            existing.sourceType(), existing.sourceId(), request.questionType() == null ? existing.questionType() : request.questionType(),
+            existing.categoryId(), existing.categoryName(), existing.knowledgePointIds(), valueOrDefault(request.stem(), existing.stem()),
+            request.options() == null || request.options().isEmpty() ? existing.options() : request.options(),
+            request.answer() == null || request.answer().isEmpty() ? existing.answer() : request.answer(),
+            valueOrDefault(request.explanation(), existing.explanation()), savedQuestionId, savedAt, existing.createdAt(), clock.instant(),
+            existing.knowledgePointId(), existing.materialId(), existing.revisionId(), existing.evidenceExcerpt()
         );
         generatedContents.save(updated);
         if (updated.status() == GeneratedContentStatus.SAVED) {

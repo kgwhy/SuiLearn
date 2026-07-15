@@ -1019,6 +1019,28 @@ class SuiLearnV2ServiceTest {
     }
 
     @Test
+    void legacyExtractKnowledgePointsMarksTaskFailedAndPersistsNoPlaceholderWhenAiIsUnavailable() {
+        var unavailableAiService = new SuiLearnV2Service(
+            new UnavailableKnowledgePointAiProvider(), new TextMaterialParser(), new DefaultMaterialChunker(),
+            new DeterministicEmbeddingProvider(), keywordRetriever(), clock, store
+        );
+        var kb = unavailableAiService.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
+        var material = unavailableAiService.importMaterial(kb.id(), new ImportMaterialRequest(
+            "Java Interview Notes", null, MaterialSourceType.MARKDOWN, "HashMap equals hashCode StringBuilder"
+        ));
+
+        assertThatThrownBy(() -> unavailableAiService.extractKnowledgePoints(material.id()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("AI unavailable");
+        assertThat(unavailableAiService.listKnowledgePoints(kb.id())).isEmpty();
+        assertThat(store.listTasks()).anySatisfy(task -> {
+            assertThat(task.kind()).isEqualTo(TaskKind.KNOWLEDGE_POINT_EXTRACTION);
+            assertThat(task.status()).isEqualTo(TaskLifecycleStatus.FAILED);
+            assertThat(task.currentStep()).isEqualTo("AI_EXTRACTION_FAILED");
+        });
+    }
+
+    @Test
     void aiGenerationDelegatesSourceNormalizationToSourceService() {
         var kb = service.createKnowledgeBase(new CreateKnowledgeBaseRequest("Java", "Interview notes"));
         var material = service.importMaterial(kb.id(), new ImportMaterialRequest(
@@ -1367,11 +1389,23 @@ class SuiLearnV2ServiceTest {
                 .flatMap(ref -> KnowledgePointCandidateExtractor.extract(ref.excerpt()).stream())
                 .distinct()
                 .limit(prompt.maxKnowledgePoints())
-                .map(name -> new GeneratedKnowledgePoint(
+                .map(name -> structuredPoint(name, prompt) /*
                     name,
                     "基于资料《" + prompt.materialTitle() + "》的证据片段提炼。"
-                ))
+                */)
                 .toList();
+        }
+
+        private GeneratedKnowledgePoint structuredPoint(String name, KnowledgePointExtractionPrompt prompt) {
+            var citations = prompt.evidenceRefs().stream().map(ref -> new SourceRef(
+                ref.type(), ref.id(), ref.knowledgeBaseId(), ref.title(), ref.materialId(), ref.chunkId(), ref.deleted(),
+                ref.excerpt(), ref.revisionId() == null ? "test-revision" : ref.revisionId(),
+                ref.pageNumber(), ref.blockId() == null ? ref.chunkId() : ref.blockId()
+            )).toList();
+            return new GeneratedKnowledgePoint(name, "AI generated explanation for " + name, name,
+                "AI generated explanation for " + name, name + " is defined by cited evidence.",
+                List.of("Use cited evidence to explain the principle."), List.of("Apply the concept to the material scenario."),
+                List.of("Do not ignore the cited evidence."), citations);
         }
 
         @Override
@@ -1530,6 +1564,13 @@ class SuiLearnV2ServiceTest {
                 new GeneratedKnowledgePoint("A1", "Short section id"),
                 new GeneratedKnowledgePoint("Java", "Generic material label")
             );
+        }
+    }
+
+    private static class UnavailableKnowledgePointAiProvider extends DeterministicAiProvider {
+        @Override
+        public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
+            throw new IllegalStateException("AI unavailable");
         }
     }
 

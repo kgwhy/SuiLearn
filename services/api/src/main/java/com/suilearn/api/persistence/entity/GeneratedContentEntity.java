@@ -35,6 +35,11 @@ public class GeneratedContentEntity {
     private Instant savedAt;
     private Instant createdAt;
     private Instant updatedAt;
+    private String knowledgePointId;
+    private String materialId;
+    private String revisionId;
+    @Column(columnDefinition = "text")
+    private String evidenceExcerpt;
 
     protected GeneratedContentEntity() {
     }
@@ -100,4 +105,6 @@ public class GeneratedContentEntity {
     public Instant getSavedAt() { return savedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public void setEvidence(String knowledgePointId, String materialId, String revisionId, String evidenceExcerpt) { this.knowledgePointId=knowledgePointId; this.materialId=materialId; this.revisionId=revisionId; this.evidenceExcerpt=evidenceExcerpt; }
+    public String getKnowledgePointId(){return knowledgePointId;} public String getMaterialId(){return materialId;} public String getRevisionId(){return revisionId;} public String getEvidenceExcerpt(){return evidenceExcerpt;}
 }

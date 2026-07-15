@@ -71,6 +71,7 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             .putValue("knowledgePointIds", prompt.knowledgePointIds() == null ? List.of() : prompt.knowledgePointIds())
             .putValue("sourceRefs", sourceRefs(prompt.sourceRefs()))
             .putValue("userPrompt", prompt.userPrompt())
+            .putValue("difficulty", prompt.difficulty())
             .toMap());
         var requestedType = prompt.questionType() == null ? QuestionType.SINGLE_CHOICE : prompt.questionType();
         var questionType = enumValue(root.path("questionType").asText(requestedType.name()), QuestionType.class, requestedType);
@@ -90,7 +91,8 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
     public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
         var root = completeJson("""
             Return a JSON object with field knowledgePoints.
-            knowledgePoints must be an array of objects with fields: name, description.
+            knowledgePoints must be an array of objects with fields: name, description, title, shortSummary, definition,
+            principles, applicationScenarios, pitfalls, citations. citations must contain materialId, revisionId, pageNumber or blockId, excerpt.
             Extract only real study concepts, APIs, patterns, or pitfalls that are supported by the source excerpts.
             Do not return sentence fragments, headings without concept value, punctuation-only text, or duplicate names.
         """, payload()
@@ -254,6 +256,9 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
                 "title", valueOrEmpty(ref.title()),
                 "materialId", valueOrEmpty(ref.materialId()),
                 "chunkId", valueOrEmpty(ref.chunkId()),
+                "revisionId", valueOrEmpty(ref.revisionId()),
+                "pageNumber", ref.pageNumber() == null ? "" : ref.pageNumber(),
+                "blockId", valueOrEmpty(ref.blockId()),
                 "excerpt", valueOrEmpty(ref.excerpt())
             ))
             .toList();
@@ -326,13 +331,32 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
         }
         var values = new ArrayList<GeneratedKnowledgePoint>();
         for (var value : node) {
-            var name = value.path("name").asText("");
+            var title = value.path("title").asText("");
             var description = value.path("description").asText("");
-            if (!name.isBlank()) {
-                values.add(new GeneratedKnowledgePoint(name, description));
+            var citations = citations(value.path("citations"));
+            if (!title.isBlank() && !value.path("shortSummary").asText("").isBlank() && !value.path("definition").asText("").isBlank()) {
+                values.add(new GeneratedKnowledgePoint(value.path("name").asText(title), description, title,
+                    value.path("shortSummary").asText(), value.path("definition").asText(), strings(value.path("principles"), List.of()),
+                    strings(value.path("applicationScenarios"), List.of()), strings(value.path("pitfalls"), List.of()), citations));
             }
             if (values.size() >= maxKnowledgePoints) {
                 break;
+            }
+        }
+        return values;
+    }
+
+    private List<SourceRef> citations(JsonNode node) {
+        if (!node.isArray()) return List.of();
+        var values = new ArrayList<SourceRef>();
+        for (var value : node) {
+            var materialId = value.path("materialId").asText(""); var revisionId = value.path("revisionId").asText("");
+            var blockId = value.path("blockId").asText("");
+            if (!materialId.isBlank() && !revisionId.isBlank() && (value.hasNonNull("pageNumber") || !blockId.isBlank())) {
+                values.add(new SourceRef(enumValue(value.path("type").asText("MATERIAL_CHUNK"), com.suilearn.api.model.SourceType.class, com.suilearn.api.model.SourceType.MATERIAL_CHUNK),
+                    value.path("id").asText(blockId), value.path("knowledgeBaseId").asText(null), value.path("title").asText(null), materialId,
+                    value.path("chunkId").asText(null), false, value.path("excerpt").asText(null), revisionId,
+                    value.hasNonNull("pageNumber") ? value.path("pageNumber").asInt() : null, blockId));
             }
         }
         return values;

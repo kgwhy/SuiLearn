@@ -16,6 +16,7 @@ import com.suilearn.api.model.TaskKind;
 import com.suilearn.api.model.TaskResultRef;
 import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.knowledgebase.infrastructure.KnowledgeBaseStore;
+import com.suilearn.api.knowledgepoint.infrastructure.KnowledgePointStore;
 import com.suilearn.api.material.infrastructure.MaterialChunkStore;
 import com.suilearn.api.material.infrastructure.MaterialStore;
 import com.suilearn.api.retrieval.EmbeddingProvider;
@@ -54,6 +55,7 @@ public class MaterialImportService {
     private final MaterialUploadValidator uploadValidator;
     private final LibreOfficePreviewAssetService previewAssets;
     private final MaterialImportFailurePersistence failurePersistence;
+    private final KnowledgePointStore knowledgePoints;
 
     @Autowired
     public MaterialImportService(
@@ -74,7 +76,8 @@ public class MaterialImportService {
         DocumentBlockJpaRepository documentBlocks,
         MaterialUploadValidator uploadValidator,
         LibreOfficePreviewAssetService previewAssets,
-        MaterialImportFailurePersistence failurePersistence
+        MaterialImportFailurePersistence failurePersistence,
+        KnowledgePointStore knowledgePoints
     ) {
         this.clock = clock;
         this.embeddingProvider = embeddingProvider;
@@ -94,6 +97,7 @@ public class MaterialImportService {
         this.uploadValidator = uploadValidator;
         this.previewAssets = previewAssets;
         this.failurePersistence = failurePersistence;
+        this.knowledgePoints = knowledgePoints;
     }
 
     /**
@@ -113,7 +117,7 @@ public class MaterialImportService {
         AsyncProcessingAdmissionGuard asyncAdmission
     ) {
         this(knowledgeBases, materials, materialChunks, materialParser, materialChunker, embeddingProvider, clock,
-            taskService, taskExecutor, asyncAdmission, null, null, null, null, null, null, null, null);
+            taskService, taskExecutor, asyncAdmission, null, null, null, null, null, null, null, null, null);
     }
 
     public MaterialImportService(
@@ -133,7 +137,7 @@ public class MaterialImportService {
     ) {
         this(knowledgeBases, materials, materialChunks, materialParser, materialChunker, embeddingProvider, clock,
             taskService, taskExecutor, asyncAdmission, taskOutboxSubmissionService, assetPromotionCoordinator,
-            originalAssetContentReader, null, null, null, null, null);
+            originalAssetContentReader, null, null, null, null, null, null);
     }
 
     public MaterialImportService(
@@ -146,7 +150,7 @@ public class MaterialImportService {
     ) {
         this(knowledgeBases, materials, materialChunks, materialParser, materialChunker, embeddingProvider, clock,
             taskService, taskExecutor, asyncAdmission, taskOutboxSubmissionService, assetPromotionCoordinator,
-            originalAssetContentReader, documentRevisions, documentBlocks, null, null, null);
+            originalAssetContentReader, documentRevisions, documentBlocks, null, null, null, null);
     }
 
     public MaterialImportService(
@@ -159,7 +163,7 @@ public class MaterialImportService {
     ) {
         this(knowledgeBases, materials, materialChunks, materialParser, materialChunker, embeddingProvider, clock,
             taskService, taskExecutor, asyncAdmission, taskOutboxSubmissionService, assetPromotionCoordinator,
-            originalAssetContentReader, documentRevisions, documentBlocks, uploadValidator, null, null);
+            originalAssetContentReader, documentRevisions, documentBlocks, uploadValidator, null, null, null);
     }
 
     /** Creates the material/task/outbox admission only; parsing is performed by {@link #consumeQueuedMaterialImport(String)}. */
@@ -495,11 +499,15 @@ public class MaterialImportService {
                 newId("block"), revisionId, block.order(), block.pageNumber(), block.sectionPath(), block.content()
             ));
         }
-        return materials.save(new LearningMaterial(
+        var revised = materials.save(new LearningMaterial(
             material.id(), material.knowledgeBaseId(), material.title(), material.sourceType(), material.status(),
             material.importTaskId(), material.embeddingTaskId(), material.errorMessage(), material.content(), material.createdAt(),
             material.deletedAt(), revisionId
         ));
+        if (knowledgePoints != null) {
+            knowledgePoints.markKnowledgePointsSourceOutdated(revised.id(), revisionId);
+        }
+        return revised;
     }
 
     /**

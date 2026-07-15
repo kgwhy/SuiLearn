@@ -12,7 +12,6 @@ import com.suilearn.api.dto.ReviewGeneratedContentRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
 import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
-import com.suilearn.api.knowledgepoint.application.KnowledgePointCandidateExtractor;
 import com.suilearn.api.material.MaterialChunker;
 import com.suilearn.api.material.MaterialParser;
 import com.suilearn.api.model.AiNoteDraft;
@@ -57,6 +56,8 @@ import java.time.Clock;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Service;
@@ -70,7 +71,7 @@ public class SuiLearnV2Workflow {
     private static final String KNOWLEDGE_POINT_EXTRACTION_QUERY = "核心知识点 概念 API 原理 面试重点";
     private static final String STEP_AI_EXTRACTED = "AI_EXTRACTED";
     private static final String STEP_AI_EXTRACTION_FAILED = "AI_EXTRACTION_FAILED";
-    private static final String STEP_LOCAL_FALLBACK = "LOCAL_FALLBACK";
+    private static final Set<String> GENERIC_KNOWLEDGE_POINT_NAMES = Set.of("java", "markdown", "pdf", "txt", "doc", "docx");
 
     private final AiProvider aiProvider;
     private final CitationValidator citationValidator = new CitationValidator();
@@ -1121,7 +1122,7 @@ public class SuiLearnV2Workflow {
         List<MaterialChunk> evidence
     ) {
         if (!chatConfigured()) {
-            return new ExtractedKnowledgePointCandidates(localKnowledgePointCandidates(material), STEP_LOCAL_FALLBACK);
+            throw new IllegalStateException("Chat AI is not configured for knowledge point extraction");
         }
         List<AiProvider.GeneratedKnowledgePoint> generated;
         try {
@@ -1141,7 +1142,7 @@ public class SuiLearnV2Workflow {
         var candidates = new LinkedHashMap<String, ExtractedKnowledgePointCandidate>();
         if (generated != null) {
             for (var point : generated) {
-                addKnowledgePointCandidate(candidates, point.name(), point.description(), material.title());
+                addKnowledgePointCandidate(candidates, point.name(), point.description());
             }
         }
         if (candidates.isEmpty()) {
@@ -1175,31 +1176,30 @@ public class SuiLearnV2Workflow {
     private void addKnowledgePointCandidate(
         LinkedHashMap<String, ExtractedKnowledgePointCandidate> candidates,
         String rawName,
-        String rawDescription,
-        String materialTitle
+        String rawDescription
     ) {
         if (candidates.size() >= MAX_EXTRACTED_POINTS) {
             return;
         }
-        var name = KnowledgePointCandidateExtractor.sanitizeName(rawName);
-        if (!KnowledgePointCandidateExtractor.isUsableName(name)) {
+        if (rawName == null || rawDescription == null) {
             return;
         }
-        var description = rawDescription == null || rawDescription.isBlank()
-            ? "基于资料《" + materialTitle + "》的证据片段提炼。"
-            : rawDescription.trim();
+        var name = rawName.trim();
+        var description = rawDescription.trim();
+        if (!isUsableGeneratedKnowledgePoint(name) || description.isBlank()) {
+            return;
+        }
         candidates.putIfAbsent(
-            KnowledgePointCandidateExtractor.normalizeKey(name),
+            name.toLowerCase(Locale.ROOT),
             new ExtractedKnowledgePointCandidate(name, description)
         );
     }
 
-    private List<ExtractedKnowledgePointCandidate> localKnowledgePointCandidates(LearningMaterial material) {
-        var candidates = new LinkedHashMap<String, ExtractedKnowledgePointCandidate>();
-        for (var term : KnowledgePointCandidateExtractor.extract(material.content())) {
-            addKnowledgePointCandidate(candidates, term, null, material.title());
-        }
-        return candidates.values().stream().limit(MAX_EXTRACTED_POINTS).toList();
+    private boolean isUsableGeneratedKnowledgePoint(String name) {
+        return name.length() > 2
+            && name.chars().anyMatch(Character::isLetterOrDigit)
+            && name.chars().noneMatch(character -> character == '#' || character == '[' || character == ']')
+            && !GENERIC_KNOWLEDGE_POINT_NAMES.contains(name.toLowerCase(Locale.ROOT));
     }
 
     private GeneratedQuestionDraft updateGeneratedStatus(GeneratedQuestionDraft existing, GeneratedContentStatus status) {

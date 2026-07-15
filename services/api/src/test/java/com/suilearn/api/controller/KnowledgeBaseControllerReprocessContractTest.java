@@ -1,9 +1,13 @@
 package com.suilearn.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.suilearn.api.dto.GenerateKnowledgePointInterviewQuestionsRequest;
+import com.suilearn.api.generation.application.KnowledgePointQuestionGenerationService;
+import com.suilearn.api.generation.domain.InterviewQuestionDifficulty;
 import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
 import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
 import com.suilearn.api.material.application.MaterialImportService;
@@ -14,6 +18,7 @@ import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.model.LearningMaterial;
 import com.suilearn.api.model.MaterialSourceType;
 import com.suilearn.api.model.MaterialStatus;
+import com.suilearn.api.model.QuestionType;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
@@ -57,5 +62,43 @@ class KnowledgeBaseControllerReprocessContractTest {
         assertThat(response.getStatusCode().value()).isEqualTo(202);
         assertThat(response.getBody().taskId()).isEqualTo("task_1");
         assertThat(response.getBody().taskHref()).isEqualTo("/api/v2/tasks/task_1");
+    }
+
+    @Test
+    void submitsKnowledgePointGenerationAsAnAcceptedTaskWithLocation() {
+        var knowledgePoints = mock(KnowledgePointService.class);
+        when(knowledgePoints.submitGeneration("mat_1")).thenReturn(task("task_1"));
+        var controller = new KnowledgeBaseController(mock(KnowledgeBaseService.class), mock(MaterialImportService.class),
+            mock(MaterialQueryService.class), knowledgePoints, mock(KnowledgePointQuestionGenerationService.class));
+
+        var response = controller.submitKnowledgePointGeneration("mat_1");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(202);
+        assertThat(response.getHeaders().getLocation()).hasToString("/api/v2/tasks/task_1");
+        assertThat(response.getBody().taskId()).isEqualTo("task_1");
+        verify(knowledgePoints).submitGeneration("mat_1");
+    }
+
+    @Test
+    void submitsKnowledgePointInterviewQuestionGenerationAsAnAcceptedTaskWithLocation() {
+        var generations = mock(KnowledgePointQuestionGenerationService.class);
+        var request = new GenerateKnowledgePointInterviewQuestionsRequest("kp_1", null, null, null);
+        when(generations.submit("kp_1", request)).thenReturn(new KnowledgePointQuestionGenerationService.Submission(
+            "task_2", java.util.List.of(), 1, InterviewQuestionDifficulty.MEDIUM, QuestionType.SHORT_ANSWER));
+        var controller = new KnowledgeBaseController(mock(KnowledgeBaseService.class), mock(MaterialImportService.class),
+            mock(MaterialQueryService.class), mock(KnowledgePointService.class), generations);
+
+        var response = controller.submitKnowledgePointInterviewQuestions("kp_1", request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(202);
+        assertThat(response.getHeaders().getLocation()).hasToString("/api/v2/tasks/task_2");
+        assertThat(response.getBody().taskId()).isEqualTo("task_2");
+        verify(generations).submit("kp_1", request);
+    }
+
+    private static TaskStatus task(String id) {
+        return new TaskStatus(id, TaskKind.KNOWLEDGE_POINT_EXTRACTION, TaskLifecycleStatus.QUEUED,
+            "kb_1", "mat_1", null, null, null, 0, "QUEUED", null, null, 0, null,
+            Instant.EPOCH, null, null, Instant.EPOCH);
     }
 }

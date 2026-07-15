@@ -67,7 +67,7 @@ public class SourceService {
             material.id(),
             null,
             material.status() == MaterialStatus.DELETED,
-            null
+            null, material.currentRevisionId(), null, null
         );
     }
 
@@ -84,7 +84,7 @@ public class SourceService {
             material.id(),
             chunkId,
             deleted,
-            truncate(content)
+            truncate(content), material.currentRevisionId(), null, chunkId
         );
     }
 

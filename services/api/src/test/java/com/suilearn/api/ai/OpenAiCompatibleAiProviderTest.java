@@ -229,6 +229,46 @@ class OpenAiCompatibleAiProviderTest {
         assertThat(embeddingRequestCount.get()).isEqualTo(1);
     }
 
+    @Test
+    void parsesCompleteStructuredKnowledgePointsWithVersionedCitations() {
+        var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
+
+        var points = provider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+            "kb_1", "mat_1", "HashMap source", List.of(sourceRef()), 4
+        ));
+
+        assertThat(points).singleElement().satisfies(point -> {
+            assertThat(point.title()).isEqualTo("HashMap collision handling");
+            assertThat(point.shortSummary()).isEqualTo("How HashMap resolves bucket collisions.");
+            assertThat(point.definition()).isNotBlank();
+            assertThat(point.principles()).containsExactly("Bucket lookup", "Hash equality");
+            assertThat(point.applicationScenarios()).containsExactly("Fast key-value lookup");
+            assertThat(point.pitfalls()).containsExactly("Mutable keys break lookup");
+            assertThat(point.citations()).singleElement().satisfies(citation -> {
+                assertThat(citation.revisionId()).isEqualTo("rev_2");
+                assertThat(citation.blockId()).isEqualTo("block_7");
+            });
+        });
+    }
+
+    @Test
+    void sendsVersionedCitationLocationAndExcerptInQuestionGenerationRequestBody() {
+        var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
+        var citation = new SourceRef(SourceType.MATERIAL_CHUNK, "chunk_7", "kb_1", "HashMap source", "mat_1", "chunk_7", false,
+            "HashMap collision evidence.", "rev_2", 3, "block_7");
+
+        provider.generateQuestion(new AiProvider.QuestionGenerationPrompt(
+            "kb_1", List.of(citation), SourceType.KNOWLEDGE_POINT, "kp_1", QuestionType.SHORT_ANSWER,
+            "kp_1", "HashMap", List.of("kp_1"), null
+        ));
+
+        assertThat(lastChatRequest.get())
+            .contains("\\\"revisionId\\\":\\\"rev_2\\\"")
+            .contains("\\\"pageNumber\\\":3")
+            .contains("\\\"blockId\\\":\\\"block_7\\\"")
+            .contains("HashMap collision evidence.");
+    }
+
     private SuiLearnAiProperties propertiesWithRetries(int maxRetries) {
         return new SuiLearnAiProperties(
             "openai-compatible",
@@ -261,7 +301,11 @@ class OpenAiCompatibleAiProviderTest {
             respond(exchange, 503, "{\"error\":\"temporary chat failure\"}");
             return;
         }
-        var content = lastChatRequest.get().contains("generate_question")
+        var content = lastChatRequest.get().contains("extract_knowledge_points")
+            ? """
+                {"knowledgePoints":[{"title":"HashMap collision handling","shortSummary":"How HashMap resolves bucket collisions.","definition":"HashMap stores entries in buckets and resolves collisions within a bucket.","principles":["Bucket lookup","Hash equality"],"applicationScenarios":["Fast key-value lookup"],"pitfalls":["Mutable keys break lookup"],"citations":[{"type":"MATERIAL_CHUNK","id":"chunk_7","knowledgeBaseId":"kb_1","title":"HashMap source","materialId":"mat_1","chunkId":"chunk_7","deleted":false,"excerpt":"HashMap resolves collisions in buckets.","revisionId":"rev_2","blockId":"block_7"}]}]}
+                """
+            : lastChatRequest.get().contains("generate_question")
             ? """
                 {"questionType":"SINGLE_CHOICE","categoryId":"java","categoryName":"Java","knowledgePointIds":["kp_1"],"stem":"What does HashMap use for lookup?","options":["A. Hash table","B. Linked only"],"answer":["A"],"explanation":"The answer is grounded in the source."}
                 """

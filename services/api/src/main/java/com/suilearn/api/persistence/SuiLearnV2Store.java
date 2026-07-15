@@ -11,6 +11,7 @@ import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
 import com.suilearn.api.model.KnowledgeBase;
 import com.suilearn.api.model.KnowledgePoint;
+import com.suilearn.api.model.KnowledgePointReviewStatus;
 import com.suilearn.api.model.LearningMaterial;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialSourceType;
@@ -267,18 +268,25 @@ public class SuiLearnV2Store {
     }
 
     public KnowledgePoint saveKnowledgePoint(KnowledgePoint point) {
-        return toModel(knowledgePoints.save(new KnowledgePointEntity(
-            point.id(),
-            point.knowledgeBaseId(),
-            point.name(),
-            point.description(),
-            point.sourceMaterialId(),
-            write(point.sourceRefs())
-        )));
+        var entity = new KnowledgePointEntity(point.id(), point.knowledgeBaseId(), point.name(), point.description(),
+            point.shortSummary(), point.definition(), write(point.principles()), write(point.applicationScenarios()), write(point.pitfalls()),
+            point.reviewStatus().name(), point.sourceOutdated(), point.legacy(), point.sourceMaterialId(), write(point.sourceRefs()));
+        entity.setTitle(point.title());
+        return toModel(knowledgePoints.save(entity));
     }
 
     public void deleteKnowledgePoint(String id) {
         knowledgePoints.deleteById(id);
+    }
+
+    @Transactional
+    public void markKnowledgePointsSourceOutdated(String materialId, String currentRevisionId) {
+        knowledgePoints.findAll().stream().map(this::toModel)
+            .filter(point -> materialId.equals(point.sourceMaterialId()))
+            .filter(point -> point.sourceRefs().stream().anyMatch(ref -> materialId.equals(ref.materialId()) && !currentRevisionId.equals(ref.revisionId())))
+            .forEach(point -> saveKnowledgePoint(new KnowledgePoint(point.id(), point.knowledgeBaseId(), point.name(), point.description(),
+                point.sourceMaterialId(), point.sourceRefs(), point.title(), point.shortSummary(), point.definition(), point.principles(),
+                point.applicationScenarios(), point.pitfalls(), point.reviewStatus(), true, point.legacy())));
     }
 
     @Transactional(readOnly = true)
@@ -292,7 +300,7 @@ public class SuiLearnV2Store {
     }
 
     public GeneratedQuestionDraft saveGeneratedContent(GeneratedQuestionDraft draft) {
-        return toModel(generatedContents.save(new GeneratedContentEntity(
+        var entity = new GeneratedContentEntity(
             draft.id(),
             draft.knowledgeBaseId(),
             draft.generationTaskId(),
@@ -312,7 +320,9 @@ public class SuiLearnV2Store {
             draft.savedAt(),
             draft.createdAt(),
             draft.updatedAt()
-        )));
+        );
+        entity.setEvidence(draft.knowledgePointId(), draft.materialId(), draft.revisionId(), draft.evidenceExcerpt());
+        return toModel(generatedContents.save(entity));
     }
 
     @Transactional(readOnly = true)
@@ -497,14 +507,14 @@ public class SuiLearnV2Store {
     }
 
     private KnowledgePoint toModel(KnowledgePointEntity entity) {
-        return new KnowledgePoint(
-            entity.getId(),
-            entity.getKnowledgeBaseId(),
-            entity.getName(),
-            entity.getDescription(),
-            entity.getSourceMaterialId(),
-            read(entity.getSourceRefsJson(), SOURCE_REFS)
-        );
+        var refs = read(entity.getSourceRefsJson(), SOURCE_REFS);
+        return new KnowledgePoint(entity.getId(), entity.getKnowledgeBaseId(), entity.getName(), entity.getDescription(), entity.getSourceMaterialId(), refs,
+            entity.getTitle() == null ? entity.getName() : entity.getTitle(), entity.getShortSummary() == null ? entity.getDescription() : entity.getShortSummary(), entity.getDefinition(),
+            readNullable(entity.getPrinciplesJson(), STRINGS) == null ? List.of() : readNullable(entity.getPrinciplesJson(), STRINGS),
+            readNullable(entity.getApplicationScenariosJson(), STRINGS) == null ? List.of() : readNullable(entity.getApplicationScenariosJson(), STRINGS),
+            readNullable(entity.getPitfallsJson(), STRINGS) == null ? List.of() : readNullable(entity.getPitfallsJson(), STRINGS),
+            enumOrDefault(KnowledgePointReviewStatus.class, entity.getReviewStatus(), KnowledgePointReviewStatus.CONFIRMED),
+            Boolean.TRUE.equals(entity.getSourceOutdated()), Boolean.TRUE.equals(entity.getLegacy()));
     }
 
     private GeneratedQuestionDraft toModel(GeneratedContentEntity entity) {
@@ -527,7 +537,7 @@ public class SuiLearnV2Store {
             entity.getSavedQuestionId(),
             entity.getSavedAt(),
             entity.getCreatedAt(),
-            entity.getUpdatedAt()
+            entity.getUpdatedAt(), entity.getKnowledgePointId(), entity.getMaterialId(), entity.getRevisionId(), entity.getEvidenceExcerpt()
         );
     }
 

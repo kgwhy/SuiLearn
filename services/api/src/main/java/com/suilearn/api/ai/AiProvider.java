@@ -3,6 +3,7 @@ package com.suilearn.api.ai;
 import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.SourceRef;
 import com.suilearn.api.model.SourceType;
+import com.suilearn.api.generation.domain.InterviewQuestionDifficulty;
 import java.util.List;
 
 public interface AiProvider {
@@ -25,8 +26,13 @@ public interface AiProvider {
         String categoryId,
         String categoryName,
         List<String> knowledgePointIds,
-        String userPrompt
+        String userPrompt,
+        InterviewQuestionDifficulty difficulty
     ) {
+        public QuestionGenerationPrompt(String knowledgeBaseId, List<SourceRef> sourceRefs, SourceType sourceType, String sourceId,
+            QuestionType questionType, String categoryId, String categoryName, List<String> knowledgePointIds, String userPrompt) {
+            this(knowledgeBaseId, sourceRefs, sourceType, sourceId, questionType, categoryId, categoryName, knowledgePointIds, userPrompt, null);
+        }
     }
 
     record KnowledgePointExplanationPrompt(
@@ -118,7 +124,17 @@ public interface AiProvider {
 
     record GeneratedKnowledgePoint(
         String name,
-        String description
+        String description,
+        String title,
+        String shortSummary,
+        String definition,
+        List<String> principles,
+        List<String> applicationScenarios,
+        List<String> pitfalls,
+        List<SourceRef> citations
     ) {
+        public GeneratedKnowledgePoint(String name, String description) {
+            this(name, description, null, null, null, null, null, null, null);
+        }
     }
 }
