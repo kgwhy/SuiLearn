@@ -25,7 +25,7 @@
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 兼容旧 JSON 导入一个周期并标记 deprecated；契约字段足以表达异步任务、版本来源和批量草稿，且无密钥/对象 key 泄露。
 
-- [x] 1.3 固化风险自适应批次工作流，在不降低 TDD、独立审查、问题闭环和最终验证的前提下，减少重复上下文、重复全量测试、重复审查与冗长日志传递。
+- [x] 1.3 固化风险自适应批次工作流，在不降低 TDD、独立审查、问题闭环和最终验证的前提下，以证据指纹复用、取消协议、紧凑日志/Git 摘要和 worktree 安全目录初始化减少重复上下文、重复全量测试、重复审查与冗长日志传递。
   - Owner: Leader Agent
   - Allowed files: `docs/development-workflow.md`, `agents/leader.md`, `.agents/skills/suilearn-workflow/references/subagent-loop.md`, `scripts/check-suilearn-workflow.ps1`, `openspec/changes/build-resilient-knowledge-pipeline/**`
   - Forbidden files: `services/**`, `apps/**`, `contracts/**`, `docs/product-requirements.md`, `docs/architecture.md`, `docs/tech-selection.md`, `docs/proposals/**`, `docs/superpowers/**`
@@ -41,7 +41,7 @@
   - Test command: `docker compose config`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
   - Review focus: 本地默认值非敏感；服务名、持久卷、依赖和健康条件稳定；根共享配置不混入业务实现；不新增 Redis 或独立 Worker 服务；`.env.example` 只记录 `SUILEARN_ADAPTER_MAX_RETRIES=0`，Compose 对新旧 retry 键都使用无默认值可选透传且空值视为未提供，缺失/空值/仅旧键/新旧并存矩阵可由 `docker compose config` 验证。
 
-- [x] 2.2 以测试先行方式加入 RabbitMQ、MinIO、解析/OCR、Resilience4j、Actuator/Micrometer 和 Testcontainers 依赖及 Backend 运行配置。
+- [x] 2.2 以测试先行方式加入 RabbitMQ、MinIO、解析/OCR、Resilience4j、Actuator/Micrometer 和 Testcontainers 依赖及 Backend 运行配置；此任务已提供 DOCX 所需的 `poi-ooxml`，二进制 OLE `.doc` 所需的 `poi-scratchpad` 由未完成的 Task 3.2 单独补充。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/pom.xml`, `services/api/src/main/resources/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/ai/OpenAiCompatibleAiProvider.java`, `services/api/src/main/java/com/suilearn/api/retrieval/OpenAiCompatibleEmbeddingProvider.java`, `services/api/src/test/**`, `services/api/Dockerfile`, `services/api/config/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
@@ -71,28 +71,28 @@
 
 ## 3. 多格式解析、OCR 与资料版本
 
-- [ ] 3.1 先建立 Markdown/TXT/文本 PDF/扫描 PDF/混合 PDF/DOC/DOCX/损坏与伪造文件测试语料和 parser contract 测试。
+- [x] 3.1 先建立 Markdown/TXT/文本 PDF/扫描 PDF/混合 PDF/DOC/DOCX/损坏与伪造文件测试语料和 parser contract 测试；`.doc` 语料必须是最小化、生成或版权安全的真实二进制 OLE `.doc`，不得用改名 RTF 伪造。
   - Owner: Test Agent
   - Allowed files: `services/api/src/test/**`, `services/api/src/test/resources/**`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`
   - Forbidden files: `services/api/src/main/**`, `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: fixtures 小而合法、覆盖页码/结构/OCR 判定/安全边界，不使用含隐私或版权风险的真实用户资料。
 
-- [ ] 3.2 实现格式检测、Tika/PDFBox/POI/CommonMark 解析、文本密度判断、DocumentRevision/Block 生成和索引接入，使 3.1 测试通过。
+- [x] 3.2 实现格式检测、Tika/PDFBox/POI/CommonMark 解析、文本密度判断、DocumentRevision/Block 生成和索引接入，使 3.1 测试通过；为支持真实二进制 OLE `.doc`，可且仅可在 `services/api/pom.xml` 中于既有 `poi-ooxml` 旁新增 `org.apache.poi:poi-scratchpad` 依赖。
   - Owner: Server Backend Agent
-  - Allowed files: `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/retrieval/**`, `services/api/src/test/**`
+  - Allowed files: `services/api/pom.xml`（仅新增 `org.apache.poi:poi-scratchpad`，与既有 `poi-ooxml` 配套）, `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/retrieval/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 文本 PDF 不 OCR；混合 PDF 仅 OCR 缺失页；章节/页码/block 顺序稳定；宏/脚本/嵌入对象不执行。
 
-- [ ] 3.3 实现 Tesseract OCR adapter、LibreOffice headless 高保真预览、并发/超时/熔断与失败隔离，使扫描 PDF 和 Word 验收通过。
+- [x] 3.3 实现 Tesseract OCR adapter、LibreOffice headless 高保真预览、并发/超时/熔断与失败隔离，使扫描 PDF 和 Word 验收通过。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/test/**`, `services/api/Dockerfile`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`; `docker compose config`
   - Review focus: OCR 并发默认 1；外部进程参数不可注入；超时可终止；预览失败不丢原件；OCR operation key 固定到 revision/page/adapterVersion，重试或重启复用成功页面、只处理剩余页面；单 operation 调用上限不得误限整份 500 页 PDF。
 
-- [ ] 3.4 将 material import orchestration 切换为 multipart + Outbox 异步流水线，并实现 legacy content 到 LEGACY_TEXT revision 的增量兼容迁移。
+- [x] 3.4 将 material import orchestration 切换为 multipart + Outbox 异步流水线，并实现 legacy content 到 LEGACY_TEXT revision 的增量兼容迁移。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/controller/**`, `services/api/src/main/java/com/suilearn/api/dto/**`, `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/task/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）

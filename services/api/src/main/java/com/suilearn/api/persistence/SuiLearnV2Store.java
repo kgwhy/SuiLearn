@@ -164,7 +164,8 @@ public class SuiLearnV2Store {
             material.errorMessage(),
             material.content(),
             material.createdAt(),
-            material.deletedAt()
+            material.deletedAt(),
+            material.currentRevisionId()
         )));
     }
 
@@ -475,7 +476,8 @@ public class SuiLearnV2Store {
             entity.getErrorMessage(),
             entity.getContent(),
             entity.getCreatedAt(),
-            entity.getDeletedAt()
+            entity.getDeletedAt(),
+            entity.getCurrentRevisionId()
         );
     }
 

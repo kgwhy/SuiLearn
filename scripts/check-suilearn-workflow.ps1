@@ -6,22 +6,30 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$gitSafeDirectory = (Resolve-Path ".").Path.Replace("\\", "/")
+
+function Invoke-WorkflowGit {
+    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
+
+    & git -c "safe.directory=$script:gitSafeDirectory" @Arguments
+}
+
 $changed = @()
 
 if ([string]::IsNullOrWhiteSpace($BaseRef)) {
     $BaseRef = ""
     try {
-        $BaseRef = (git merge-base HEAD origin/main 2>$null).Trim()
+        $BaseRef = (Invoke-WorkflowGit merge-base HEAD origin/main 2>$null).Trim()
     } catch {
         $BaseRef = ""
     }
     if ([string]::IsNullOrWhiteSpace($BaseRef)) {
-        $BaseRef = (git rev-parse HEAD).Trim()
+        $BaseRef = (Invoke-WorkflowGit rev-parse HEAD).Trim()
     }
     Write-Output "BaseRef not provided; using $BaseRef"
 }
 
-$diffEntries = git diff --name-status $BaseRef
+$diffEntries = Invoke-WorkflowGit diff --name-status $BaseRef
 
 function Test-ProtectedPath {
     param([string]$Path)
@@ -85,13 +93,20 @@ function Test-EfficientBatchPolicy {
         @{ Path = "docs/development-workflow.md"; Pattern = "RED -> GREEN -> REFACTOR" },
         @{ Path = "docs/development-workflow.md"; Pattern = "Test -> Spec Review -> Code Review" },
         @{ Path = "docs/development-workflow.md"; Pattern = "\u6700\u7ec8 Verify" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
+        @{ Path = "docs/development-workflow.md"; Pattern = "git -c safe\.directory" },
         @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "\u7d27\u51d1\u8bc1\u636e" },
+        @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "\u53d6\u6d88\u4e0e worktree \u534f\u8bae" },
         @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "P0/P1" },
         @{ Path = ".agents/skills/suilearn-workflow/references/subagent-loop.md"; Pattern = "P2" },
         @{ Path = "agents/leader.md"; Pattern = "\u6279\u6b21\u9a8c\u6536\u547d\u4ee4" },
         @{ Path = "agents/leader.md"; Pattern = "\u6210\u529f\u8fd4\u56de\u7d27\u51d1\u8bc1\u636e" },
+        @{ Path = "agents/leader.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
+        @{ Path = "agents/leader.md"; Pattern = "safe\.directory" },
         @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "MUST" },
-        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "P0/P1/P2" }
+        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "P0/P1/P2" },
+        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
+        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "safe\.directory" }
     )
 
     foreach ($clause in $requiredClauses) {
@@ -193,7 +208,7 @@ foreach ($entry in $diffEntries) {
     }
 }
 
-$worktreeChanged = git status --porcelain
+$worktreeChanged = Invoke-WorkflowGit status --porcelain
 foreach ($line in $worktreeChanged) {
     if ($line.Length -lt 4) {
         continue

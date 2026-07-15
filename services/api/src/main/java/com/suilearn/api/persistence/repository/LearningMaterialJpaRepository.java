@@ -7,5 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface LearningMaterialJpaRepository extends JpaRepository<LearningMaterialEntity, String> {
     List<LearningMaterialEntity> findByKnowledgeBaseId(String knowledgeBaseId);
 
+    List<LearningMaterialEntity> findByStatusAndContentIsNotNull(String status);
+
     void deleteByKnowledgeBaseId(String knowledgeBaseId);
 }

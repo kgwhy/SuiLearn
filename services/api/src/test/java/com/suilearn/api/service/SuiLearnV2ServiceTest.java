@@ -333,13 +333,14 @@ class SuiLearnV2ServiceTest {
             MaterialSourceType.MARKDOWN,
             "HashMap buckets collision"
         ));
-        var extraction = knowledgePointService.extractKnowledgePoints(material.id());
+        var readyMaterial = materialImportService.consumeQueuedMaterialImport(material.id());
+        var extraction = knowledgePointService.extractKnowledgePoints(readyMaterial.id());
         var point = extraction.knowledgePoints().get(0);
         var updatedPoint = knowledgePointService.updateKnowledgePoint(
             point.id(),
             new UpdateKnowledgePointRequest("HashMap", "Java collection map")
         );
-        var sourceRef = materialSourceRef(kb.id(), material.id(), material.title());
+        var sourceRef = materialSourceRef(kb.id(), readyMaterial.id(), readyMaterial.title());
         var draft = generatedContentService.generateQuestion(generateQuestionRequest(
             kb.id(),
             sourceRef,
@@ -351,7 +352,7 @@ class SuiLearnV2ServiceTest {
         generatedContentService.deleteGeneratedContent(draft.id());
         var pack = learningPackService.resolve(kb.id());
 
-        assertThat(material.status()).isEqualTo(MaterialStatus.READY);
+        assertThat(readyMaterial.status()).isEqualTo(MaterialStatus.READY);
         assertThat(knowledgePointService.listKnowledgePoints(kb.id())).extracting("id").contains(updatedPoint.id());
         assertThat(generatedContentService.listGeneratedContents(GeneratedContentStatus.DELETED))
             .extracting("id")

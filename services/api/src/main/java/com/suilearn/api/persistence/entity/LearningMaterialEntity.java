@@ -22,6 +22,7 @@ public class LearningMaterialEntity {
     private String content;
     private Instant createdAt;
     private Instant deletedAt;
+    private String currentRevisionId;
 
     protected LearningMaterialEntity() {
     }
@@ -37,7 +38,8 @@ public class LearningMaterialEntity {
         String errorMessage,
         String content,
         Instant createdAt,
-        Instant deletedAt
+        Instant deletedAt,
+        String currentRevisionId
     ) {
         this.id = id;
         this.knowledgeBaseId = knowledgeBaseId;
@@ -50,6 +52,14 @@ public class LearningMaterialEntity {
         this.content = content;
         this.createdAt = createdAt;
         this.deletedAt = deletedAt;
+        this.currentRevisionId = currentRevisionId;
+    }
+
+    public LearningMaterialEntity(
+        String id, String knowledgeBaseId, String title, String sourceType, String status, String importTaskId, String embeddingTaskId,
+        String errorMessage, String content, Instant createdAt, Instant deletedAt
+    ) {
+        this(id, knowledgeBaseId, title, sourceType, status, importTaskId, embeddingTaskId, errorMessage, content, createdAt, deletedAt, null);
     }
 
     public String getId() {
@@ -94,5 +104,13 @@ public class LearningMaterialEntity {
 
     public Instant getDeletedAt() {
         return deletedAt;
+    }
+
+    public String getCurrentRevisionId() {
+        return currentRevisionId;
+    }
+
+    public void setCurrentRevisionId(String currentRevisionId) {
+        this.currentRevisionId = currentRevisionId;
     }
 }

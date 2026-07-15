@@ -50,6 +50,7 @@ class MinioAssetStorageTest {
         assertThat(gateway.deleted).contains("tmp/random-key");
         assertThat(asset.objectKey()).isEqualTo("assets/random-key");
         assertThat(asset.mimeType()).isEqualTo("application/pdf");
+        assertThat(asset.originalFilename()).isEqualTo("user.pdf");
 
         records.failSaves = true;
         assertThatThrownBy(() -> coordinator.store(new AssetUpload(new ByteArrayInputStream(new byte[] {2}), "bad.pdf", "application/pdf"), "mat_2", "ORIGINAL"))
@@ -74,6 +75,7 @@ class MinioAssetStorageTest {
             assertThat(asset.temporaryKey()).isEqualTo("tmp/random-key");
             assertThat(asset.plannedObjectKey()).isEqualTo("assets/random-key");
             assertThat(asset.promotionState()).isEqualTo(AssetPromotionState.PENDING);
+            assertThat(asset.originalFilename()).isEqualTo("user.pdf");
         });
         assertThat(gateway.deleted).doesNotContain("tmp/random-key");
 
@@ -85,6 +87,7 @@ class MinioAssetStorageTest {
             assertThat(asset.objectKey()).isEqualTo("assets/random-key");
             assertThat(asset.temporaryKey()).isNull();
             assertThat(asset.promotionState()).isEqualTo(AssetPromotionState.PROMOTED);
+            assertThat(asset.originalFilename()).isEqualTo("user.pdf");
         });
         assertThat(gateway.deleted).contains("tmp/random-key");
     }

@@ -2,6 +2,8 @@ package com.suilearn.api.controller;
 
 import com.suilearn.api.dto.CreateKnowledgeBaseRequest;
 import com.suilearn.api.dto.ImportMaterialRequest;
+import com.suilearn.api.dto.MaterialImportAcceptedResponse;
+import com.suilearn.api.dto.TaskSubmissionResponse;
 import com.suilearn.api.dto.RenameKnowledgeBaseRequest;
 import com.suilearn.api.dto.SubmitAnswerRequest;
 import com.suilearn.api.dto.UpdateKnowledgePointRequest;
@@ -9,6 +11,7 @@ import com.suilearn.api.knowledgebase.application.KnowledgeBaseService;
 import com.suilearn.api.knowledgepoint.application.KnowledgePointService;
 import com.suilearn.api.material.application.MaterialImportService;
 import com.suilearn.api.material.application.MaterialQueryService;
+import com.suilearn.api.material.storage.AssetUpload;
 import com.suilearn.api.model.AnswerRecord;
 import com.suilearn.api.model.DeletedMaterialPendingContentPolicy;
 import com.suilearn.api.model.DeletedMaterialSavedContentPolicy;
@@ -24,6 +27,8 @@ import com.suilearn.api.model.MaterialSourceType;
 import com.suilearn.api.model.QuestionSummary;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.io.IOException;
+import java.net.URI;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -112,6 +117,7 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping("/knowledge-bases/{knowledgeBaseId}/materials")
+    @Deprecated(since = "2026-07", forRemoval = false)
     MaterialMetadata importMaterial(
         @PathVariable String knowledgeBaseId,
         @Valid @RequestBody ImportMaterialRequest request
@@ -120,18 +126,34 @@ public class KnowledgeBaseController {
     }
 
     @PostMapping(value = "/knowledge-bases/{knowledgeBaseId}/materials", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    MaterialMetadata importMaterialFormData(
+    ResponseEntity<MaterialImportAcceptedResponse> importMaterialFormData(
         @PathVariable String knowledgeBaseId,
         @RequestParam String title,
         @RequestParam(required = false) String fileName,
         @RequestParam MaterialSourceType sourceType,
-        @RequestParam String content,
-        @RequestParam(required = false) MultipartFile file
-    ) {
-        return toMaterialMetadata(materialImportService.importMaterial(
-            knowledgeBaseId,
-            new ImportMaterialRequest(title, fileName, sourceType, content)
-        ));
+        @RequestParam MultipartFile file
+    ) throws IOException {
+        var submittedFileName = fileName == null || fileName.isBlank() ? file.getOriginalFilename() : fileName;
+        com.suilearn.api.model.LearningMaterial material;
+        try (var stream = file.getInputStream()) {
+            material = materialImportService.importMultipartMaterial(
+                knowledgeBaseId,
+                title,
+                submittedFileName,
+                sourceType,
+                new AssetUpload(stream, submittedFileName, file.getContentType())
+            );
+        }
+        String taskHref = "/api/v2/tasks/" + material.importTaskId();
+        return ResponseEntity.accepted()
+            .location(URI.create(taskHref))
+            .body(new MaterialImportAcceptedResponse(
+                material.importTaskId(),
+                com.suilearn.api.model.TaskLifecycleStatus.QUEUED,
+                taskHref,
+                material.id(),
+                "/api/v2/materials/" + material.id()
+            ));
     }
 
     @GetMapping("/materials/{materialId}")
@@ -146,6 +168,12 @@ public class KnowledgeBaseController {
         @RequestParam(required = false) DeletedMaterialPendingContentPolicy pendingContentPolicy
     ) {
         return materialQueryService.deleteMaterial(materialId, savedContentPolicy, pendingContentPolicy);
+    }
+
+    @PostMapping("/materials/{materialId}/reprocess")
+    ResponseEntity<TaskSubmissionResponse> reprocessMaterial(@PathVariable String materialId) {
+        var task = materialImportService.reprocessMaterial(materialId);
+        return ResponseEntity.accepted().body(new TaskSubmissionResponse(task.id(), task.status(), "/api/v2/tasks/" + task.id()));
     }
 
     @PostMapping("/materials/{materialId}/extract-knowledge-points")

@@ -44,12 +44,14 @@
 
 - Batch A 契约：Task 1.2。
 - Batch B 可靠底座：Task 2.1–2.5。
-- Batch C 导入/OCR：Task 3.1–3.4。
+- Batch C 导入/OCR：Task 3.1–3.4；保持 L3 顺序，Task 3.1 先提供真实 OLE `.doc` fixture，Task 3.2 随后才可在既有 `poi-ooxml` 旁新增且仅新增 `org.apache.poi:poi-scratchpad`。
 - Batch D 知识点/出题：Task 4.1–4.3。
 - Batch E Web：Task 5.1–5.3。
 - Batch F 集成收口：Task 6.1–7.3。
 
 批次内按任务顺序、角色和文件锁串行实现，业务行为仍执行 RED→GREEN→REFACTOR 和任务局部测试。批次内任务先记录“实现完成、待批次审查”，不得由 Implementer 自证最终完成；批次末只执行一轮独立 Test、Spec Review、Code Review。发现 P0/P1/P2 后由对应 Implementer 集中修复并复审，最多三轮。Task 1.1 已按原逐任务 L3 完成，不重复审查。
+
+批次验收证据复用必须核对 `base_ref`、任务清单、受影响路径/当前 diff、验证命令和环境前提；任一项变化即失效，最终 Verify 不得由复用结果替代。用户缩小范围、暂停或取消时，Leader 停止新派发并中断相关子 Agent，等待写入/测试进程退出和文件锁释放后，只撤销取消任务独占的未验收改动，并隔离其并发测试报告。完整命令和 `git diff <base_ref> --stat` 必须执行且可追溯，但成功回传只给出紧凑摘要。创建或首次复用 worktree 时，所有 Git 检查/索引操作使用 `git -c safe.directory=<absolute-worktree>`，不得修改用户全局 Git 配置。
 
 ## 允许路径
 

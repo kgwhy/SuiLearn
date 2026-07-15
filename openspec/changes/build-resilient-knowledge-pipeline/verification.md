@@ -16,6 +16,7 @@ Build 入口基线已执行；下列功能、故障和运行态矩阵仍不得�
   - `docker compose config`：退出码 0；Docker CLI 报告用户级 `config.json` 无读取权限的环境警告，不影响静态配置展开。
 - 每个 Build 任务执行前后必须记录 `tasks.md` 指定命令的原始结果。
 - 最终范围只能落在 `policy.md` 最大边界与具体任务 Allowed files 交集内。
+- 2026-07-14 用户批准范围纠正：真实二进制 OLE `.doc` 支持需要在既有 `poi-ooxml` 之外使用 `org.apache.poi:poi-scratchpad`；Task 3.1 必须使用最小化、生成或版权安全的真实 OLE `.doc` fixture，改名 RTF 无效；Task 3.2 被明确授权仅为此在 `services/api/pom.xml` 新增该依赖。
 
 ## 自动化验证命令
 
@@ -195,3 +196,19 @@ docker compose ps
 - Code Review：未执行（Owner: Reviewer Agent）。
 - P0/P1/P2 处置：Task 1.1/Spec 修订 Review 已发现并修复配置、幂等、安全与任务边界问题；后续 Build 继续逐任务据实记录，任何 P2 也必须修复或经用户批准迁移到具名 follow-up change。
 - reviewer-style 自审：Spec 收尾时先执行一次，Build/Verify 收尾再执行一次。
+
+### Task 3.1 fixture correction (2026-07-14)
+
+- `mvn -f services/api/pom.xml -Dtest=DocumentParserContractTest test -q`: exit code 1; 8 tests RED, 8 failures, 0 errors. The Apache POI `Word6.doc` OLE fixture loaded successfully; every failure is the expected missing `com.suilearn.api.material.document.DocumentParser` contract awaiting Task 3.2.
+
+### Batch C / Tasks 3.1–3.4 (2026-07-15)
+
+- Independent final gate: approved; P0/P1/P2 = 0.
+- `mvn -f services/api/pom.xml test -q`: 198 tests, 0 failures/errors/skips.
+- `openspec validate build-resilient-knowledge-pipeline --strict`, workflow checker, and `git diff --check`: exit code 0.
+- Verified parser failure routing/DLQ, OCR retry and operation reuse, reprocess and legacy revisions, bounded parsing, descendant-first process termination, and 1 MiB process-output caps.
+
+### Task 1.3 workflow refinement (2026-07-15)
+
+- User approved four workflow controls: evidence-fingerprint reuse, cancellation/report isolation, compact successful logs and Git summaries, and worktree-local `safe.directory` handling.
+- Scope is limited to Leader workflow policy, subagent loop, workflow checker, and this active change's Task 1.3 artifacts; no application, contract, or product behavior is changed.

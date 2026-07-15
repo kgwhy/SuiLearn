@@ -1,6 +1,10 @@
 package com.suilearn.api.config;
 
+import com.suilearn.api.material.document.ExternalProcessRunner;
+import com.suilearn.api.material.document.LibreOfficePreviewAdapter;
+import com.suilearn.api.material.document.TesseractOcrAdapter;
 import java.time.Clock;
+import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
@@ -48,5 +52,17 @@ public class AppConfig {
     @Bean
     AsyncProcessingAdmissionGuard asyncProcessingAdmissionGuard(SuiLearnProcessingProperties properties) {
         return new AsyncProcessingAdmissionGuard(properties.asyncProcessingEnabled());
+    }
+
+    @Bean
+    LibreOfficePreviewAdapter libreOfficePreviewAdapter(SuiLearnProcessingProperties properties) {
+        return new LibreOfficePreviewAdapter("soffice", ExternalProcessRunner.processBuilder(),
+            Duration.ofMillis(properties.libreOfficeTimeoutMs()), "libreoffice-v1");
+    }
+
+    @Bean
+    TesseractOcrAdapter tesseractOcrAdapter(SuiLearnProcessingProperties properties) {
+        return new TesseractOcrAdapter("tesseract", ExternalProcessRunner.processBuilder(), properties.ocrConcurrency(),
+            Duration.ofMillis(properties.ocrTimeoutMs()), "tesseract-v1");
     }
 }

@@ -70,6 +70,24 @@ public class TaskService {
         );
     }
 
+    /** Reopens a failed durable task only after the broker has accepted a retry delivery. */
+    public TaskStatus scheduleRetry(TaskStatus task) {
+        return scheduleRetry(task, task.retryCount() + 1);
+    }
+
+    /** Persists the broker retry header as the durable retry count. */
+    public TaskStatus scheduleRetry(TaskStatus task, int retryCount) {
+        if (retryCount < task.retryCount()) {
+            throw new IllegalArgumentException("Retry count cannot move backwards");
+        }
+        var now = clock.instant();
+        return taskStore.save(new TaskStatus(
+            task.id(), task.kind(), TaskLifecycleStatus.QUEUED, task.knowledgeBaseId(), task.materialId(), task.generatedContentId(),
+            task.providerType(), task.model(), 0, task.currentStep(), null, null, retryCount, null,
+            task.createdAt(), null, null, now
+        ));
+    }
+
     public TaskStatus updateTask(
         TaskStatus existing,
         TaskLifecycleStatus status,
