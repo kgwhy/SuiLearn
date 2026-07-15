@@ -33,4 +33,6 @@ public class KnowledgePointStore {
     public void delete(String knowledgePointId) {
         store.deleteKnowledgePoint(knowledgePointId);
     }
+
+    public void markKnowledgePointsSourceOutdated(String materialId, String currentRevisionId) { store.markKnowledgePointsSourceOutdated(materialId, currentRevisionId); }
 }

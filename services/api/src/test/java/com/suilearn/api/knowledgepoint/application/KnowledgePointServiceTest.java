@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
 
 class KnowledgePointServiceTest {
     @Test
-    void fallsBackToLocalExtractionWhenAiProviderIsNotConfigured() {
+    void failsWithoutPersistingKeywordCandidatesWhenAiProviderIsNotConfigured() {
         var material = new LearningMaterial(
             "mat_1",
             "kb_1",
@@ -73,11 +73,9 @@ class KnowledgePointServiceTest {
 
         var result = service.extractKnowledgePoints(material.id());
 
-        assertThat(result.knowledgePoints())
-            .extracting(KnowledgePoint::name)
-            .contains("HashMap", "equals", "hashCode", "StringBuilder");
-        assertThat(result.task().status().name()).isEqualTo("SUCCEEDED");
-        assertThat(result.task().currentStep()).isEqualTo("LOCAL_FALLBACK");
+        assertThat(result.knowledgePoints()).isEmpty();
+        assertThat(result.task().status().name()).isEqualTo("FAILED");
+        assertThat(result.task().currentStep()).isEqualTo("AI_EXTRACTION_FAILED");
         assertThat(result.task().model()).isNull();
     }
 
@@ -85,8 +83,14 @@ class KnowledgePointServiceTest {
     void recordsAiExtractionWhenConfiguredChatProviderReturnsKnowledgePoints() {
         var material = readyMaterial();
         var aiProvider = mock(AiProvider.class);
-        when(aiProvider.extractKnowledgePoints(any()))
-            .thenReturn(List.of(new AiProvider.GeneratedKnowledgePoint("HashMap resizing", "AI generated explanation")));
+        when(aiProvider.extractKnowledgePoints(any())).thenReturn(List.of(new AiProvider.GeneratedKnowledgePoint(
+            "HashMap resizing", "AI generated explanation", "HashMap resizing", "AI generated explanation",
+            "HashMap resizes buckets when the load factor threshold is exceeded.", List.of("Load factor controls resizing."),
+            List.of("Use it to size hash maps."), List.of("Capacity is not the same as size."), List.of(new SourceRef(
+                SourceType.MATERIAL_CHUNK, "chunk_1", material.knowledgeBaseId(), material.title(), material.id(), "chunk_1",
+                false, "HashMap evidence", "rev_1", 1, "block_1"
+            ))
+        )));
         var knowledgePoints = mock(KnowledgePointStore.class);
         when(knowledgePoints.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         var service = service(material, List.of(), aiProvider, configuredProperties(), knowledgePoints);

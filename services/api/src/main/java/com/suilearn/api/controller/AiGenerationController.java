@@ -4,8 +4,10 @@ import com.suilearn.api.dto.GenerateExplanationRequest;
 import com.suilearn.api.dto.GenerateQuestionRequest;
 import com.suilearn.api.dto.GenerateReviewSuggestionRequest;
 import com.suilearn.api.dto.ReviewGeneratedContentRequest;
+import com.suilearn.api.dto.ReviewKnowledgePointQuestionDraftRequest;
 import com.suilearn.api.dto.SaveAiNoteRequest;
 import com.suilearn.api.generation.application.GeneratedContentService;
+import com.suilearn.api.generation.application.KnowledgePointQuestionDraftReviewService;
 import com.suilearn.api.model.AiNoteDraft;
 import com.suilearn.api.model.GeneratedContentStatus;
 import com.suilearn.api.model.GeneratedQuestionDraft;
@@ -27,9 +29,19 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v2/ai")
 public class AiGenerationController {
     private final GeneratedContentService generatedContentService;
+    private final KnowledgePointQuestionDraftReviewService knowledgePointQuestionDraftReviews;
 
     public AiGenerationController(GeneratedContentService generatedContentService) {
+        this(generatedContentService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiGenerationController(
+        GeneratedContentService generatedContentService,
+        KnowledgePointQuestionDraftReviewService knowledgePointQuestionDraftReviews
+    ) {
         this.generatedContentService = generatedContentService;
+        this.knowledgePointQuestionDraftReviews = knowledgePointQuestionDraftReviews;
     }
 
     @PostMapping("/generated-questions")
@@ -71,5 +83,16 @@ public class AiGenerationController {
     ResponseEntity<Void> deleteGeneratedContent(@PathVariable String generatedContentId) {
         generatedContentService.deleteGeneratedContent(generatedContentId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/knowledge-point-question-drafts/{generatedContentId}")
+    GeneratedQuestionDraft reviewKnowledgePointQuestionDraft(
+        @PathVariable String generatedContentId,
+        @Valid @RequestBody ReviewKnowledgePointQuestionDraftRequest request
+    ) {
+        if (knowledgePointQuestionDraftReviews == null) {
+            return generatedContentService.reviewKnowledgePointQuestionDraft(generatedContentId, request);
+        }
+        return knowledgePointQuestionDraftReviews.review(generatedContentId, request);
     }
 }

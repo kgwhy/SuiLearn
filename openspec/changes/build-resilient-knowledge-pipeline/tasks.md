@@ -101,23 +101,23 @@
 
 ## 4. 结构化知识点与面试题
 
-- [ ] 4.1 先补知识点 schema、无 AI、AI 不完整、失败重试、审核状态、revision 过期和 legacy 兼容测试。
+- [x] 4.1 先补知识点 schema、无 AI、AI 不完整、失败重试、审核状态、revision 过期和 legacy 兼容测试。
   - Owner: Test Agent
   - Allowed files: `services/api/src/test/java/com/suilearn/api/knowledgepoint/**`, `services/api/src/test/java/com/suilearn/api/ai/**`, `services/api/src/test/java/com/suilearn/api/generation/**`, `services/api/src/test/resources/**`
   - Forbidden files: `services/api/src/main/**`, `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 必需字段不可被占位补齐；AI 未配置/失败不产生关键词；已确认知识点不被重新生成覆盖。
 
-- [ ] 4.2 实现结构化知识点生成/审核/来源定位/过期标记，删除候选词与统一 description fallback，使 4.1 测试通过。
+- [x] 4.2 实现结构化知识点生成/审核/来源定位/过期标记，删除候选词与统一 description fallback，使 4.1 测试通过。
   - Owner: Server Backend Agent
-  - Allowed files: `services/api/src/main/java/com/suilearn/api/knowledgepoint/**`, `services/api/src/main/java/com/suilearn/api/ai/**`, `services/api/src/main/java/com/suilearn/api/source/**`, `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/test/**`
+  - Allowed files: `services/api/src/main/java/com/suilearn/api/knowledgepoint/**`, `services/api/src/main/java/com/suilearn/api/ai/**`, `services/api/src/main/java/com/suilearn/api/source/**`, `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/test/**`（Batch D Review 扩展：持久化结构化字段、revision 引用与过期标记）
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: DRAFT/CONFIRMED/REJECTED/ARCHIVED 状态清晰；只有 CONFIRMED 可正式消费；引用固定到 revision/block；无旧 fallback 残留。
 
-- [ ] 4.3 先补默认/高级参数、批量数量、证据关联、审核门禁和失败隔离测试，再实现知识点面试题异步生成。
+- [x] 4.3 先补默认/高级参数、批量数量、证据关联、审核门禁和失败隔离测试，再实现知识点面试题异步生成。
   - Owner: Server Backend Agent
-  - Allowed files: `services/api/src/main/java/com/suilearn/api/generation/**`, `services/api/src/main/java/com/suilearn/api/ai/**`, `services/api/src/main/java/com/suilearn/api/controller/**`, `services/api/src/main/java/com/suilearn/api/dto/**`, `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/test/**`
+  - Allowed files: `services/api/src/main/java/com/suilearn/api/generation/**`, `services/api/src/main/java/com/suilearn/api/ai/**`, `services/api/src/main/java/com/suilearn/api/controller/**`, `services/api/src/main/java/com/suilearn/api/dto/**`, `services/api/src/main/java/com/suilearn/api/model/**`, `services/api/src/main/java/com/suilearn/api/persistence/**`, `services/api/src/main/java/com/suilearn/api/task/**`, `services/api/src/test/**`（Batch D Review 扩展：durable 异步提交、任务结果持久化与草稿查询）
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 默认 1/中等/简答；高级参数受限；只有 CONFIRMED 知识点可生成；每题保留证据；未经保存不进入正式闭环。

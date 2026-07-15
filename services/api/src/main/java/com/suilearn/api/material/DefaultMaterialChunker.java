@@ -196,7 +196,7 @@ public class DefaultMaterialChunker implements MaterialChunker {
             material.id(),
             chunkId,
             material.status() == MaterialStatus.DELETED,
-            truncate(content)
+            truncate(content), material.currentRevisionId(), null, chunkId
         ));
     }
 
