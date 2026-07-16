@@ -1,7 +1,12 @@
-export type MaterialSourceType = "MARKDOWN" | "TXT" | "PDF";
-export type MaterialStatus = "UPLOADED" | "PARSING" | "CHUNKING" | "INDEXING" | "READY" | "FAILED" | "DELETED";
+export type MaterialSourceType = "MARKDOWN" | "TXT" | "PDF" | "DOC" | "DOCX" | "LEGACY_TEXT";
+export type MaterialStatus = "UPLOADED" | "PROCESSING" | "READY" | "FAILED" | "DELETED";
+export type MaterialAssetType = "ORIGINAL" | "READING" | "PREVIEW" | "OCR_PAGE";
+export type AssetAvailability = "PENDING" | "AVAILABLE" | "FAILED" | "UNAVAILABLE" | "DELETED";
+export type AssetUnavailableReason = "LEGACY_NO_ORIGINAL" | "PROCESSING" | "GENERATION_FAILED" | "DELETED";
 export type GeneratedContentStatus = "PENDING_REVIEW" | "SAVED" | "DISCARDED" | "DELETED";
 export type QuestionType = "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE" | "SHORT_ANSWER";
+export type QuestionDifficulty = "EASY" | "MEDIUM" | "HARD";
+export type KnowledgePointStatus = "DRAFT" | "CONFIRMED" | "REJECTED" | "ARCHIVED";
 export type SourceType = "KNOWLEDGE_POINT" | "WRONG_QUESTION" | "MATERIAL" | "MATERIAL_CHUNK" | "KNOWLEDGE_BASE" | "ANSWER_HISTORY";
 export type AiNoteType = "KNOWLEDGE_POINT_EXPLANATION" | "REVIEW_SUGGESTION" | "RAG_ANSWER" | "MANUAL_NOTE";
 export type AiProviderType = "FAKE" | "OPENAI_COMPATIBLE";
@@ -10,10 +15,13 @@ export type TaskKind =
   | "MATERIAL_IMPORT"
   | "EMBEDDING"
   | "QUESTION_GENERATION"
+  | "MATERIAL_REPROCESS"
+  | "KNOWLEDGE_POINT_GENERATION"
+  | "KNOWLEDGE_POINT_QUESTION_GENERATION"
   | "KNOWLEDGE_POINT_EXTRACTION"
   | "EXPLANATION_GENERATION"
   | "REVIEW_SUGGESTION_GENERATION";
-export type TaskLifecycleStatus = "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+export type TaskLifecycleStatus = "QUEUED" | "RUNNING" | "RETRY_WAIT" | "SUCCEEDED" | "FAILED" | "CANCELLED";
 
 export interface AiProviderStatus {
   providerType: AiProviderType;
@@ -30,8 +38,11 @@ export interface AiProviderStatus {
 }
 
 export interface TaskResultRef {
-  type?: "MATERIAL" | "MATERIAL_CHUNKS" | "GENERATED_CONTENT" | "AI_NOTE_DRAFT" | "KNOWLEDGE_POINTS";
+  type: "MATERIAL" | "DOCUMENT_REVISION" | "MATERIAL_CHUNKS" | "GENERATED_CONTENT" | "AI_NOTE_DRAFT" | "KNOWLEDGE_POINTS" | "KNOWLEDGE_POINT_BATCH" | "QUESTION_DRAFT_BATCH";
+  href: string;
   id?: string;
+  materialId?: string;
+  revisionId?: string;
   count?: number;
 }
 
@@ -44,12 +55,24 @@ export interface TaskStatus {
   generatedContentId?: string;
   providerType?: AiProviderType;
   model?: string;
+  progress?: {
+    percent: number;
+    completedUnits?: number;
+    totalUnits?: number;
+    message?: string;
+  };
   progressPercent?: number;
   currentStep?: string;
+  attempt?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string;
+  correlationId?: string;
+  processingVersion?: string;
   errorCode?: string;
   errorMessage?: string;
   retryCount?: number;
   resultRef?: TaskResultRef;
+  resultRefs?: TaskResultRef[];
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
@@ -93,9 +116,14 @@ export interface MaterialMetadata {
   title: string;
   sourceType: MaterialSourceType;
   status: MaterialStatus;
+  /** @deprecated Transitional alias for processingTaskId consumed by the pre-Batch-E panel. */
   importTaskId: string;
+  processingTaskId?: string;
+  currentRevisionId?: string;
   embeddingTaskId?: string;
   errorMessage?: string;
+  originalAvailable: boolean;
+  originalUnavailableReason?: AssetUnavailableReason;
   createdAt: string;
   deletedAt?: string | null;
 }
@@ -119,6 +147,63 @@ export interface MaterialDetail extends MaterialMetadata {
   contentPreview?: string;
   chunks?: MaterialChunk[];
   extractedKnowledgePoints?: KnowledgePoint[];
+  processingTask?: TaskStatus;
+  currentRevision?: DocumentRevisionSummary;
+  assets: MaterialAsset[];
+}
+
+export interface MaterialAsset {
+  id?: string;
+  materialId: string;
+  revisionId?: string;
+  type: MaterialAssetType;
+  availability: AssetAvailability;
+  unavailableReason?: AssetUnavailableReason;
+  mediaType?: string;
+  sizeBytes?: number;
+  href?: string;
+  downloadHref?: string;
+  createdAt?: string;
+}
+
+export interface DocumentRevisionSummary {
+  id: string;
+  materialId: string;
+  origin: "FILE_IMPORT" | "REPROCESS" | "LEGACY_TEXT_MIGRATION";
+  processingVersion: string;
+  blockCount?: number;
+  pageCount?: number;
+  createdByTaskId?: string;
+  createdAt: string;
+}
+
+export interface DocumentBlock {
+  id: string;
+  revisionId: string;
+  ordinal: number;
+  content: string;
+  pageNumber?: number;
+  sectionPath?: string[];
+}
+
+export interface MaterialReadingDocument {
+  materialId: string;
+  revisionId: string;
+  origin: "FILE_IMPORT" | "REPROCESS" | "LEGACY_TEXT_MIGRATION";
+  mediaType: "text/html" | "text/plain";
+  content: string;
+  blocks: DocumentBlock[];
+}
+
+export interface TaskSubmission {
+  taskId: string;
+  status: TaskLifecycleStatus;
+  taskHref: string;
+}
+
+export interface MaterialTaskSubmission extends TaskSubmission {
+  materialId: string;
+  materialHref: string;
 }
 
 export interface KnowledgePointExtractionResult {
@@ -127,13 +212,66 @@ export interface KnowledgePointExtractionResult {
   knowledgePoints: KnowledgePoint[];
 }
 
-export interface KnowledgePoint {
+export interface KnowledgePointBase {
   id: string;
   knowledgeBaseId: string;
+  status: KnowledgePointStatus;
+  sourceOutdated: boolean;
+  legacy: boolean;
+  /** @deprecated Transitional display projection; Batch E UI consumes structured fields. */
   name: string;
+  /** @deprecated Transitional display projection; Batch E UI consumes structured fields. */
   description: string;
   sourceMaterialId?: string;
   sourceRefs?: SourceRef[];
+}
+
+export interface SourceCitation {
+  materialId: string;
+  revisionId: string;
+  pageNumber?: number;
+  blockId?: string;
+  excerpt: string;
+  deleted?: boolean;
+}
+
+export interface StructuredKnowledgePoint extends KnowledgePointBase {
+  legacy: false;
+  generationTaskId: string;
+  title: string;
+  shortSummary: string;
+  definition: string;
+  principles: string[];
+  applicationScenarios: string[];
+  pitfalls: string[];
+  citations: SourceCitation[];
+}
+
+export interface LegacyKnowledgePoint extends KnowledgePointBase {
+  legacy: true;
+  name: string;
+  description: string;
+}
+
+export type KnowledgePoint = StructuredKnowledgePoint | LegacyKnowledgePoint;
+
+export interface GenerateKnowledgePointQuestionsRequest {
+  count?: number;
+  difficulty?: QuestionDifficulty;
+  questionType?: QuestionType;
+}
+
+export interface ReviewKnowledgePointQuestionDraftRequest {
+  contentKind: "KNOWLEDGE_POINT_INTERVIEW_QUESTION";
+  action: "SAVE" | "DISCARD";
+  stem?: string;
+  options?: string[];
+  answer?: string[];
+  explanation?: string;
+  difficulty?: QuestionDifficulty;
+  questionType?: QuestionType;
+  categoryId?: string;
+  categoryName?: string;
 }
 
 export interface SourceRef {
@@ -164,13 +302,19 @@ export interface GeneratedQuestionDraft {
   knowledgeBaseId: string;
   generationTaskId: string;
   status: GeneratedContentStatus;
+  /** @deprecated Generic-draft evidence projection. Knowledge-point drafts use citations. */
   sourceRefs: SourceRef[];
   sourceType?: SourceType;
   sourceId?: string;
   questionType: QuestionType;
   categoryId: string;
   categoryName: string;
+  /** @deprecated Generic-draft attribution projection. Knowledge-point drafts use knowledgePointId. */
   knowledgePointIds: string[];
+  knowledgePointId?: string;
+  citations?: SourceCitation[];
+  difficulty?: QuestionDifficulty;
+  difficultyValue?: 2 | 3 | 4;
   stem: string;
   options?: string[];
   answer: string[];
