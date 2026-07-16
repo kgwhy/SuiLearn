@@ -1,6 +1,10 @@
 package com.suilearn.api.retrieval;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.suilearn.api.ai.AiFailureClassifier;
+import com.suilearn.api.ai.AiFailureKind;
+import com.suilearn.api.ai.AiHttpStatusException;
+import com.suilearn.api.ai.AiOperationalMetrics;
 import com.suilearn.api.config.SuiLearnAiProperties;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,8 +16,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -25,12 +32,24 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     private final ObjectMapper objectMapper;
     private final SuiLearnAiProperties properties;
     private final Retry retry;
+    private final CircuitBreaker circuitBreaker;
+    private final AiOperationalMetrics metrics;
 
-    @Autowired
     public OpenAiCompatibleEmbeddingProvider(SuiLearnAiProperties properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, HttpClient.newBuilder()
             .connectTimeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
-            .build());
+            .build(), AiOperationalMetrics.noop());
+    }
+
+    @Autowired
+    public OpenAiCompatibleEmbeddingProvider(
+        SuiLearnAiProperties properties,
+        ObjectMapper objectMapper,
+        MeterRegistry meterRegistry
+    ) {
+        this(properties, objectMapper, HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
+            .build(), new AiOperationalMetrics(meterRegistry));
     }
 
     OpenAiCompatibleEmbeddingProvider(
@@ -38,15 +57,34 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
         ObjectMapper objectMapper,
         HttpClient httpClient
     ) {
+        this(properties, objectMapper, httpClient, AiOperationalMetrics.noop());
+    }
+
+    private OpenAiCompatibleEmbeddingProvider(
+        SuiLearnAiProperties properties,
+        ObjectMapper objectMapper,
+        HttpClient httpClient,
+        AiOperationalMetrics metrics
+    ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.httpClient = httpClient;
         this.retry = adapterRetry(properties.maxRetries());
+        this.circuitBreaker = CircuitBreaker.of("openai-compatible-embedding", CircuitBreakerConfig.custom()
+            .slidingWindowSize(properties.circuitBreakerWindow())
+            .minimumNumberOfCalls(properties.circuitBreakerMinimumCalls())
+            .failureRateThreshold(properties.circuitBreakerFailureRatePercent())
+            .waitDurationInOpenState(Duration.ofMillis(properties.circuitBreakerOpenStateMs()))
+            .permittedNumberOfCallsInHalfOpenState(properties.circuitBreakerHalfOpenCalls())
+            .recordException(AiFailureClassifier::countsTowardCircuitBreaker)
+            .build());
+        this.metrics = metrics;
     }
 
     @Override
     public Embedding embed(String input) {
         ensureConfigured();
+        long startedAt = System.nanoTime();
         var request = HttpRequest.newBuilder(URI.create(normalizeBaseUrl(properties.effectiveEmbeddingBaseUrl()) + "/embeddings"))
             .timeout(Duration.ofMillis(Math.max(1000, properties.timeoutMs())))
             .header("Authorization", "Bearer " + properties.effectiveEmbeddingApiKey())
@@ -54,15 +92,28 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
             .POST(HttpRequest.BodyPublishers.ofString(requestBody(input)))
             .build();
         try {
-            var response = retry.executeSupplier(() -> send(request));
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                return parseEmbedding(response.body());
+            var response = circuitBreaker.executeSupplier(() -> {
+                var candidate = retry.executeSupplier(() -> send(request));
+                if (candidate.statusCode() < 200 || candidate.statusCode() >= 300) {
+                    throw new AiHttpStatusException(candidate.statusCode());
+                }
+                return candidate;
+            });
+            var embedding = parseEmbedding(response.body());
+            metrics.record("embedding", AiFailureKind.SUCCESS, System.nanoTime() - startedAt);
+            return embedding;
+        } catch (RuntimeException exception) {
+            metrics.record("embedding", AiFailureClassifier.classify(exception), System.nanoTime() - startedAt);
+            if (exception instanceof AiHttpStatusException) {
+                throw new IllegalStateException(exception.getMessage(), exception);
             }
-            throw new IllegalStateException("OpenAI-compatible embeddings returned HTTP " + response.statusCode());
-        } catch (UncheckedIOException exception) {
-            throw new IllegalStateException("OpenAI-compatible embeddings request failed", exception);
-        } catch (RequestInterruptedException exception) {
-            throw new IllegalStateException("OpenAI-compatible embeddings request interrupted", exception);
+            if (exception instanceof UncheckedIOException) {
+                throw new IllegalStateException("OpenAI-compatible embeddings request failed", exception);
+            }
+            if (exception instanceof RequestInterruptedException) {
+                throw new IllegalStateException("OpenAI-compatible embeddings request interrupted", exception);
+            }
+            throw exception;
         }
     }
 

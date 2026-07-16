@@ -17,7 +17,7 @@ public final class MinioHealthIndicator implements HealthIndicator {
         try {
             return gateway.bucketExists(bucket) ? Health.up().build() : Health.down().withDetail("bucket", "missing").build();
         } catch (RuntimeException exception) {
-            return Health.down(exception).build();
+            return Health.down().withDetail("storage", "unavailable").build();
         }
     }
 }

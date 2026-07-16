@@ -21,9 +21,17 @@ class MinioHealthIndicatorTest {
         assertThat(up.getDetails()).doesNotContainKeys("accessKey", "secretKey");
     }
 
-    private static final class BucketGateway implements MinioObjectGateway {
+    @Test
+    void redactsDependencyFailuresFromHealthDetails() {
+        var down = new MinioHealthIndicator(new FailingBucketGateway(), "assets").health();
+
+        assertThat(down.getStatus().getCode()).isEqualTo("DOWN");
+        assertThat(down.getDetails().values().toString()).doesNotContain("temporary-url", "raw material body");
+    }
+
+    private static class BucketGateway implements MinioObjectGateway {
         private final boolean exists;
-        private BucketGateway(boolean exists) { this.exists = exists; }
+        protected BucketGateway(boolean exists) { this.exists = exists; }
         @Override public void putPrivate(String bucket, String key, InputStream stream, String contentType) { }
         @Override public InputStream getPrivate(String bucket, String key) { return new ByteArrayInputStream(new byte[0]); }
         @Override public void copy(String bucket, String sourceKey, String targetKey) { }
@@ -31,5 +39,12 @@ class MinioHealthIndicatorTest {
         @Override public List<StoredObject> list(String bucket, String prefix) { return List.of(); }
         @Override public boolean bucketExists(String bucket) { return exists; }
         @Override public void createPrivateBucket(String bucket) { }
+    }
+
+    private static final class FailingBucketGateway extends BucketGateway {
+        private FailingBucketGateway() { super(false); }
+        @Override public boolean bucketExists(String bucket) {
+            throw new IllegalStateException("temporary-url contains raw material body");
+        }
     }
 }

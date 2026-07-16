@@ -28,6 +28,7 @@ public final class RabbitOutboxBrokerPublisher implements OutboxBrokerPublisher 
             message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
             message.getMessageProperties().setHeader(TaskDispatchMessageHandler.TASK_ID_HEADER, event.taskId());
             message.getMessageProperties().setHeader(TaskDispatchMessageHandler.STAGE_HEADER, event.stage());
+            message.getMessageProperties().setHeader(ProcessingFailureRouter.RETRY_COUNT_HEADER, event.retryCount());
             return message;
         }, correlation);
         try {

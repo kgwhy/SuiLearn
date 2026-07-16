@@ -147,28 +147,28 @@
 
 ## 6. 韧性、安全与集成验证
 
-- [ ] 6.1 加入 Testcontainers 集成测试，覆盖 PostgreSQL/Outbox、RabbitMQ 中断/恢复/重复投递/DLQ、MinIO 临时对象/清理、消费者重启恢复和部分 OCR 页面 operation 复用。
+- [x] 6.1 加入 Testcontainers 集成测试，覆盖 PostgreSQL/Outbox、RabbitMQ 中断/恢复/重复投递/DLQ、MinIO 临时对象/清理、消费者重启恢复和部分 OCR 页面 operation 复用。
   - Owner: Test Agent
   - Allowed files: `services/api/src/test/**`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`
   - Forbidden files: `services/api/src/main/**`, `services/api/pom.xml`, `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 测试证明消息与 operation 两级故障恢复和幂等，不只验证 happy path；已成功 OCR 页面在重投/重启后调用次数不增加，未完成页面继续处理；容器/测试数据可重复清理；无网络或外部真实 AI 依赖。
 
-- [ ] 6.2 完成文件安全、模型提示注入边界、日志脱敏、Actuator/Micrometer 指标和健康分层测试与实现。
+- [x] 6.2 完成文件安全、模型提示注入边界、日志脱敏、Actuator/Micrometer 指标和健康分层测试与实现。
   - Owner: Server Backend Agent
   - Allowed files: `services/api/src/main/java/com/suilearn/api/config/**`, `services/api/src/main/java/com/suilearn/api/material/**`, `services/api/src/main/java/com/suilearn/api/ai/**`, `services/api/src/main/java/com/suilearn/api/task/**`, `services/api/src/main/resources/**`, `services/api/src/test/**`
   - Forbidden files: `apps/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `mvn -f services/api/pom.xml test -q`
   - Review focus: 文件签名/解压限制/外部进程参数安全；正文不覆盖系统指令；日志不含正文/密钥/临时 URL；指标不含高基数正文标签。
 
-- [ ] 6.3 在 Compose 中执行格式与故障验收矩阵，验证 API 重启、RabbitMQ 暂停恢复、MinIO 失败、OCR/AI 超时、重复消息、删除清理和指标。
+- [x] 6.3 在 Compose 中执行格式与故障验收矩阵，验证 API 重启、RabbitMQ 暂停恢复、MinIO 失败、OCR/AI 超时、重复消息、删除清理和指标。
   - Owner: Test Agent
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `services/api/src/test/**`, `apps/web/src/*.test.mjs`, `scripts/**`（仅经 Leader 批准的验证脚本）
   - Forbidden files: 未经另行声明的业务实现文件、`contracts/**`, `docs/proposals/**`, `docs/superpowers/**`
   - Test command: `docker compose config`; `docker compose up -d --build`; `docker compose ps`; `mvn -f services/api/pom.xml test -q`; `npm --prefix apps/web test`; `npm --prefix apps/web run build`
   - Review focus: 记录原始证据、默认值与覆盖值；验证 retry 新旧键缺失/空值/仅新/仅旧/双非空/非法值及诊断码，验证 operation 调用上限和页级恢复、Markdown raw HTML/危险 URL/远程资源策略、metric tags 低基数；失败项不得用单元测试替代运行态验证；完成后停止测试资源但保留持久数据策略说明。
 
-- [ ] 6.4 运行 Android 本地回归，确认新中间件和远程契约变化不破坏离线刷题闭环。
+- [x] 6.4 运行 Android 本地回归，确认新中间件和远程契约变化不破坏离线刷题闭环。
   - Owner: Android Agent
   - Allowed files: `apps/android/src/test/**`, `apps/android/src/main/**`（仅契约兼容确有需要时，须先扩展声明）, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`
   - Forbidden files: `services/**`, `apps/web/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`
@@ -177,21 +177,21 @@
 
 ## 7. 同步、残留扫描与审查闭环
 
-- [ ] 7.1 同步已实现且已验证的稳定产品事实，并明确 legacy/deprecated/后续移除边界。
+- [x] 7.1 同步已实现且已验证的稳定产品事实，并明确 legacy/deprecated/后续移除边界。
   - Owner: Product Agent
   - Allowed files: `docs/product-requirements.md`, `openspec/changes/build-resilient-knowledge-pipeline/verification.md`
   - Forbidden files: `services/**`, `apps/**`, `contracts/**`, `docs/architecture.md`, `docs/tech-selection.md`, `docs/proposals/**`, `docs/superpowers/**`
   - Test command: `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`
   - Review focus: 只同步已验证稳定事实；依据标明为本轮用户对话；不把未实现假设写入 Current Spec。
 
-- [ ] 7.2 执行残留扫描、OpenSpec/工作流检查、全量测试和 `git diff <base_ref> --stat`，补齐 verification 证据。
+- [x] 7.2 执行残留扫描、OpenSpec/工作流检查、全量测试和 `git diff <base_ref> --stat`，补齐 verification 证据。
   - Owner: Leader Agent
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: 未经任务卡授权的业务/契约/当前事实文件、`docs/proposals/**`, `docs/superpowers/**`
   - Test command: `mvn -f services/api/pom.xml test -q`; `npm --prefix apps/web test`; `npm --prefix apps/web run build`; `.\gradlew.bat :app:testDebugUnitTest --no-daemon`; `powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0`; `git diff ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0 --stat`
   - Review focus: 清除 `file.text()` PDF、旧文案、PDF/Office 不支持声明、关键词 fallback、同步主路径和敏感日志；扫描旧 retry 默认 `2`、错误 Compose 默认注入、Provider/SDK/手写 retry、legacy 键非允许位置、ID metric tags、Markdown raw HTML/危险 URL/远程资源自动加载和未复用成功 operation；所有变更在 policy 范围。
 
-- [ ] 7.3 由独立 Reviewer 完成 Spec Review 与 Code Review，所有 P0/P1/P2 均已修复，或经用户批准迁移到具名 follow-up change 后，记录 Major Review 结论。
+- [x] 7.3 由独立 Reviewer 完成 Spec Review 与 Code Review，所有 P0/P1/P2 均已修复，或经用户批准迁移到具名 follow-up change 后，记录 Major Review 结论。
   - Owner: Reviewer Agent
   - Allowed files: `openspec/changes/build-resilient-knowledge-pipeline/verification.md`, `openspec/changes/build-resilient-knowledge-pipeline/tasks.md`
   - Forbidden files: 业务实现文件、`contracts/**`, `docs/**`（除上述 verification/tasks）, `docs/proposals/**`, `docs/superpowers/**`

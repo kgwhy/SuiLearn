@@ -57,6 +57,21 @@ class ProcessingFailureRouterTest {
     }
 
     @Test
+    void continuesAnAcceptedDlqReplayRetryCountWhenTheRedeliveredMessageFails() {
+        var template = mock(RabbitTemplate.class);
+        var retryState = mock(TaskRetryRoutingState.class);
+        var router = new ProcessingFailureRouter(template, new RetryPolicy(5), mock(DeadLetterReplayService.class),
+            () -> new CorrelationData.Confirm(true, null), retryState);
+
+        router.route(message("document.processing", 3, "task_1"), new IllegalStateException("temporary"));
+
+        var routed = ArgumentCaptor.forClass(Message.class);
+        verify(template).send(eq("suilearn.processing.retry"), eq("document.processing.long"), routed.capture(), any(CorrelationData.class));
+        assertThat((Object) routed.getValue().getMessageProperties().getHeader(ProcessingFailureRouter.RETRY_COUNT_HEADER)).isEqualTo(4);
+        verify(retryState).retryAccepted("task_1", 4);
+    }
+
+    @Test
     void rejectsARejectedBrokerConfirmationSoTheOriginalMessageIsNotAcknowledged() {
         var template = mock(RabbitTemplate.class);
         var router = new ProcessingFailureRouter(template, new RetryPolicy(3), mock(DeadLetterReplayService.class),

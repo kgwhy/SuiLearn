@@ -28,7 +28,8 @@ public class PersistentOutboxDispatcher {
         due.addAll(events.findByStateInAndNextRetryAtLessThanEqualOrderByCreatedAtAsc(List.of("RETRY_WAIT"), clock.instant()));
         for (var event : due) {
             var delivery = new DurableOutboxEvent(event.id(), event.taskId(), event.stage(), event.payload(),
-                OutboxDeliveryState.valueOf(event.state()), event.attemptCount(), event.createdAt(), event.nextRetryAt(), event.publishedAt());
+                OutboxDeliveryState.valueOf(event.state()), event.attemptCount(), event.createdAt(), event.nextRetryAt(), event.publishedAt(),
+                event.retryCount());
             if (publisher.publish(delivery)) {
                 event.markPublished(clock.instant());
             } else if (retryPolicy.next(event.attemptCount() + 1, FailureKind.TRANSIENT) == DeliveryDecision.RETRY) {

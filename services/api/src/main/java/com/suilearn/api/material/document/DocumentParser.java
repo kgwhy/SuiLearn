@@ -46,6 +46,9 @@ import org.commonmark.parser.Parser;
  */
 public class DocumentParser {
     private static final long DEFAULT_MAX_TEXT_PARSE_BYTES = 50L * 1024 * 1024;
+    private static final long MAX_DOCX_DECOMPRESSED_BYTES = 50L * 1024 * 1024;
+    private static final int MAX_DOCX_ENTRIES = 10_000;
+    private static final int MAX_DOCX_ENTRY_PATH_DEPTH = 8;
     private static final int TEXT_CHUNK_CHARACTERS = 64 * 1024;
     private static final byte[] OLE_SIGNATURE = {
         (byte) 0xD0, (byte) 0xCF, 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, 0x1A, (byte) 0xE1
@@ -366,7 +369,7 @@ public class DocumentParser {
             case MARKDOWN, TEXT -> true;
             case PDF -> beginsWith(bytes, PDF_SIGNATURE);
             case DOC -> beginsWith(bytes, OLE_SIGNATURE);
-            case DOCX -> beginsWith(bytes, new byte[] {'P', 'K', 3, 4}) && containsWordDocumentPart(bytes);
+            case DOCX -> beginsWith(bytes, new byte[] {'P', 'K', 3, 4}) && isSafeDocxArchive(new ByteArrayInputStream(bytes));
         };
     }
 
@@ -378,13 +381,7 @@ public class DocumentParser {
             if (format == Format.DOC) return beginsWith(prefix, OLE_SIGNATURE);
         }
         if (format == Format.DOCX) {
-            try (var input = Files.newInputStream(file); ZipInputStream zip = new ZipInputStream(input)) {
-                Set<String> parts = new LinkedHashSet<>();
-                for (var entry = zip.getNextEntry(); entry != null && parts.size() < 10_000; entry = zip.getNextEntry()) {
-                    parts.add(entry.getName());
-                }
-                return parts.contains("[Content_Types].xml") && parts.contains("word/document.xml");
-            }
+            try (var input = Files.newInputStream(file)) { return isSafeDocxArchive(input); }
         }
         return false;
     }
@@ -393,14 +390,27 @@ public class DocumentParser {
         return bytes.length >= signature.length && Arrays.equals(Arrays.copyOf(bytes, signature.length), signature);
     }
 
-    private boolean containsWordDocumentPart(byte[] bytes) throws IOException {
+    private boolean isSafeDocxArchive(InputStream input) throws IOException {
         Set<String> parts = new LinkedHashSet<>();
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bytes))) {
-            for (var entry = zip.getNextEntry(); entry != null && parts.size() < 10_000; entry = zip.getNextEntry()) {
-                parts.add(entry.getName());
+        int entryCount = 0;
+        long decompressedBytes = 0;
+        try (ZipInputStream zip = new ZipInputStream(input)) {
+            byte[] buffer = new byte[8192];
+            for (var entry = zip.getNextEntry(); entry != null; entry = zip.getNextEntry()) {
+                if (++entryCount > MAX_DOCX_ENTRIES || !isSafeDocxEntryName(entry.getName())) return false;
+                if (!parts.add(entry.getName())) return false;
+                for (int read; (read = zip.read(buffer)) != -1;) {
+                    decompressedBytes += read;
+                    if (decompressedBytes > MAX_DOCX_DECOMPRESSED_BYTES) return false;
+                }
             }
         }
         return parts.contains("[Content_Types].xml") && parts.contains("word/document.xml");
+    }
+
+    private boolean isSafeDocxEntryName(String name) {
+        if (name == null || name.isBlank() || name.startsWith("/") || name.contains("\\") || name.contains("..")) return false;
+        return name.split("/").length <= MAX_DOCX_ENTRY_PATH_DEPTH;
     }
 
     private Result parsed(int pageCount, List<Block> blocks, List<Integer> ocrPageNumbers) {

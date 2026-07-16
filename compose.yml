@@ -117,7 +117,7 @@ services:
     volumes:
       - suilearn-minio-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "mc ready local >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 12

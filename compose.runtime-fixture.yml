@@ -1,0 +1,6 @@
+# Opt-in local verification overlay. Never include this file in a default Compose invocation.
+services:
+  api:
+    environment:
+      SPRING_PROFILES_ACTIVE: runtime-fixture
+      SUILEARN_RUNTIME_FIXTURE_TOKEN: ${SUILEARN_RUNTIME_FIXTURE_TOKEN:?Set a runtime-fixture token before starting this overlay}

@@ -155,6 +155,31 @@ class DocumentParserContractTest {
     }
 
     @Test
+    void rejectsDocxArchivesThatExceedTheDecompressionBudget() throws Exception {
+        var result = parse(docxWithAdditionalEntry("word/media/large.bin", 51 * 1024 * 1024));
+
+        assertThat(result.disposition()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void rejectsDocxArchivesWithExcessivelyNestedEntryPaths() throws Exception {
+        var result = parse(docxWithAdditionalEntry("word/media/a/b/c/d/e/f/g/h/i/payload.bin", 16));
+
+        assertThat(result.disposition()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void rejectsDocxArchivesWithDuplicateEntryNamesBelowTheEntryLimit() throws Exception {
+        assertThat(isSafeDocxArchive(docxWithDuplicateEntries(3).bytes())).isFalse();
+    }
+
+    private static boolean isSafeDocxArchive(byte[] bytes) throws Exception {
+        var method = DocumentParser.class.getDeclaredMethod("isSafeDocxArchive", java.io.InputStream.class);
+        method.setAccessible(true);
+        return (Boolean) method.invoke(new DocumentParser(), new ByteArrayInputStream(bytes));
+    }
+
+    @Test
     void rejectsDamagedOrExtensionMimeSignatureMismatchedInputWithoutReadyOutcome() throws Exception {
         var damaged = parse(new Fixture("damaged.pdf", "application/pdf", "not a pdf".getBytes(StandardCharsets.UTF_8)));
         var forged = parse(new Fixture("misleading.pdf", "application/pdf", docxFixture().bytes()));
@@ -234,6 +259,48 @@ class DocumentParserContractTest {
             document.createParagraph().createRun().setText("DOCX lesson");
             document.write(bytes);
             return new Fixture("lesson.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes.toByteArray());
+        }
+    }
+
+    private static Fixture docxWithAdditionalEntry(String entryName, int bytes) throws IOException {
+        try (var output = new ByteArrayOutputStream(); var zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("[Content_Types].xml"));
+            zip.write("<Types/>".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("word/document.xml"));
+            zip.write("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"
+                .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry(entryName));
+            byte[] buffer = new byte[8192];
+            for (int remaining = bytes; remaining > 0;) {
+                int written = Math.min(remaining, buffer.length);
+                zip.write(buffer, 0, written);
+                remaining -= written;
+            }
+            zip.closeEntry();
+            return new Fixture("unsafe.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", output.toByteArray());
+        }
+    }
+
+    private static Fixture docxWithDuplicateEntries(int count) throws IOException {
+        try (var output = new ByteArrayOutputStream(); var zip = new ZipOutputStream(output)) {
+            zip.putNextEntry(new ZipEntry("[Content_Types].xml"));
+            zip.write("<Types/>".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            zip.putNextEntry(new ZipEntry("word/document.xml"));
+            zip.write("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"/>"
+                .getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+            for (int index = 0; index < count; index++) {
+                zip.putNextEntry(new ZipEntry("word/media/" + String.format("%05d", index) + ".bin"));
+                zip.closeEntry();
+            }
+            zip.finish();
+            String archive = output.toString(StandardCharsets.ISO_8859_1)
+                .replaceAll("word/media/[0-9]{5}\\.bin", "word/media/00000.bin");
+            return new Fixture("duplicate-entries.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                archive.getBytes(StandardCharsets.ISO_8859_1));
         }
     }
 

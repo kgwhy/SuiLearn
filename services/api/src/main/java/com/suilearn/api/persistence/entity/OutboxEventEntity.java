@@ -18,6 +18,7 @@ public class OutboxEventEntity {
     @Column(columnDefinition = "text") private String payload;
     private String state;
     private Integer attemptCount;
+    private Integer retryCount;
     private Instant nextRetryAt;
     private Instant createdAt;
     private Instant publishedAt;
@@ -26,6 +27,12 @@ public class OutboxEventEntity {
 
     public static OutboxEventEntity pending(
         String id, String taskId, String stage, String idempotencyKey, String payload, Instant createdAt
+    ) {
+        return pending(id, taskId, stage, idempotencyKey, payload, createdAt, 0);
+    }
+
+    public static OutboxEventEntity pending(
+        String id, String taskId, String stage, String idempotencyKey, String payload, Instant createdAt, int retryCount
     ) {
         var event = new OutboxEventEntity();
         event.id = id;
@@ -36,6 +43,7 @@ public class OutboxEventEntity {
         event.payload = payload;
         event.state = "PENDING";
         event.attemptCount = 0;
+        event.retryCount = Math.max(retryCount, 0);
         event.createdAt = createdAt;
         return event;
     }
@@ -46,6 +54,7 @@ public class OutboxEventEntity {
     public String payload() { return payload; }
     public String state() { return state; }
     public int attemptCount() { return attemptCount == null ? 0 : attemptCount; }
+    public int retryCount() { return retryCount == null ? 0 : retryCount; }
     public Instant createdAt() { return createdAt; }
     public Instant nextRetryAt() { return nextRetryAt; }
     public Instant publishedAt() { return publishedAt; }

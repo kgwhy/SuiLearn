@@ -212,3 +212,26 @@ docker compose ps
 
 - User approved four workflow controls: evidence-fingerprint reuse, cancellation/report isolation, compact successful logs and Git summaries, and worktree-local `safe.directory` handling.
 - Scope is limited to Leader workflow policy, subagent loop, workflow checker, and this active change's Task 1.3 artifacts; no application, contract, or product behavior is changed.
+
+### Task 7.1 product-fact sync (2026-07-16)
+
+- 依据：本轮用户对话要求同步且仅同步已实现、已验证的 Batch B/C 材料导入事实；证据引用本文件的 Batch B 已验证证据和 Batch C / Tasks 3.1–3.4 验证记录。
+- 已同步到 `docs/product-requirements.md`：原始资料导入格式为 Markdown、TXT、PDF、DOC、DOCX；扩展名、MIME、签名、大小和页数验证；异步任务状态；当前导入保留原件与可读版本；无原件的 legacy 资料仍可读；旧 JSON/文本导入仅为 deprecated 兼容边界，移除留待后续具名变更。
+- 未同步 Web 交互、完整端到端 OCR/故障矩阵、运行态健康/指标，或知识点与出题行为；这些事实不在本次产品同步证据范围内。
+- 文档验证：`powershell -ExecutionPolicy Bypass -File scripts/check-suilearn-workflow.ps1 -BaseRef ff08b45e58b50ae3cef15c6f96c8d8874dbce0b0` 和 `git diff --check` 均于 2026-07-16 退出码 0。
+
+# 2026-07-16 Scope extension authorization
+
+The user explicitly authorized two bounded extensions required to close Batch F review findings:
+
+- Task 6.2 may also change `services/api/src/main/java/com/suilearn/api/retrieval/**` and matching `services/api/src/test/**` so every OpenAI-compatible adapter shares the approved circuit-breaker and low-cardinality operational-metrics boundary.
+- Task 6.3 may add a non-production, disabled-by-default deterministic fault fixture or control surface strictly for Compose acceptance of DLQ/replay and AI/OCR timeout/circuit scenarios. It MUST NOT be enabled or exposed in the default production runtime and MUST NOT accept or disclose credentials, raw material text, model responses, object keys, or arbitrary broker payloads.
+- The fixture extension includes `services/api/src/main/java/com/suilearn/api/runtimefixture/**`, `services/api/src/main/java/com/suilearn/api/config/AppConfig.java`, `compose.runtime-fixture.yml`, `scripts/verify-runtime-faults.ps1`, and Task 2.4 task/replay implementation plus matching tests. The existing replay defect MUST be corrected by reopening the failed task and creating a fresh durable Outbox event before broker dispatch.
+
+## Batch F final verification (2026-07-16)
+
+- `mvn -f services/api/pom.xml test -q`: exit code 0, including Testcontainers recovery, active consumer restart, durable outbox/DLQ replay, MinIO cleanup, parser-security, AI/OCR metrics, and health-layering coverage.
+- Isolated `suilearn-fixture` Compose matrix: exit code 0. It rebuilt only the fixture stack, verified API restart; RabbitMQ and MinIO pause/recovery; processing `DOWN` with readiness `UP`; OCR timeout, AI timeout and circuit-open metrics; exclusive durable replay; duplicate delivery idempotence; and deletion cleanup. The stack was torn down without `-v`.
+- `npm --prefix apps/web test`, `npm --prefix apps/web run build`, `./gradlew.bat :app:testDebugUnitTest --no-daemon`, and `./gradlew.bat :app:assembleDebug --no-daemon`: exit code 0.
+- `openspec validate build-resilient-knowledge-pipeline --strict`, workflow checker, and `git diff --check`: exit code 0 in final verification runs.
+- Independent final Spec Review and Code Review: P0/P1/P2 = 0 after fixes for duplicate DOCX archive entries, bounded active Rabbit health probe, OCR metrics, exclusive DLQ replay, AI circuit-open, and precise MinIO deletion verification.

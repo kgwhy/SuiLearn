@@ -1,13 +1,14 @@
 package com.suilearn.api.task.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.suilearn.api.model.AiProviderType;
+import com.suilearn.api.model.TaskKind;
+import com.suilearn.api.model.TaskLifecycleStatus;
+import com.suilearn.api.model.TaskStatus;
 import com.suilearn.api.persistence.entity.DeadLetterMessageEntity;
 import com.suilearn.api.persistence.entity.OutboxEventEntity;
 import com.suilearn.api.persistence.repository.DeadLetterMessageJpaRepository;
@@ -20,8 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.rabbit.connection.CorrelationData;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 class DeadLetterReplayServiceTest {
     @Test
@@ -29,7 +28,7 @@ class DeadLetterReplayServiceTest {
         var deadLetters = mock(DeadLetterMessageJpaRepository.class);
         when(deadLetters.findById("message_1")).thenReturn(Optional.empty());
         var service = new DeadLetterReplayService(
-            deadLetters, mock(OutboxEventJpaRepository.class), mock(RabbitTemplate.class), fixedClock()
+            deadLetters, mock(OutboxEventJpaRepository.class), mock(TaskService.class), fixedClock()
         );
 
         service.record(message(), FailureKind.PERMANENT, new IllegalArgumentException("bad request body: secret"));
@@ -45,59 +44,28 @@ class DeadLetterReplayServiceTest {
     }
 
     @Test
-    void manuallyReplaysTrackedOutboxMessageWithItsOriginalMessageIdentity() {
+    void replayReopensTheFailedTaskAndPersistsAFreshDurableOutboxEvent() {
         var deadLetters = mock(DeadLetterMessageJpaRepository.class);
         var outbox = mock(OutboxEventJpaRepository.class);
-        var template = mock(RabbitTemplate.class);
+        var tasks = mock(TaskService.class);
         var tracked = trackedMessage();
         stubReplay(deadLetters, outbox, tracked);
-        var service = new DeadLetterReplayService(deadLetters, outbox, template, fixedClock(),
-            () -> new CorrelationData.Confirm(true, null));
+        var failedTask = failedTask();
+        when(tasks.getTaskStatus("task_1")).thenReturn(failedTask);
+        var service = new DeadLetterReplayService(deadLetters, outbox, tasks, fixedClock());
 
         service.replay("message_1");
 
-        var message = ArgumentCaptor.forClass(Message.class);
-        verify(template).send(eq("suilearn.processing"), eq("document.processing"), message.capture(), any(CorrelationData.class));
-        assertThat(message.getValue().getMessageProperties().getMessageId()).isEqualTo("message_1");
-        assertThat((String) message.getValue().getMessageProperties().getHeader("x-suilearn-task-id")).isEqualTo("task_1");
+        var event = ArgumentCaptor.forClass(OutboxEventEntity.class);
+        verify(outbox).save(event.capture());
+        assertThat(event.getValue().id()).isNotEqualTo("message_1");
+        assertThat(event.getValue().taskId()).isEqualTo("task_1");
+        assertThat(event.getValue().stage()).isEqualTo("PARSING");
+        assertThat(event.getValue().payload()).isEqualTo("{\"safe\":true}");
+        assertThat(event.getValue().retryCount()).isEqualTo(3);
+        verify(tasks).scheduleRetry(failedTask, 3);
         verify(deadLetters).save(tracked);
         assertThat(Integer.valueOf(tracked.replayCount())).isEqualTo(1);
-    }
-
-    @Test
-    void keepsDeadLetterPendingWhenBrokerNegativelyConfirmsReplay() {
-        var deadLetters = mock(DeadLetterMessageJpaRepository.class);
-        var outbox = mock(OutboxEventJpaRepository.class);
-        var template = mock(RabbitTemplate.class);
-        var tracked = trackedMessage();
-        stubReplay(deadLetters, outbox, tracked);
-        var service = new DeadLetterReplayService(deadLetters, outbox, template, fixedClock(),
-            () -> new CorrelationData.Confirm(false, "broker rejected replay"));
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.replay("message_1"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("not confirmed");
-
-        verify(deadLetters, never()).save(tracked);
-        assertThat(tracked.replayCount()).isZero();
-    }
-
-    @Test
-    void keepsDeadLetterPendingWhenReplayConfirmationFails() {
-        var deadLetters = mock(DeadLetterMessageJpaRepository.class);
-        var outbox = mock(OutboxEventJpaRepository.class);
-        var template = mock(RabbitTemplate.class);
-        var tracked = trackedMessage();
-        stubReplay(deadLetters, outbox, tracked);
-        var service = new DeadLetterReplayService(deadLetters, outbox, template, fixedClock(),
-            () -> { throw new java.util.concurrent.TimeoutException("confirm timed out"); });
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.replay("message_1"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("not confirmed");
-
-        verify(deadLetters, never()).save(tracked);
-        assertThat(tracked.replayCount()).isZero();
     }
 
     private DeadLetterMessageEntity trackedMessage() {
@@ -123,6 +91,12 @@ class DeadLetterReplayServiceTest {
         properties.setHeader("x-suilearn-stage", "PARSING");
         properties.setHeader(ProcessingFailureRouter.RETRY_COUNT_HEADER, 2);
         return new Message("body that must never be persisted".getBytes(), properties);
+    }
+
+    private TaskStatus failedTask() {
+        return new TaskStatus("task_1", TaskKind.MATERIAL_IMPORT, TaskLifecycleStatus.FAILED, "kb_1", "mat_1", null,
+            AiProviderType.OPENAI_COMPATIBLE, "model", 0, "PARSING", "FAILED", "safe", 2, null,
+            fixedClock().instant(), fixedClock().instant(), fixedClock().instant(), fixedClock().instant());
     }
 
     private Clock fixedClock() {

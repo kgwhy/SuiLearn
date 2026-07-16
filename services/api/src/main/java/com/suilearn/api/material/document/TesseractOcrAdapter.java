@@ -14,31 +14,43 @@ public class TesseractOcrAdapter {
     private final Duration timeout;
     private final String adapterVersion;
     private final Semaphore permits;
+    private final OcrOperationalMetrics metrics;
 
     public TesseractOcrAdapter(String executable, ExternalProcessRunner runner, int concurrency, Duration timeout,
                                String adapterVersion) {
+        this(executable, runner, concurrency, timeout, adapterVersion, OcrOperationalMetrics.noop());
+    }
+
+    public TesseractOcrAdapter(String executable, ExternalProcessRunner runner, int concurrency, Duration timeout,
+                               String adapterVersion, OcrOperationalMetrics metrics) {
         this.executable = Objects.requireNonNull(executable);
         this.runner = Objects.requireNonNull(runner);
         this.timeout = Objects.requireNonNull(timeout);
         this.adapterVersion = Objects.requireNonNull(adapterVersion);
         this.permits = new Semaphore(Math.max(1, concurrency));
+        this.metrics = Objects.requireNonNull(metrics);
     }
 
     public Result recognize(Path input, String revisionId, int pageNumber) {
         Objects.requireNonNull(input);
         String operationKey = "ocr:" + revisionId + ":page-" + pageNumber + ":" + adapterVersion;
         boolean acquired = false;
+        String outcome = "FAILED";
+        long startedAt = System.nanoTime();
         try {
             permits.acquire();
             acquired = true;
             RunningExternalProcess process = runner.start(List.of(executable, "--", input.toString(), "stdout"));
             if (!process.await(timeout)) {
                 process.terminate();
+                outcome = "TIMED_OUT";
                 return new Result("TIMED_OUT", "", operationKey);
             }
-            return process.exitCode() == 0
-                ? new Result("SUCCEEDED", process.stdout(), operationKey)
-                : new Result("FAILED", "", operationKey);
+            if (process.exitCode() == 0) {
+                outcome = "SUCCEEDED";
+                return new Result("SUCCEEDED", process.stdout(), operationKey);
+            }
+            return new Result("FAILED", "", operationKey);
         } catch (IOException exception) {
             return new Result("FAILED", "", operationKey);
         } catch (InterruptedException exception) {
@@ -50,6 +62,7 @@ public class TesseractOcrAdapter {
             if (acquired) {
                 permits.release();
             }
+            metrics.recordPageResult(outcome, System.nanoTime() - startedAt);
         }
     }
 

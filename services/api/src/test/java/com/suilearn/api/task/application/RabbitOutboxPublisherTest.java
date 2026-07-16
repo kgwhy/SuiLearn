@@ -10,6 +10,9 @@ import static org.mockito.Mockito.when;
 import java.time.Instant;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.amqp.core.MessagePostProcessor;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
@@ -28,5 +31,22 @@ class RabbitOutboxPublisherTest {
 
         assertThat(confirmed).isTrue();
         verify(template).convertAndSend(eq("suilearn.processing"), eq("document.processing"), eq("{}"), any(), any());
+    }
+
+    @Test
+    void propagatesPersistedReplayRetryCountIntoTheBrokerMessageHeader() {
+        var template = mock(RabbitTemplate.class);
+        var confirm = new CorrelationData.Confirm(true, null);
+        var publisher = new RabbitOutboxBrokerPublisher(template, () -> confirm);
+        var event = new DurableOutboxEvent("outbox_2", "task_1", "PARSING", "{}", OutboxDeliveryState.PENDING,
+            0, Instant.EPOCH, null, null, 3);
+
+        assertThat(publisher.publish(event)).isTrue();
+
+        var processor = ArgumentCaptor.forClass(MessagePostProcessor.class);
+        verify(template).convertAndSend(eq("suilearn.processing"), eq("document.processing"), eq("{}"), processor.capture(), any());
+        var message = processor.getValue().postProcessMessage(new org.springframework.amqp.core.Message(new byte[0], new MessageProperties()));
+        assertThat(message.getMessageProperties().getHeaders())
+            .containsEntry(ProcessingFailureRouter.RETRY_COUNT_HEADER, 3);
     }
 }

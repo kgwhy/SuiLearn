@@ -2,14 +2,18 @@ package com.suilearn.api.config;
 
 import com.suilearn.api.material.document.ExternalProcessRunner;
 import com.suilearn.api.material.document.LibreOfficePreviewAdapter;
+import com.suilearn.api.material.document.OcrOperationalMetrics;
 import com.suilearn.api.material.document.TesseractOcrAdapter;
+import com.suilearn.api.runtimefixture.RuntimeFixtureProcessRunner;
 import java.time.Clock;
 import java.time.Duration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
+import io.micrometer.core.instrument.MeterRegistry;
 
 @Configuration
 public class AppConfig {
@@ -40,7 +44,12 @@ public class AppConfig {
             environment.getProperty("suilearn.ai.chat-model", ""),
             environment.getProperty("suilearn.ai.embedding-model", ""),
             environment.getProperty("suilearn.ai.timeout-ms", Integer.class, 30000),
-            retryConfiguration.maxRetries()
+            retryConfiguration.maxRetries(),
+            environment.getProperty("suilearn.circuit-breaker.sliding-window-size", Integer.class, 10),
+            environment.getProperty("suilearn.circuit-breaker.failure-rate-percent", Integer.class, 50),
+            environment.getProperty("suilearn.circuit-breaker.minimum-calls", Integer.class, 5),
+            environment.getProperty("suilearn.circuit-breaker.open-state-ms", Integer.class, 60000),
+            environment.getProperty("suilearn.circuit-breaker.half-open-calls", Integer.class, 2)
         );
     }
 
@@ -61,8 +70,14 @@ public class AppConfig {
     }
 
     @Bean
-    TesseractOcrAdapter tesseractOcrAdapter(SuiLearnProcessingProperties properties) {
-        return new TesseractOcrAdapter("tesseract", ExternalProcessRunner.processBuilder(), properties.ocrConcurrency(),
-            Duration.ofMillis(properties.ocrTimeoutMs()), "tesseract-v1");
+    TesseractOcrAdapter tesseractOcrAdapter(SuiLearnProcessingProperties properties,
+                                             ObjectProvider<RuntimeFixtureProcessRunner> runtimeFixtureRunner,
+                                             MeterRegistry meterRegistry) {
+        ExternalProcessRunner runner = runtimeFixtureRunner.getIfAvailable();
+        if (runner == null) {
+            runner = ExternalProcessRunner.processBuilder();
+        }
+        return new TesseractOcrAdapter("tesseract", runner, properties.ocrConcurrency(),
+            Duration.ofMillis(properties.ocrTimeoutMs()), "tesseract-v1", new OcrOperationalMetrics(meterRegistry));
     }
 }
