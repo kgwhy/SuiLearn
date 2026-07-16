@@ -124,21 +124,21 @@
 
 ## 5. Web 工作台适配
 
-- [ ] 5.1 先更新 Web 类型/API contract tests，使其消费已稳定的 multipart、202 task、资产/revision、结构化知识点和批量题目契约。
+- [x] 5.1 先更新 Web 类型/API contract tests，使其消费已稳定的 multipart、202 task、资产/revision、结构化知识点和批量题目契约。
   - Owner: Web Frontend Agent
   - Allowed files: `apps/web/src/api.ts`, `apps/web/src/types.ts`, `apps/web/src/api.contract.test.mjs`, `apps/web/src/workbench-ui.test.mjs`
   - Forbidden files: `services/**`, `apps/android/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `npm --prefix apps/web test`; `npm --prefix apps/web run build`
   - Review focus: 前端不自行扩展契约；不再把 PDF 当文本；异步状态与批量草稿类型准确。
 
-- [ ] 5.2 实现拖放/文件选择 multipart 上传、任务进度、失败重试、资料导航、阅读版/原件/下载和来源定位交互。
+- [x] 5.2 实现拖放/文件选择 multipart 上传、任务进度、失败重试、资料导航、阅读版/原件/下载和来源定位交互。
   - Owner: Web Frontend Agent
   - Allowed files: `apps/web/src/App.tsx`, `apps/web/src/styles.css`, `apps/web/src/api.ts`, `apps/web/src/types.ts`, `apps/web/src/*.test.mjs`
   - Forbidden files: `services/**`, `apps/android/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）
   - Test command: `npm --prefix apps/web test`; `npm --prefix apps/web run build`
   - Review focus: 完整正文无固定小滚动框；原件/阅读版可达；状态非仅颜色；键盘/aria/44px；返回保留阅读位置。
 
-- [ ] 5.3 实现知识点标题+短总结列表、结构化详情/引用跳转/审核，以及默认一键与渐进设置的面试题生成/审核体验。
+- [x] 5.3 实现知识点标题+短总结列表、结构化详情/引用跳转/审核，以及默认一键与渐进设置的面试题生成/审核体验。
   - Owner: Web Frontend Agent
   - Allowed files: `apps/web/src/App.tsx`, `apps/web/src/styles.css`, `apps/web/src/api.ts`, `apps/web/src/types.ts`, `apps/web/src/*.test.mjs`
   - Forbidden files: `services/**`, `apps/android/**`, `contracts/**`, `docs/**`, `compose.yml`, `.env.example`, `openspec/changes/**`（任务勾选和验证记录除外）

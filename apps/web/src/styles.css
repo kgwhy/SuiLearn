@@ -701,9 +701,7 @@ textarea[aria-invalid="true"] {
 }
 
 .material-content-reader pre {
-  max-height: 320px;
   margin: 0;
-  overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   border: 1px solid var(--line);
@@ -713,6 +711,107 @@ textarea[aria-invalid="true"] {
   color: var(--ink);
   font: inherit;
   line-height: 1.65;
+}
+
+.upload-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 22px 16px;
+  border: 2px dashed #9fc7bb;
+  border-radius: 10px;
+  color: var(--primary-strong);
+  background: #f4faf8;
+  text-align: center;
+}
+
+.upload-dropzone span {
+  max-width: 34rem;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.material-reading-document {
+  display: grid;
+  gap: 16px;
+  max-width: 78ch;
+}
+
+.reading-block {
+  scroll-margin-top: 20px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 0 16px;
+}
+
+.reading-block p {
+  margin: 6px 0;
+  color: var(--ink);
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.reading-page {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.citation-anchor {
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  color: var(--primary-strong);
+  background: transparent;
+  font-weight: 700;
+}
+
+.knowledge-point-detail,
+.knowledge-point-editor,
+.knowledge-point-sections,
+.advanced-question-settings,
+.task-scoped-drafts {
+  display: grid;
+  gap: 12px;
+}
+
+.knowledge-point-sections section {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.knowledge-point-sections h5 {
+  margin: 0 0 6px;
+}
+
+.knowledge-point-sections p,
+.knowledge-point-sections ul {
+  margin: 0;
+}
+
+.citation-list {
+  display: grid;
+  gap: 6px;
+}
+
+.advanced-question-settings {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+@media (max-width: 720px) {
+  .advanced-question-settings {
+    grid-template-columns: 1fr;
+  }
 }
 
 .knowledge-point-list {

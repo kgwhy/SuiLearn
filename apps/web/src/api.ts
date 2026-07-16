@@ -4,6 +4,7 @@ import type {
   AiNoteType,
   GeneratedContentStatus,
   GeneratedQuestionDraft,
+  GenerateKnowledgePointQuestionsRequest,
   KnowledgeBase,
   KnowledgeBaseDetail,
   KnowledgeBaseStatistics,
@@ -11,15 +12,19 @@ import type {
   KnowledgePoint,
   MaterialDeletionResult,
   MaterialDetail,
+  MaterialReadingDocument,
+  MaterialTaskSubmission,
   MaterialMetadata,
   MaterialSourceType,
   QuestionSummary,
   QuestionType,
+  ReviewKnowledgePointQuestionDraftRequest,
   RagAnswer,
   SavedAiNote,
   SearchResult,
   SourceRef,
   TaskStatus
+  ,TaskSubmission
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v2";
@@ -91,13 +96,46 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload)
     }),
+  uploadMaterial: (knowledgeBaseId: string, payload: { file: File; title?: string; sourceType?: MaterialSourceType }) => {
+    const form = new FormData();
+    form.append("file", payload.file);
+    if (payload.title?.trim()) form.append("title", payload.title.trim());
+    if (payload.sourceType) form.append("sourceType", payload.sourceType);
+    return request<MaterialTaskSubmission>(`/knowledge-bases/${knowledgeBaseId}/materials`, {
+      method: "POST",
+      body: form
+    });
+  },
   getMaterial: (materialId: string) => request<MaterialDetail>(`/materials/${materialId}`),
+  getMaterialReading: (materialId: string, revisionId?: string) =>
+    request<MaterialReadingDocument>(`/materials/${materialId}/reading${revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : ""}`),
+  materialOriginalHref: (materialId: string) => `/materials/${materialId}/original`,
+  materialDownloadHref: (materialId: string) => `/materials/${materialId}/original/download`,
+  resourceUrl: (href: string) => href.startsWith("http") ? href : `${API_BASE}${href.replace(/^\/api\/v2/, "")}`,
+  reprocessMaterial: (materialId: string) =>
+    request<TaskSubmission>(`/materials/${materialId}/reprocess`, { method: "POST" }),
   deleteMaterial: (materialId: string) =>
     request<MaterialDeletionResult>(`/materials/${materialId}`, { method: "DELETE" }),
   extractKnowledgePoints: (materialId: string) =>
     request<KnowledgePointExtractionResult>(`/materials/${materialId}/extract-knowledge-points`, { method: "POST" }),
+  generateMaterialKnowledgePoints: (materialId: string, revisionId?: string) =>
+    request<TaskSubmission>(`/materials/${materialId}/knowledge-point-generations`, {
+      method: "POST",
+      body: JSON.stringify(revisionId ? { revisionId } : {})
+    }),
   listKnowledgePoints: (knowledgeBaseId: string) =>
     request<KnowledgePoint[]>(`/knowledge-bases/${knowledgeBaseId}/knowledge-points`),
+  getKnowledgePoint: (knowledgePointId: string) => request<KnowledgePoint>(`/knowledge-points/${knowledgePointId}`),
+  updateKnowledgePoint: (knowledgePointId: string, payload: Partial<Pick<Extract<KnowledgePoint, { legacy: false }>, "title" | "shortSummary" | "definition" | "principles" | "applicationScenarios" | "pitfalls" | "citations">>) =>
+    request<KnowledgePoint>(`/knowledge-points/${knowledgePointId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  confirmKnowledgePoint: (knowledgePointId: string, reviewComment?: string) =>
+    request<KnowledgePoint>(`/knowledge-points/${knowledgePointId}/confirm`, { method: "POST", body: JSON.stringify(reviewComment ? { reviewComment } : {}) }),
+  rejectKnowledgePoint: (knowledgePointId: string, reviewComment?: string) =>
+    request<KnowledgePoint>(`/knowledge-points/${knowledgePointId}/reject`, { method: "POST", body: JSON.stringify(reviewComment ? { reviewComment } : {}) }),
+  generateKnowledgePointQuestions: (knowledgePointId: string, payload: GenerateKnowledgePointQuestionsRequest = {}) =>
+    request<TaskSubmission>(`/knowledge-points/${knowledgePointId}/interview-question-generations`, { method: "POST", body: JSON.stringify(payload) }),
+  listTaskKnowledgePoints: (taskId: string) => request<KnowledgePoint[]>(`/tasks/${taskId}/knowledge-points`),
+  listTaskQuestionDrafts: (taskId: string) => request<GeneratedQuestionDraft[]>(`/tasks/${taskId}/question-drafts`),
   listQuestions: (knowledgeBaseId: string) =>
     request<QuestionSummary[]>(`/knowledge-bases/${knowledgeBaseId}/questions`),
   generateQuestion: (payload: {
@@ -129,6 +167,11 @@ export const api = {
       sourceRefs?: SourceRef[];
     }
   ) =>
+    request<GeneratedQuestionDraft>(`/ai/generated-contents/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
+  reviewKnowledgePointQuestionDraft: (id: string, payload: ReviewKnowledgePointQuestionDraftRequest) =>
     request<GeneratedQuestionDraft>(`/ai/generated-contents/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)

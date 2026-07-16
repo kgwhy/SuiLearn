@@ -20,7 +20,7 @@ import {
   Upload,
   X
 } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import type {
   AiProviderStatus,
@@ -33,11 +33,14 @@ import type {
   KnowledgePoint,
   MaterialDetail,
   MaterialMetadata,
+  MaterialReadingDocument,
   MaterialSourceType,
+  QuestionDifficulty,
   QuestionSummary,
   QuestionType,
   RagAnswer,
   SearchResult,
+  SourceCitation,
   SourceRef,
   TaskStatus
 } from "./types";
@@ -49,7 +52,7 @@ type FieldErrors = Record<string, string>;
 type TaskStatusMap = Record<string, TaskStatus>;
 type TaskErrorMap = Record<string, string>;
 
-const sourceTypes: MaterialSourceType[] = ["MARKDOWN", "TXT", "PDF"];
+const sourceTypes: MaterialSourceType[] = ["MARKDOWN", "TXT", "PDF", "DOC", "DOCX"];
 const questionTypes: QuestionType[] = ["SINGLE_CHOICE", "MULTIPLE_CHOICE", "TRUE_FALSE", "SHORT_ANSWER"];
 
 export function App() {
@@ -60,10 +63,13 @@ export function App() {
   const [statistics, setStatistics] = useState<KnowledgeBaseStatistics | null>(null);
   const [materials, setMaterials] = useState<MaterialMetadata[]>([]);
   const [materialDetail, setMaterialDetail] = useState<MaterialDetail | null>(null);
+  const [materialReading, setMaterialReading] = useState<MaterialReadingDocument | null>(null);
   const [knowledgePoints, setKnowledgePoints] = useState<KnowledgePoint[]>([]);
   const [selectedKnowledgePointId, setSelectedKnowledgePointId] = useState("");
   const [questions, setQuestions] = useState<QuestionSummary[]>([]);
   const [drafts, setDrafts] = useState<GeneratedQuestionDraft[]>([]);
+  const [questionDraftsByTask, setQuestionDraftsByTask] = useState<Record<string, GeneratedQuestionDraft[]>>({});
+  const [questionGenerationTasks, setQuestionGenerationTasks] = useState<Record<string, string>>({});
   const [selectedDraftId, setSelectedDraftId] = useState("");
   const [contentFilter, setContentFilter] = useState<ContentFilter>("PENDING_REVIEW");
   const [aiNoteDraft, setAiNoteDraft] = useState<AiNoteDraft | null>(null);
@@ -87,9 +93,9 @@ export function App() {
   const [materialForm, setMaterialForm] = useState({
     title: "HashMap 资料",
     fileName: "",
-    sourceType: "MARKDOWN" as MaterialSourceType,
-    content: "HashMap 使用数组加链表或红黑树处理哈希冲突。扩容会重新分布桶位，面试时需要关注负载因子、扰动函数和线程安全边界。"
+    sourceType: "MARKDOWN" as MaterialSourceType
   });
+  const [selectedMaterialFile, setSelectedMaterialFile] = useState<File | null>(null);
   const [generationForm, setGenerationForm] = useState({
     sourceKind: "material" as "material" | "knowledgePoint",
     sourceId: "",
@@ -200,10 +206,13 @@ export function App() {
       setStatistics(null);
       setMaterials([]);
       setMaterialDetail(null);
+      setMaterialReading(null);
       setKnowledgePoints([]);
       setSelectedKnowledgePointId("");
       setQuestions([]);
       setDrafts([]);
+      setQuestionDraftsByTask({});
+      setQuestionGenerationTasks({});
     } else if (!nextSelectedId || !bases.some((item) => item.id === nextSelectedId)) {
       setSelectedKnowledgeBaseId(bases[0].id);
     } else {
@@ -252,6 +261,7 @@ export function App() {
     try {
       const status = await api.getTaskStatus(taskId);
       setTaskStatuses((current) => ({ ...current, [taskId]: status }));
+      if (status.status === "SUCCEEDED") await loadTaskQuestionDrafts(taskId);
     } catch (error) {
       setTaskErrors((current) => ({
         ...current,
@@ -296,19 +306,43 @@ export function App() {
     await loadKnowledgeBases();
   }
 
-  async function readMaterialFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  function selectMaterialFile(file: File) {
     const extension = file.name.split(".").pop()?.toUpperCase();
-    const sourceType = extension === "PDF" ? "PDF" : extension === "TXT" ? "TXT" : "MARKDOWN";
-    const content = await file.text();
+    const sourceType = extension === "PDF" || extension === "DOC" || extension === "DOCX" || extension === "TXT"
+      ? extension
+      : "MARKDOWN";
+    setSelectedMaterialFile(file);
     setMaterialForm((current) => ({
       ...current,
       title: current.title.trim() ? current.title : file.name.replace(/\.[^.]+$/, ""),
       fileName: file.name,
-      sourceType,
-      content
+      sourceType: sourceType as MaterialSourceType
     }));
+  }
+
+  async function loadTaskQuestionDrafts(taskId: string) {
+    try {
+      const taskDrafts = await api.listTaskQuestionDrafts(taskId);
+      setQuestionDraftsByTask((current) => ({ ...current, [taskId]: taskDrafts }));
+      setDrafts((current) => {
+        const preserved = current.filter((draft) => draft.generationTaskId !== taskId);
+        return [...taskDrafts, ...preserved];
+      });
+      if (taskDrafts[0]) setSelectedDraftId(taskDrafts[0].id);
+    } catch {
+      // A task can be visible before its batch result is published; refresh it again after completion.
+    }
+  }
+
+  async function readMaterialFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) selectMaterialFile(file);
+  }
+
+  function dropMaterialFile(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (file) selectMaterialFile(file);
   }
 
   async function importMaterial(event: FormEvent) {
@@ -319,37 +353,54 @@ export function App() {
     }
     const errors: FieldErrors = {};
     if (!materialForm.title.trim()) errors.materialTitle = "请输入资料标题。";
-    if (!materialForm.content.trim()) errors.materialContent = "请粘贴资料正文，或选择可读取的文本文件。";
+    if (!selectedMaterialFile) errors.materialFile = "请选择 Markdown、TXT、PDF、DOC 或 DOCX 原始文件。";
     if (Object.keys(errors).length > 0) {
       setError(errors);
       return;
     }
-    setFormErrors((current) => ({ ...current, material: "", materialTitle: "", materialContent: "" }));
-    const material = await run(
-      () =>
-        api.importMaterial(selectedKnowledgeBaseId, {
-          ...materialForm,
-          title: materialForm.title.trim(),
-          content: materialForm.content.trim()
-        }),
-      "资料已导入"
+    if (!selectedMaterialFile) return;
+    setFormErrors((current) => ({ ...current, material: "", materialTitle: "", materialFile: "" }));
+    const submission = await run(
+      () => api.uploadMaterial(selectedKnowledgeBaseId, {
+        file: selectedMaterialFile,
+        title: materialForm.title.trim(),
+        sourceType: materialForm.sourceType
+      }),
+      "资料已发送处理任务"
     );
-    if (!material) return;
-    if (material.status !== "READY") {
-      await loadWorkbench();
-      return;
-    }
-    setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: material.id }));
+    if (!submission) return;
+    setSelectedMaterialFile(null);
+    setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: submission.materialId }));
     setSection("materials");
-    await openMaterial(material.id);
-    await extractKnowledgePoints(material.id);
+    await Promise.all([loadWorkbench(), openMaterial(submission.materialId), viewTaskStatus(submission.taskId)]);
   }
 
-  async function openMaterial(materialId: string) {
+  async function openMaterial(materialId: string, revisionId?: string) {
     const nextDetail = await run(() => api.getMaterial(materialId));
     if (!nextDetail) return;
     setMaterialDetail(nextDetail);
+    setMaterialReading(null);
+    if (nextDetail.status === "READY" && (revisionId ?? nextDetail.currentRevisionId)) {
+      try {
+        setMaterialReading(await api.getMaterialReading(materialId, revisionId ?? nextDetail.currentRevisionId));
+      } catch {
+        // Detail metadata remains usable while the reading rendition is unavailable.
+      }
+    }
     setGenerationForm((current) => ({ ...current, sourceKind: "material", sourceId: materialId }));
+  }
+
+  async function reprocessMaterial(materialId: string) {
+    const submission = await run(() => api.reprocessMaterial(materialId), "已重新提交资料处理任务");
+    if (!submission) return;
+    await Promise.all([loadWorkbench(), openMaterial(materialId), viewTaskStatus(submission.taskId)]);
+  }
+
+  function openCitationBlock(blockId?: string, pageNumber?: number) {
+    const target = blockId
+      ? document.getElementById(`document-block-${blockId}`)
+      : pageNumber ? document.querySelector(`[data-page-number="${pageNumber}"]`) : null;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   async function extractKnowledgePoints(materialId: string) {
@@ -367,9 +418,53 @@ export function App() {
     await loadWorkbench();
   }
 
-  function openKnowledgePoint(knowledgePointId: string) {
+  async function openKnowledgePoint(knowledgePointId: string) {
+    const point = await run(() => api.getKnowledgePoint(knowledgePointId));
+    if (point) {
+      setKnowledgePoints((current) => current.map((item) => item.id === point.id ? point : item));
+    }
     setSelectedKnowledgePointId(knowledgePointId);
     setSection("overview");
+  }
+
+  async function updateKnowledgePoint(knowledgePointId: string, payload: Parameters<typeof api.updateKnowledgePoint>[1]) {
+    const point = await run(() => api.updateKnowledgePoint(knowledgePointId, payload), "知识点已更新");
+    if (!point) return;
+    setKnowledgePoints((current) => current.map((item) => item.id === point.id ? point : item));
+  }
+
+  async function reviewKnowledgePoint(knowledgePoint: KnowledgePoint, action: "confirm" | "reject") {
+    if (knowledgePoint.legacy) return;
+    const point = await run(
+      () => action === "confirm" ? api.confirmKnowledgePoint(knowledgePoint.id) : api.rejectKnowledgePoint(knowledgePoint.id),
+      action === "confirm" ? "知识点已确认" : "知识点已拒绝"
+    );
+    if (!point) return;
+    setKnowledgePoints((current) => current.map((item) => item.id === point.id ? point : item));
+  }
+
+  async function generateKnowledgePointQuestions(point: KnowledgePoint, settings: { count: number; difficulty: QuestionDifficulty; questionType: QuestionType }) {
+    if (!isKnowledgePointQuestionEligible(point)) {
+      setError({ knowledgePointGeneration: "仅可从来源仍有效的已确认结构化知识点生成面试题。" });
+      return;
+    }
+    if (!Number.isInteger(settings.count) || settings.count < 1 || settings.count > 10) {
+      setError({ knowledgePointQuestionCount: "数量必须是 1 到 10 之间的整数。" });
+      return;
+    }
+    const submission = await run(
+      () => api.generateKnowledgePointQuestions(point.id, settings),
+      "面试题生成任务已提交，可继续阅读知识点。"
+    );
+    if (!submission) return;
+    setQuestionGenerationTasks((current) => ({ ...current, [point.id]: submission.taskId }));
+    await viewTaskStatus(submission.taskId);
+  }
+
+  async function openKnowledgePointCitation(citation: SourceCitation) {
+    setSection("materials");
+    await openMaterial(citation.materialId, citation.revisionId);
+    requestAnimationFrame(() => openCitationBlock(citation.blockId, citation.pageNumber));
   }
 
   async function deleteMaterial(materialId: string) {
@@ -409,6 +504,20 @@ export function App() {
       setError({ generationSource: "请先选择资料或知识点作为生成来源。" });
       return;
     }
+    if (generationForm.sourceKind === "knowledgePoint") {
+      if (!("legacy" in selectedSource) || !isKnowledgePointQuestionEligible(selectedSource)) {
+        setError({ generationSource: "请先确认来源仍有效的结构化知识点，再生成面试题。" });
+        return;
+      }
+      const submission = await run(
+        () => api.generateKnowledgePointQuestions(selectedSource.id, { count: 1, difficulty: "MEDIUM", questionType: "SHORT_ANSWER" }),
+        "面试题生成任务已提交，可继续阅读知识点。"
+      );
+      if (!submission) return;
+      setQuestionGenerationTasks((current) => ({ ...current, [selectedSource.id]: submission.taskId }));
+      await viewTaskStatus(submission.taskId);
+      return;
+    }
     const errors: FieldErrors = {};
     if (!generationForm.categoryId.trim()) errors.categoryId = "请输入分类 ID。";
     if (!generationForm.prompt.trim()) errors.prompt = "请输入生成要求。";
@@ -417,8 +526,7 @@ export function App() {
       return;
     }
     setFormErrors((current) => ({ ...current, generationSource: "", categoryId: "", prompt: "" }));
-    const pointIds =
-      generationForm.sourceKind === "knowledgePoint" ? [sourceRef.id] : knowledgePoints.slice(0, 2).map((item) => item.id);
+    const pointIds = knowledgePoints.slice(0, 2).map((item) => item.id);
     const draft = await run(
       () =>
         api.generateQuestion({
@@ -461,8 +569,20 @@ export function App() {
       draftCategoryName: ""
     }));
     await run(
-      () =>
-        api.reviewGeneratedContent(selectedDraft.id, {
+      () => selectedDraft.knowledgePointId
+        ? api.reviewKnowledgePointQuestionDraft(selectedDraft.id, {
+          contentKind: "KNOWLEDGE_POINT_INTERVIEW_QUESTION",
+          action: status === "SAVED" ? "SAVE" : "DISCARD",
+          stem: draft.stem.trim(),
+          options: draft.options,
+          answer: draft.answer,
+          explanation: draft.explanation.trim(),
+          difficulty: draft.difficulty,
+          questionType: draft.questionType,
+          categoryId: draft.categoryId.trim(),
+          categoryName: draft.categoryName.trim()
+        })
+        : api.reviewGeneratedContent(selectedDraft.id, {
           status,
           stem: draft.stem.trim(),
           options: draft.options,
@@ -471,7 +591,7 @@ export function App() {
           categoryId: draft.categoryId.trim(),
           categoryName: draft.categoryName.trim(),
           knowledgePointIds: draft.knowledgePointIds,
-          sourceRefs: selectedDraft.sourceRefs ?? []
+            sourceRefs: selectedDraft.sourceRefs ?? []
         }),
       status === "SAVED" ? "题目已保存" : "草稿已处理"
     );
@@ -679,6 +799,17 @@ export function App() {
             providerLoading={providerLoading}
             loading={loading}
             openKnowledgePoint={openKnowledgePoint}
+            updateKnowledgePoint={updateKnowledgePoint}
+            reviewKnowledgePoint={reviewKnowledgePoint}
+            generateKnowledgePointQuestions={generateKnowledgePointQuestions}
+            questionGenerationTasks={questionGenerationTasks}
+            taskQuestionDrafts={questionDraftsByTask}
+            taskStatuses={taskStatuses}
+            taskErrors={taskErrors}
+            taskLoading={taskLoading}
+            viewTaskStatus={viewTaskStatus}
+            openCitation={openKnowledgePointCitation}
+            errors={formErrors}
             goToMaterials={() => setSection("materials")}
             goToGenerate={() => setSection("generate")}
           />
@@ -689,13 +820,17 @@ export function App() {
             materialForm={materialForm}
             setMaterialForm={setMaterialForm}
             readMaterialFile={readMaterialFile}
+            dropMaterialFile={dropMaterialFile}
             importMaterial={importMaterial}
             materials={activeMaterials}
             materialDetail={materialDetail}
+            materialReading={materialReading}
             openMaterial={openMaterial}
             openKnowledgePoint={openKnowledgePoint}
             extractKnowledgePoints={extractKnowledgePoints}
             deleteMaterial={deleteMaterial}
+            reprocessMaterial={reprocessMaterial}
+            openCitationBlock={openCitationBlock}
             taskStatuses={taskStatuses}
             taskErrors={taskErrors}
             taskLoading={taskLoading}
@@ -729,6 +864,8 @@ export function App() {
             taskErrors={taskErrors}
             taskLoading={taskLoading}
             viewTaskStatus={viewTaskStatus}
+            taskQuestionDrafts={questionDraftsByTask}
+            openCitation={openKnowledgePointCitation}
             loading={loading}
             errors={formErrors}
             goToMaterials={() => setSection("materials")}
@@ -822,6 +959,17 @@ function OverviewPanel({
   providerLoading,
   loading,
   openKnowledgePoint,
+  updateKnowledgePoint,
+  reviewKnowledgePoint,
+  generateKnowledgePointQuestions,
+  questionGenerationTasks,
+  taskQuestionDrafts,
+  taskStatuses,
+  taskErrors,
+  taskLoading,
+  viewTaskStatus,
+  openCitation,
+  errors,
   goToMaterials,
   goToGenerate
 }: {
@@ -836,7 +984,18 @@ function OverviewPanel({
   aiProviderError: string;
   providerLoading: boolean;
   loading: boolean;
-  openKnowledgePoint: (id: string) => void;
+  openKnowledgePoint: (id: string) => Promise<void>;
+  updateKnowledgePoint: (id: string, payload: Parameters<typeof api.updateKnowledgePoint>[1]) => Promise<void>;
+  reviewKnowledgePoint: (point: KnowledgePoint, action: "confirm" | "reject") => Promise<void>;
+  generateKnowledgePointQuestions: (point: KnowledgePoint, settings: { count: number; difficulty: QuestionDifficulty; questionType: QuestionType }) => Promise<void>;
+  questionGenerationTasks: Record<string, string>;
+  taskQuestionDrafts: Record<string, GeneratedQuestionDraft[]>;
+  openCitation: (citation: SourceCitation) => Promise<void>;
+  taskStatuses: TaskStatusMap;
+  taskErrors: TaskErrorMap;
+  taskLoading: Record<string, boolean>;
+  viewTaskStatus: (id: string) => Promise<void>;
+  errors: FieldErrors;
   goToMaterials: () => void;
   goToGenerate: () => void;
 }) {
@@ -911,7 +1070,22 @@ function OverviewPanel({
             />
           )}
         </div>
-        {selectedKnowledgePoint && <KnowledgePointDetail point={selectedKnowledgePoint} />}
+        {selectedKnowledgePoint && (
+          <KnowledgePointDetail
+            point={selectedKnowledgePoint}
+            updateKnowledgePoint={updateKnowledgePoint}
+            reviewKnowledgePoint={reviewKnowledgePoint}
+            generateQuestions={generateKnowledgePointQuestions}
+            generationTaskId={questionGenerationTasks[selectedKnowledgePoint.id]}
+            taskDrafts={questionGenerationTasks[selectedKnowledgePoint.id] ? taskQuestionDrafts[questionGenerationTasks[selectedKnowledgePoint.id]] ?? [] : []}
+            taskStatuses={taskStatuses}
+            taskErrors={taskErrors}
+            taskLoading={taskLoading}
+            viewTaskStatus={viewTaskStatus}
+            openCitation={openCitation}
+            errors={errors}
+          />
+        )}
       </div>
       <div className="panel">
         <div className="panel-heading">
@@ -937,16 +1111,20 @@ function OverviewPanel({
 }
 
 function MaterialsPanel(props: {
-  materialForm: { title: string; fileName: string; sourceType: MaterialSourceType; content: string };
-  setMaterialForm: (value: { title: string; fileName: string; sourceType: MaterialSourceType; content: string }) => void;
+  materialForm: { title: string; fileName: string; sourceType: MaterialSourceType };
+  setMaterialForm: (value: { title: string; fileName: string; sourceType: MaterialSourceType }) => void;
   readMaterialFile: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
+  dropMaterialFile: (event: DragEvent<HTMLDivElement>) => void;
   importMaterial: (event: FormEvent) => Promise<void>;
   materials: MaterialMetadata[];
   materialDetail: MaterialDetail | null;
+  materialReading: MaterialReadingDocument | null;
   openMaterial: (id: string) => Promise<void>;
   openKnowledgePoint: (id: string) => void;
   extractKnowledgePoints: (id: string) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
+  reprocessMaterial: (id: string) => Promise<void>;
+  openCitationBlock: (blockId?: string) => void;
   taskStatuses: TaskStatusMap;
   taskErrors: TaskErrorMap;
   taskLoading: Record<string, boolean>;
@@ -963,11 +1141,17 @@ function MaterialsPanel(props: {
           <h3>导入资料</h3>
           <FileText size={18} />
         </div>
-        <label>
-          本地文件
-          <input type="file" accept=".md,.markdown,.txt,.pdf,text/markdown,text/plain,application/pdf" onChange={props.readMaterialFile} />
-        </label>
+        <div className="upload-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={props.dropMaterialFile}>
+          <Upload size={22} />
+          <strong>拖放原始资料到这里</strong>
+          <span>支持 Markdown、TXT、PDF、DOC、DOCX，文件将直接上传而不会在浏览器中转为文本。</span>
+          <label className="ghost-button file-picker">
+            选择文件
+            <input type="file" accept=".md,.markdown,.txt,.pdf,.doc,.docx,text/markdown,text/plain,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={props.readMaterialFile} />
+          </label>
+        </div>
         {materialForm.fileName && <div className="file-hint"><Upload size={15} /> {materialForm.fileName}</div>}
+        <FormError message={props.errors.materialFile} />
         <label>
           标题
           <input
@@ -986,17 +1170,7 @@ function MaterialsPanel(props: {
             {sourceTypes.map((item) => <option key={item}>{item}</option>)}
           </select>
         </label>
-        <label>
-          内容
-          <textarea
-            value={materialForm.content}
-            aria-invalid={Boolean(props.errors.materialContent)}
-            onChange={(event) => setMaterialForm({ ...materialForm, content: event.target.value })}
-            rows={8}
-          />
-          <FormError message={props.errors.materialContent} />
-        </label>
-        <button className="primary-button" disabled={props.loading || !materialForm.title.trim() || !materialForm.content.trim()}>
+        <button className="primary-button" disabled={props.loading || !materialForm.title.trim() || !materialForm.fileName}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Save size={16} />} 导入
         </button>
       </form>
@@ -1042,16 +1216,16 @@ function MaterialsPanel(props: {
           <div className="detail-box">
             <h4>{readableMaterialText(props.materialDetail.title)}</h4>
             <div className="metadata-grid">
-              <MetaItem label="导入任务" value={props.materialDetail.importTaskId} />
+              <MetaItem label="处理任务" value={props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId} />
               {props.materialDetail.embeddingTaskId && <MetaItem label="Embedding 任务" value={props.materialDetail.embeddingTaskId} />}
               <MetaItem label="资料状态" value={props.materialDetail.status} />
               {props.materialDetail.errorMessage && <MetaItem label="错误" value={props.materialDetail.errorMessage} />}
             </div>
             <div className="button-row task-actions">
               <TaskStatusButton
-                taskId={props.materialDetail.importTaskId}
-                label="查看导入任务"
-                loading={props.taskLoading[props.materialDetail.importTaskId]}
+                taskId={props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId}
+                label="查看处理任务"
+                loading={props.taskLoading[props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId]}
                 onView={props.viewTaskStatus}
               />
               {props.materialDetail.embeddingTaskId && (
@@ -1064,8 +1238,8 @@ function MaterialsPanel(props: {
               )}
             </div>
             <TaskStatusCard
-              task={props.taskStatuses[props.materialDetail.importTaskId]}
-              error={props.taskErrors[props.materialDetail.importTaskId]}
+              task={props.taskStatuses[props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId]}
+              error={props.taskErrors[props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId]}
             />
             {props.materialDetail.embeddingTaskId && (
               <TaskStatusCard
@@ -1074,7 +1248,16 @@ function MaterialsPanel(props: {
               />
             )}
             <TaskStatusCard task={props.extractionTasks[props.materialDetail.id]} />
-            <MaterialContentReader detail={props.materialDetail} />
+            {(props.materialDetail.status === "FAILED" || props.taskStatuses[props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId]?.status === "RETRY_WAIT") && (
+              <button className="ghost-button" onClick={() => props.materialDetail && void props.reprocessMaterial(props.materialDetail.id)}>
+                <RefreshCw size={16} /> 重试处理
+              </button>
+            )}
+            <MaterialContentReader
+              detail={props.materialDetail}
+              reading={props.materialReading}
+              onCitation={props.openCitationBlock}
+            />
             <KnowledgePointSummaryList
               points={props.materialDetail.extractedKnowledgePoints ?? []}
               onOpen={props.openKnowledgePoint}
@@ -1116,6 +1299,8 @@ function GeneratePanel(props: {
   taskErrors: TaskErrorMap;
   taskLoading: Record<string, boolean>;
   viewTaskStatus: (id: string) => Promise<void>;
+  taskQuestionDrafts: Record<string, GeneratedQuestionDraft[]>;
+  openCitation: (citation: SourceCitation) => Promise<void>;
   loading: boolean;
   errors: FieldErrors;
   goToMaterials: () => void;
@@ -1138,6 +1323,8 @@ function GeneratePanel(props: {
       explanation: props.selectedDraft.explanation,
       categoryId: props.selectedDraft.categoryId,
       categoryName: props.selectedDraft.categoryName,
+      difficulty: props.selectedDraft.difficulty ?? "MEDIUM",
+      questionType: props.selectedDraft.questionType,
       knowledgePointIdsText: props.selectedDraft.knowledgePointIds.join("\n"),
       knowledgePointIds: props.selectedDraft.knowledgePointIds
     });
@@ -1318,6 +1505,14 @@ function GeneratePanel(props: {
                 <FormError message={props.errors.draftExplanation} />
               </label>
               <div className="field-row">
+                {props.selectedDraft.knowledgePointId && <label>
+                  难度
+                  <select value={draftEdit.difficulty} onChange={(event) => updateDraftEdit({ difficulty: event.target.value as QuestionDifficulty })}><option>EASY</option><option>MEDIUM</option><option>HARD</option></select>
+                </label>}
+                {props.selectedDraft.knowledgePointId && <label>
+                  题型
+                  <select value={draftEdit.questionType} onChange={(event) => updateDraftEdit({ questionType: event.target.value as QuestionType })}>{props.questionTypes.map((type) => <option key={type}>{type}</option>)}</select>
+                </label>}
                 <label>
                   分类 ID
                   <input
@@ -1344,6 +1539,11 @@ function GeneratePanel(props: {
               <div className="source-list">
                 {(props.selectedDraft.sourceRefs ?? []).map((ref) => (
                   <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
+                ))}
+                {(props.selectedDraft.citations ?? []).map((citation, index) => (
+                  <button key={`${citation.revisionId}-${citation.blockId ?? index}`} type="button" className="citation-anchor" onClick={() => void props.openCitation(citation)}>
+                    {citation.pageNumber ? `第 ${citation.pageNumber} 页` : "资料段落"}：{readableMaterialText(citation.excerpt)}
+                  </button>
                 ))}
               </div>
               <div className="button-row">
@@ -1418,6 +1618,8 @@ type DraftEditState = {
   categoryName: string;
   knowledgePointIdsText: string;
   knowledgePointIds: string[];
+  difficulty: QuestionDifficulty;
+  questionType: QuestionType;
 };
 
 const emptyDraftEdit: DraftEditState = {
@@ -1430,8 +1632,56 @@ const emptyDraftEdit: DraftEditState = {
   categoryId: "",
   categoryName: "",
   knowledgePointIdsText: "",
-  knowledgePointIds: []
+  knowledgePointIds: [],
+  difficulty: "MEDIUM",
+  questionType: "SHORT_ANSWER"
 };
+
+type KnowledgePointEditState = {
+  title: string;
+  shortSummary: string;
+  definition: string;
+  principles: string;
+  applicationScenarios: string;
+  pitfalls: string;
+};
+
+function knowledgePointEditState(point: KnowledgePoint): KnowledgePointEditState {
+  if (point.legacy) return { title: point.name, shortSummary: point.description, definition: "", principles: "", applicationScenarios: "", pitfalls: "" };
+  return {
+    title: point.title,
+    shortSummary: point.shortSummary,
+    definition: point.definition,
+    principles: point.principles.join("\n"),
+    applicationScenarios: point.applicationScenarios.join("\n"),
+    pitfalls: point.pitfalls.join("\n")
+  };
+}
+
+function isKnowledgePointQuestionEligible(point: KnowledgePoint) {
+  return point.legacy === false
+    && point.status === "CONFIRMED"
+    && !point.sourceOutdated
+    && point.citations.some((citation) => citation.deleted !== true && Boolean(citation.materialId) && Boolean(citation.revisionId) && Boolean(citation.blockId ?? citation.pageNumber));
+}
+
+function StructuredKnowledgePointContent({ point }: { point: Extract<KnowledgePoint, { legacy: false }> }) {
+  return (
+    <>
+      <p>{readableMaterialText(point.shortSummary)}</p>
+      <div className="knowledge-point-sections">
+        <KnowledgePointSection title="定义" content={point.definition} />
+        <KnowledgePointSection title="核心原理" items={point.principles} />
+        <KnowledgePointSection title="应用场景" items={point.applicationScenarios} />
+        <KnowledgePointSection title="易错点" items={point.pitfalls} />
+      </div>
+    </>
+  );
+}
+
+function KnowledgePointSection({ title, content, items }: { title: string; content?: string; items?: string[] }) {
+  return <section><h5>{title}</h5>{content ? <p>{readableMaterialText(content)}</p> : <ul>{items?.map((item) => <li key={item}>{readableMaterialText(item)}</li>)}</ul>}</section>;
+}
 
 function lines(value: string) {
   return value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
@@ -1492,19 +1742,44 @@ function readableUrlLabel(value: string) {
   }
 }
 
-function MaterialContentReader({ detail }: { detail: MaterialDetail }) {
+function MaterialContentReader({
+  detail,
+  reading,
+  onCitation
+}: {
+  detail: MaterialDetail;
+  reading: MaterialReadingDocument | null;
+  onCitation: (blockId?: string) => void;
+}) {
   const content = detail.content ?? detail.contentPreview ?? "";
-  const label = detail.content ? "完整正文" : detail.contentPreview ? "预览" : "暂无正文";
+  const originalHref = api.resourceUrl(api.materialOriginalHref(detail.id));
+  const downloadHref = api.resourceUrl(api.materialDownloadHref(detail.id));
   return (
     <div className="material-content-reader">
       <div className="detail-heading">
-        <h4>资料正文</h4>
-        <StatusPill label={label} />
+        <h4>资料阅读</h4>
+        <StatusPill label={reading ? "阅读版" : "处理中"} />
       </div>
-      {content.trim() ? (
+      {detail.originalAvailable && (
+        <div className="button-row reader-actions">
+          <a className="ghost-button" href={originalHref} target="_blank" rel="noreferrer">原始文件</a>
+          <a className="ghost-button" href={downloadHref}>下载原件</a>
+        </div>
+      )}
+      {reading?.blocks.length ? (
+        <div className="material-reading-document">
+          {reading.blocks.map((block) => (
+            <article id={`document-block-${block.id}`} data-page-number={block.pageNumber} key={block.id} className="reading-block">
+              {block.pageNumber && <span className="reading-page">第 {block.pageNumber} 页</span>}
+              <p>{readableMaterialText(block.content)}</p>
+              <button type="button" className="citation-anchor" onClick={() => onCitation(block.id)}>定位到此段</button>
+            </article>
+          ))}
+        </div>
+      ) : content.trim() ? (
         <pre>{readableMaterialText(content)}</pre>
       ) : (
-        <EmptyLine label="后端暂未返回可查看正文" />
+        <EmptyLine label={detail.originalAvailable ? "阅读版仍在生成，请稍后刷新任务状态。" : "这是旧资料，原始文件不可用。"} />
       )}
     </div>
   );
@@ -1525,12 +1800,93 @@ function KnowledgePointChip({
       className={`knowledge-point-chip${active ? " active" : ""}`}
       onClick={() => onOpen(point.id)}
     >
-      {readableMaterialText(point.name)}
+      {readableMaterialText(point.legacy ? point.name : point.title)}
     </button>
   );
 }
 
-function KnowledgePointDetail({ point }: { point: KnowledgePoint }) {
+function KnowledgePointDetail({
+  point,
+  updateKnowledgePoint,
+  reviewKnowledgePoint,
+  generateQuestions,
+  generationTaskId,
+  taskDrafts,
+  taskStatuses,
+  taskErrors,
+  taskLoading,
+  viewTaskStatus,
+  openCitation,
+  errors
+}: {
+  point: KnowledgePoint;
+  updateKnowledgePoint: (id: string, payload: Parameters<typeof api.updateKnowledgePoint>[1]) => Promise<void>;
+  reviewKnowledgePoint: (point: KnowledgePoint, action: "confirm" | "reject") => Promise<void>;
+  generateQuestions: (point: KnowledgePoint, settings: { count: number; difficulty: QuestionDifficulty; questionType: QuestionType }) => Promise<void>;
+  generationTaskId?: string;
+  taskDrafts: GeneratedQuestionDraft[];
+  taskStatuses: TaskStatusMap;
+  taskErrors: TaskErrorMap;
+  taskLoading: Record<string, boolean>;
+  viewTaskStatus: (id: string) => Promise<void>;
+  openCitation: (citation: SourceCitation) => Promise<void>;
+  errors: FieldErrors;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [edit, setEdit] = useState(() => knowledgePointEditState(point));
+  const [settings, setSettings] = useState({ count: 1, difficulty: "MEDIUM" as QuestionDifficulty, questionType: "SHORT_ANSWER" as QuestionType });
+
+  useEffect(() => {
+    setEditing(false);
+    setEdit(knowledgePointEditState(point));
+  }, [point]);
+
+  if (point.legacy) {
+    return <LegacyKnowledgePointDetail point={point} />;
+  }
+
+  const eligible = isKnowledgePointQuestionEligible(point);
+  async function save() {
+    await updateKnowledgePoint(point.id, {
+      title: edit.title.trim(), shortSummary: edit.shortSummary.trim(), definition: edit.definition.trim(),
+      principles: lines(edit.principles), applicationScenarios: lines(edit.applicationScenarios), pitfalls: lines(edit.pitfalls)
+    });
+    setEditing(false);
+  }
+
+  return (
+    <div className="knowledge-point-detail">
+      <div className="detail-heading"><h4>{readableMaterialText(point.title)}</h4><StatusPill label={point.sourceOutdated ? "SOURCE_OUTDATED" : point.status} /></div>
+      {editing ? (
+        <div className="knowledge-point-editor">
+          <label>标题<input value={edit.title} onChange={(event) => setEdit({ ...edit, title: event.target.value })} /></label>
+          <label>短总结<textarea rows={2} value={edit.shortSummary} onChange={(event) => setEdit({ ...edit, shortSummary: event.target.value })} /></label>
+          <label>定义<textarea rows={3} value={edit.definition} onChange={(event) => setEdit({ ...edit, definition: event.target.value })} /></label>
+          <label>核心原理（每行一项）<textarea rows={3} value={edit.principles} onChange={(event) => setEdit({ ...edit, principles: event.target.value })} /></label>
+          <label>应用场景（每行一项）<textarea rows={3} value={edit.applicationScenarios} onChange={(event) => setEdit({ ...edit, applicationScenarios: event.target.value })} /></label>
+          <label>易错点（每行一项）<textarea rows={3} value={edit.pitfalls} onChange={(event) => setEdit({ ...edit, pitfalls: event.target.value })} /></label>
+          <div className="button-row"><button type="button" className="primary-button" onClick={() => void save()}><Save size={16} /> 保存</button><button type="button" className="ghost-button" onClick={() => setEditing(false)}>取消</button></div>
+        </div>
+      ) : <StructuredKnowledgePointContent point={point} />}
+      <div className="citation-list">{point.citations.map((citation, index) => <button key={`${citation.revisionId}-${citation.blockId ?? index}`} type="button" className="citation-anchor" onClick={() => void openCitation(citation)}>{citation.pageNumber ? `第 ${citation.pageNumber} 页` : "资料段落"}：{readableMaterialText(citation.excerpt)}</button>)}</div>
+      <div className="button-row knowledge-point-actions">
+        {point.status === "DRAFT" && <button type="button" className="ghost-button" onClick={() => setEditing((current) => !current)}><Pencil size={16} /> 编辑</button>}
+        {point.status === "DRAFT" && <button type="button" className="primary-button" onClick={() => void reviewKnowledgePoint(point, "confirm")}><Check size={16} /> 确认知识点</button>}
+        {point.status === "DRAFT" && <button type="button" className="danger-button" onClick={() => void reviewKnowledgePoint(point, "reject")}><X size={16} /> 拒绝</button>}
+      </div>
+      <div className="knowledge-point-generation">
+        <button type="button" className="primary-button" disabled={!eligible} onClick={() => void generateQuestions(point, { count: 1, difficulty: "MEDIUM", questionType: "SHORT_ANSWER" })}><Sparkles size={16} /> 生成面试题</button>
+        <button type="button" className="ghost-button" disabled={!eligible} onClick={() => setShowSettings((current) => !current)}>更多设置</button>
+        {!eligible && <FormError message="仅已确认、非旧版、来源未过期且引用有效的知识点可出题。" />}
+        {showSettings && eligible && <div className="advanced-question-settings"><label>数量<input type="number" min="1" max="10" value={settings.count} onChange={(event) => setSettings({ ...settings, count: Number(event.target.value) })} /></label><label>难度<select value={settings.difficulty} onChange={(event) => setSettings({ ...settings, difficulty: event.target.value as QuestionDifficulty })}><option>EASY</option><option>MEDIUM</option><option>HARD</option></select></label><label>题型<select value={settings.questionType} onChange={(event) => setSettings({ ...settings, questionType: event.target.value as QuestionType })}>{questionTypes.map((type) => <option key={type}>{type}</option>)}</select></label><button type="button" className="ghost-button" onClick={() => void generateQuestions(point, settings)}>按设置生成</button><FormError message={errors.knowledgePointQuestionCount} /></div>}
+      </div>
+      {generationTaskId && <div className="task-scoped-drafts"><TaskStatusButton taskId={generationTaskId} label="刷新本次生成任务" loading={taskLoading[generationTaskId]} onView={viewTaskStatus} /><TaskStatusCard task={taskStatuses[generationTaskId]} error={taskErrors[generationTaskId]} />{taskDrafts.map((draft) => <div className="row-item" key={draft.id}><span>{draft.stem}</span><StatusPill label={draft.status} /></div>)}</div>}
+    </div>
+  );
+}
+
+function LegacyKnowledgePointDetail({ point }: { point: Extract<KnowledgePoint, { legacy: true }> }) {
   return (
     <div className="knowledge-point-detail">
       <div className="detail-heading">
@@ -1563,12 +1919,12 @@ function KnowledgePointSummaryList({
         <article className={`knowledge-point-card${point.id === activeId ? " active" : ""}`} key={point.id}>
           <div className="detail-heading">
             <button type="button" className="knowledge-point-title-button" onClick={() => onOpen(point.id)}>
-              {readableMaterialText(point.name)}
+              {point.legacy ? readableMaterialText(point.name) : readableMaterialText(point.title)}
               <ChevronRight size={15} />
             </button>
-            <StatusPill label="知识点" />
+            <StatusPill label={point.legacy ? "LEGACY" : point.sourceOutdated ? "SOURCE_OUTDATED" : point.status} />
           </div>
-          <p>{point.description ? readableMaterialText(point.description) : "暂无描述"}</p>
+          <p>{point.legacy ? readableMaterialText(point.description) : readableMaterialText(point.shortSummary)}</p>
           <KnowledgePointSources point={point} />
         </article>
       ))}
@@ -1582,6 +1938,7 @@ function KnowledgePointSources({ point }: { point: KnowledgePoint }) {
     <>
       <div className="result-meta">
         {point.sourceMaterialId && <span>资料 {shortId(point.sourceMaterialId)}</span>}
+        {!point.legacy && <span>{point.citations.length} 条可追溯引用</span>}
         {sourceRefs.map((ref) => (
           <span key={`${ref.type}-${ref.id}`}>{sourceRefLabel(ref)}</span>
         ))}
@@ -1677,8 +2034,8 @@ function TaskStatusCard({ task, error }: { task?: TaskStatus; error?: string }) 
       </div>
       <div className="metadata-grid">
         <MetaItem label="任务 ID" value={task.id} />
-        <MetaItem label="进度" value={task.progressPercent !== undefined ? `${task.progressPercent}%` : "未返回"} />
-        <MetaItem label="步骤" value={task.currentStep ?? "未返回"} />
+        <MetaItem label="进度" value={task.progress?.percent !== undefined ? `${task.progress.percent}%` : "未返回"} />
+        <MetaItem label="步骤" value={task.progress?.message ?? task.currentStep ?? "未返回"} />
         <MetaItem label="模型" value={task.model ?? "未返回"} />
         {task.providerType && <MetaItem label="Provider" value={task.providerType} />}
         {task.resultRef?.type && <MetaItem label="结果" value={`${task.resultRef.type}${task.resultRef.count !== undefined ? ` x${task.resultRef.count}` : ""}`} />}
