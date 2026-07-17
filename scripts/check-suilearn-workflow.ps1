@@ -103,10 +103,10 @@ function Test-EfficientBatchPolicy {
         @{ Path = "agents/leader.md"; Pattern = "\u6210\u529f\u8fd4\u56de\u7d27\u51d1\u8bc1\u636e" },
         @{ Path = "agents/leader.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
         @{ Path = "agents/leader.md"; Pattern = "safe\.directory" },
-        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "MUST" },
-        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "P0/P1/P2" },
-        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
-        @{ Path = "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md"; Pattern = "safe\.directory" }
+        @{ Path = "openspec/specs/efficient-batch-workflow/spec.md"; Pattern = "MUST" },
+        @{ Path = "openspec/specs/efficient-batch-workflow/spec.md"; Pattern = "P0/P1/P2" },
+        @{ Path = "openspec/specs/efficient-batch-workflow/spec.md"; Pattern = "\u8bc1\u636e\u6307\u7eb9" },
+        @{ Path = "openspec/specs/efficient-batch-workflow/spec.md"; Pattern = "safe\.directory" }
     )
 
     foreach ($clause in $requiredClauses) {
@@ -243,7 +243,7 @@ if ($SelfTestEfficientBatchPolicy) {
         "docs/development-workflow.md" = ""
         ".agents/skills/suilearn-workflow/references/subagent-loop.md" = ""
         "agents/leader.md" = ""
-        "openspec/changes/build-resilient-knowledge-pipeline/specs/efficient-batch-workflow/spec.md" = ""
+        "openspec/specs/efficient-batch-workflow/spec.md" = ""
     }
     $expectedMissingClauseCount = Test-EfficientBatchPolicy -ContentOverrides $emptyPolicyFiles
     $actualMissingClauseCount = $changed.Count - $beforeSelfTest

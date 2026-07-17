@@ -1,28 +1,72 @@
 # Copy this file to config/local.properties for local-only overrides.
-# The copied local.properties file is ignored by git. Do not commit real API keys.
+# The copied local.properties file is ignored by git. Do not commit real AI or
+# production credentials. Environment variables override these local defaults.
+#
+# These service credentials match the root compose.yml fallbacks and .env.example.
+# They are for local development only.
 
-# Local PostgreSQL + pgvector started from the root compose.yml
-spring.datasource.url=jdbc:postgresql://localhost:5432/suilearn
-spring.datasource.driver-class-name=org.postgresql.Driver
-spring.datasource.username=suilearn
-spring.datasource.password=suilearn_dev_password
-spring.jpa.hibernate.ddl-auto=update
+# Host-run API -> local PostgreSQL + pgvector started from the root compose.yml
+spring.datasource.url=${SUILEARN_DB_URL:jdbc:postgresql://localhost:5432/suilearn}
+spring.datasource.driver-class-name=${SUILEARN_DB_DRIVER:org.postgresql.Driver}
+spring.datasource.username=${SUILEARN_DB_USERNAME:suilearn}
+spring.datasource.password=${SUILEARN_DB_PASSWORD:suilearn_dev_password}
+spring.jpa.hibernate.ddl-auto=${SUILEARN_DB_DDL_AUTO:update}
 
-# AI provider mode.
-# Keep keys in environment variables, not in this file.
-suilearn.ai.provider=openai-compatible
-suilearn.ai.base-url=https://api.openai.com/v1
-suilearn.ai.api-key=${SUILEARN_AI_API_KEY}
-suilearn.ai.chat-model=gpt-4.1-mini
-suilearn.ai.embedding-model=text-embedding-3-small
-suilearn.ai.timeout-ms=30000
-suilearn.ai.max-retries=2
+# Host-run API -> local RabbitMQ started from the root compose.yml
+spring.rabbitmq.host=${SUILEARN_RABBITMQ_HOST:localhost}
+spring.rabbitmq.port=${SUILEARN_RABBITMQ_PORT:5672}
+spring.rabbitmq.username=${SUILEARN_RABBITMQ_USERNAME:suilearn}
+spring.rabbitmq.password=${SUILEARN_RABBITMQ_PASSWORD:suilearn_rabbitmq_dev_password}
+spring.rabbitmq.virtual-host=${SUILEARN_RABBITMQ_VHOST:suilearn}
+suilearn.rabbitmq.retry-short-delay-ms=${SUILEARN_RABBITMQ_RETRY_SHORT_DELAY_MS:30000}
+suilearn.rabbitmq.retry-long-delay-ms=${SUILEARN_RABBITMQ_RETRY_LONG_DELAY_MS:300000}
+suilearn.rabbitmq.health-timeout-ms=${SUILEARN_RABBITMQ_HEALTH_TIMEOUT_MS:1000}
 
-# DeepSeek can be used for chat, but current RAG import/search still needs an
-# embedding endpoint from a provider that supports /embeddings.
-# suilearn.ai.chat-base-url=https://api.deepseek.com
-# suilearn.ai.chat-api-key=${SUILEARN_AI_CHAT_API_KEY}
-# suilearn.ai.chat-model=deepseek-chat
-# suilearn.ai.embedding-base-url=https://api.openai.com/v1
-# suilearn.ai.embedding-api-key=${SUILEARN_AI_EMBEDDING_API_KEY}
-# suilearn.ai.embedding-model=text-embedding-3-small
+# Host-run API -> local MinIO started from the root compose.yml
+suilearn.minio.endpoint=${SUILEARN_MINIO_ENDPOINT:http://localhost:9000}
+suilearn.minio.access-key=${SUILEARN_MINIO_ACCESS_KEY:minioadmin}
+suilearn.minio.secret-key=${SUILEARN_MINIO_SECRET_KEY:suilearn_minio_dev_password}
+suilearn.minio.bucket=${SUILEARN_MINIO_BUCKET:suilearn-assets}
+suilearn.minio.cleanup-interval-ms=${SUILEARN_MINIO_CLEANUP_INTERVAL_MS:3600000}
+suilearn.minio.temporary-retention-ms=${SUILEARN_MINIO_TEMPORARY_RETENTION_MS:86400000}
+
+# HTTP and durable processing defaults
+suilearn.web.cors.allowed-origins=${SUILEARN_WEB_CORS_ALLOWED_ORIGINS:http://localhost:5174,http://127.0.0.1:5174}
+suilearn.async-processing.enabled=${SUILEARN_ASYNC_PROCESSING_ENABLED:true}
+suilearn.ocr.enabled=${SUILEARN_OCR_ENABLED:true}
+suilearn.max-file-size-mb=${SUILEARN_MAX_FILE_SIZE_MB:50}
+suilearn.pdf.max-pages=${SUILEARN_PDF_MAX_PAGES:500}
+suilearn.pdf.ocr-text-density-threshold=${SUILEARN_PDF_OCR_TEXT_DENSITY_THRESHOLD:16}
+suilearn.processing.concurrency=${SUILEARN_PROCESSING_CONCURRENCY:2}
+suilearn.ocr.concurrency=${SUILEARN_OCR_CONCURRENCY:1}
+suilearn.retain-original=${SUILEARN_RETAIN_ORIGINAL:true}
+suilearn.knowledge-point.auto-generation-enabled=${SUILEARN_KNOWLEDGE_POINT_AUTO_GENERATION_ENABLED:true}
+suilearn.processing.max-attempts=${SUILEARN_PROCESSING_MAX_ATTEMPTS:3}
+suilearn.parser.timeout-ms=${SUILEARN_PARSER_TIMEOUT_MS:120000}
+suilearn.ocr.timeout-ms=${SUILEARN_OCR_TIMEOUT_MS:60000}
+suilearn.libreoffice.timeout-ms=${SUILEARN_LIBREOFFICE_TIMEOUT_MS:120000}
+suilearn.outbox.dispatch-interval-ms=${SUILEARN_OUTBOX_DISPATCH_INTERVAL_MS:1000}
+
+# AI provider mode. Keep actual AI keys in environment variables, not this file.
+suilearn.ai.provider=${SUILEARN_AI_PROVIDER:openai-compatible}
+suilearn.ai.base-url=${SUILEARN_AI_BASE_URL:https://api.openai.com/v1}
+suilearn.ai.api-key=${SUILEARN_AI_API_KEY:}
+suilearn.ai.chat-model=${SUILEARN_AI_CHAT_MODEL:gpt-4.1-mini}
+suilearn.ai.embedding-model=${SUILEARN_AI_EMBEDDING_MODEL:text-embedding-3-small}
+suilearn.ai.timeout-ms=${SUILEARN_AI_TIMEOUT_MS:30000}
+
+# Canonical adapter retry setting for new local configurations.
+suilearn.adapter.max-retries=${SUILEARN_ADAPTER_MAX_RETRIES:0}
+
+# AI circuit breaker defaults
+suilearn.circuit-breaker.failure-rate-percent=${SUILEARN_CIRCUIT_BREAKER_FAILURE_RATE_PERCENT:50}
+suilearn.circuit-breaker.sliding-window-size=${SUILEARN_CIRCUIT_BREAKER_SLIDING_WINDOW_SIZE:10}
+suilearn.circuit-breaker.minimum-calls=${SUILEARN_CIRCUIT_BREAKER_MINIMUM_CALLS:5}
+suilearn.circuit-breaker.open-state-ms=${SUILEARN_CIRCUIT_BREAKER_OPEN_STATE_MS:60000}
+suilearn.circuit-breaker.half-open-calls=${SUILEARN_CIRCUIT_BREAKER_HALF_OPEN_CALLS:2}
+
+# Optional split-provider overrides. Leave blank to reuse base-url and api-key.
+# suilearn.ai.chat-base-url=${SUILEARN_AI_CHAT_BASE_URL:}
+# suilearn.ai.chat-api-key=${SUILEARN_AI_CHAT_API_KEY:}
+# suilearn.ai.embedding-base-url=${SUILEARN_AI_EMBEDDING_BASE_URL:}
+# suilearn.ai.embedding-api-key=${SUILEARN_AI_EMBEDDING_API_KEY:}
