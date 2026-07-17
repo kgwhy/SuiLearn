@@ -36,3 +36,4 @@ archived change or replace its artifacts.
 
 | workflow-governance | [2026-07-13-reorganize-openspec-archive](./workflow-governance/2026-07-13-reorganize-openspec-archive/) | - |
 | learning-rag | [2026-07-17-fix-knowledge-point-generation](./learning-rag/2026-07-17-fix-knowledge-point-generation/) | - |
+| learning-rag | [2026-07-17-build-resilient-knowledge-pipeline](./learning-rag/2026-07-17-build-resilient-knowledge-pipeline/) | platform-runtime, workflow-governance |
