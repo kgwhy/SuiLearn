@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { applyKnowledgePointExtractionTaskStatus, submitKnowledgePointExtractionTask } from "./knowledgePointExtractionTask";
 import type {
   AiProviderStatus,
   AiNoteDraft,
@@ -261,6 +262,12 @@ export function App() {
     try {
       const status = await api.getTaskStatus(taskId);
       setTaskStatuses((current) => ({ ...current, [taskId]: status }));
+      await applyKnowledgePointExtractionTaskStatus(status, {
+        setExtractionTask: (materialId, extractionTask) =>
+          setExtractionTasks((current) => ({ ...current, [materialId]: extractionTask })),
+        loadWorkbench,
+        openMaterial
+      });
       if (status.status === "SUCCEEDED") await loadTaskQuestionDrafts(taskId);
     } catch (error) {
       setTaskErrors((current) => ({
@@ -404,18 +411,12 @@ export function App() {
   }
 
   async function extractKnowledgePoints(materialId: string) {
-    const extraction = await run(() => api.extractKnowledgePoints(materialId), "知识点已提取");
-    const firstExtracted = extraction?.knowledgePoints[0];
-    if (firstExtracted) setSelectedKnowledgePointId(firstExtracted.id);
-    if (extraction) {
-      setExtractionTasks((current) => ({ ...current, [materialId]: extraction.task }));
-      setMaterialDetail((current) =>
-        current?.id === materialId
-          ? { ...current, extractedKnowledgePoints: extraction.knowledgePoints }
-          : current
-      );
-    }
-    await loadWorkbench();
+    await submitKnowledgePointExtractionTask(materialId, {
+      submit: () => run(() => api.generateMaterialKnowledgePoints(materialId), "知识点生成任务已提交"),
+      loadWorkbench,
+      openMaterial,
+      viewTaskStatus
+    });
   }
 
   async function openKnowledgePoint(knowledgePointId: string) {
@@ -1134,6 +1135,7 @@ function MaterialsPanel(props: {
   errors: FieldErrors;
 }) {
   const { materialForm, setMaterialForm } = props;
+  const extractionTask = props.materialDetail ? props.extractionTasks[props.materialDetail.id] : undefined;
   return (
     <section className="two-column">
       <form className="panel form-panel" onSubmit={props.importMaterial}>
@@ -1247,7 +1249,15 @@ function MaterialsPanel(props: {
                 error={props.taskErrors[props.materialDetail.embeddingTaskId]}
               />
             )}
-            <TaskStatusCard task={props.extractionTasks[props.materialDetail.id]} />
+            {extractionTask && (
+              <TaskStatusButton
+                taskId={extractionTask.id}
+                label="刷新知识点提取任务"
+                loading={props.taskLoading[extractionTask.id]}
+                onView={props.viewTaskStatus}
+              />
+            )}
+            <TaskStatusCard task={extractionTask} />
             {(props.materialDetail.status === "FAILED" || props.taskStatuses[props.materialDetail.processingTaskId ?? props.materialDetail.importTaskId]?.status === "RETRY_WAIT") && (
               <button className="ghost-button" onClick={() => props.materialDetail && void props.reprocessMaterial(props.materialDetail.id)}>
                 <RefreshCw size={16} /> 重试处理

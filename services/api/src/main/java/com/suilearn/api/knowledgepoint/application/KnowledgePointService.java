@@ -146,9 +146,9 @@ public class KnowledgePointService {
 
         List<AiProvider.GeneratedKnowledgePoint> generated;
         try {
-            generated = extractStructuredPoints(material, evidence.chunks());
-        } catch (RecoveredButInvalidStructuredResult exception) {
-            return failedResult(task, material, STEP_AI_EXTRACTION_FAILED, safeErrorMessage(exception));
+            generated = extractStructuredPoints(material, evidence);
+        } catch (SchemaValidationException exception) {
+            return failedResult(task, material, "AI_STRUCTURED_OUTPUT_INVALID", safeErrorMessage(exception));
         } catch (RuntimeException exception) {
             taskService.updateTask(task, TaskLifecycleStatus.FAILED, 100, STEP_AI_EXTRACTION_FAILED, null,
                 STEP_AI_EXTRACTION_FAILED, safeErrorMessage(exception), material.id(), null);
@@ -223,22 +223,30 @@ public class KnowledgePointService {
     }
 
     private List<AiProvider.GeneratedKnowledgePoint> extractStructuredPoints(
-        LearningMaterial material, List<MaterialChunk> evidence
+        LearningMaterial material, RevisionEvidence evidence
+    ) {
+        var prompt = new AiProvider.KnowledgePointExtractionPrompt(
+            material.knowledgeBaseId(), material.id(), material.title(),
+            evidence.chunks().stream().map(MaterialChunk::sourceRef).toList(), MAX_EXTRACTED_POINTS
+        );
+        var generated = invokeWithConfiguredRetries(() -> aiProvider.extractKnowledgePoints(prompt));
+        try {
+            validateSchema(generated, material, evidence);
+            return generated.stream().limit(MAX_EXTRACTED_POINTS).toList();
+        } catch (SchemaValidationException exception) {
+            var repaired = aiProvider.repairKnowledgePointExtraction(prompt, List.of(exception.getMessage()));
+            validateSchema(repaired, material, evidence);
+            return repaired.stream().limit(MAX_EXTRACTED_POINTS).toList();
+        }
+    }
+
+    private List<AiProvider.GeneratedKnowledgePoint> invokeWithConfiguredRetries(
+        java.util.function.Supplier<List<AiProvider.GeneratedKnowledgePoint>> invocation
     ) {
         RuntimeException lastFailure = null;
         for (int attempt = 0; attempt <= properties.maxRetries(); attempt++) {
             try {
-                var generated = aiProvider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
-                    material.knowledgeBaseId(), material.id(), material.title(),
-                    evidence.stream().map(MaterialChunk::sourceRef).toList(), MAX_EXTRACTED_POINTS
-                ));
-                validateSchema(generated);
-                return generated.stream().limit(MAX_EXTRACTED_POINTS).toList();
-            } catch (SchemaValidationException exception) {
-                if (attempt > 0) {
-                    throw new RecoveredButInvalidStructuredResult(exception.getMessage());
-                }
-                throw exception;
+                return invocation.get();
             } catch (RuntimeException exception) {
                 lastFailure = exception;
             }
@@ -246,10 +254,22 @@ public class KnowledgePointService {
         throw new IllegalStateException("Configured chat AI failed to extract knowledge points: " + safeErrorMessage(lastFailure), lastFailure);
     }
 
-    private void validateSchema(List<AiProvider.GeneratedKnowledgePoint> generated) {
+    private void validateSchema(
+        List<AiProvider.GeneratedKnowledgePoint> generated, LearningMaterial material, RevisionEvidence evidence
+    ) {
         if (generated == null || generated.isEmpty() || generated.stream().anyMatch(point -> !isComplete(point))) {
-            throw new SchemaValidationException("AI result failed structured knowledge point schema validation");
+            throw new SchemaValidationException("AI returned incomplete structured knowledge points");
         }
+        if (generated.stream().anyMatch(point -> !hasOnlyWhitelistedCitations(point, material, evidence))) {
+            throw new SchemaValidationException("AI returned citations outside the selected material evidence");
+        }
+    }
+
+    private boolean hasOnlyWhitelistedCitations(
+        AiProvider.GeneratedKnowledgePoint point, LearningMaterial material, RevisionEvidence evidence
+    ) {
+        return point.citations().stream().allMatch(ref -> material.id().equals(ref.materialId())
+            && validCitation(ref) && isWhitelistedCitation(ref, evidence));
     }
 
     private boolean isComplete(AiProvider.GeneratedKnowledgePoint point) {
@@ -265,13 +285,27 @@ public class KnowledgePointService {
 
     private KnowledgePoint structuredDraft(LearningMaterial material, AiProvider.GeneratedKnowledgePoint point, RevisionEvidence evidence) {
         var citations = point.citations().stream().filter(ref -> material.id().equals(ref.materialId()))
-            .filter(this::validCitation).filter(ref -> isWhitelistedCitation(ref, evidence)).toList();
+            .filter(this::validCitation).map(ref -> canonicalCitation(ref, evidence)).filter(Objects::nonNull).toList();
         if (citations.isEmpty()) {
             throw new SchemaValidationException("AI result requires a current versioned citation");
         }
         return new KnowledgePoint(newId("kp"), material.knowledgeBaseId(), point.title(), point.shortSummary(), material.id(), citations,
             point.title(), point.shortSummary(), point.definition(), point.principles(), point.applicationScenarios(), point.pitfalls(),
             KnowledgePointReviewStatus.DRAFT, false, false);
+    }
+
+    private com.suilearn.api.model.SourceRef canonicalCitation(
+        com.suilearn.api.model.SourceRef citation, RevisionEvidence evidence
+    ) {
+        if (evidence.revisionId() == null) {
+            return citation;
+        }
+        return evidence.chunks().stream().map(MaterialChunk::sourceRef).filter(allowed -> allowed != null
+            && Objects.equals(citation.materialId(), allowed.materialId())
+            && Objects.equals(citation.revisionId(), allowed.revisionId())
+            && Objects.equals(citation.pageNumber(), allowed.pageNumber())
+            && Objects.equals(citation.blockId(), allowed.blockId())
+            && Objects.equals(citation.excerpt(), allowed.excerpt())).findFirst().orElse(null);
     }
 
     private KnowledgePointExtractionResult failedResult(TaskStatus task, LearningMaterial material, String code, String message) {
@@ -373,10 +407,6 @@ public class KnowledgePointService {
 
     private static class SchemaValidationException extends IllegalStateException {
         private SchemaValidationException(String message) { super(message); }
-    }
-
-    private static class RecoveredButInvalidStructuredResult extends IllegalStateException {
-        private RecoveredButInvalidStructuredResult(String message) { super(message); }
     }
 
     private record RevisionEvidence(String revisionId, List<MaterialChunk> chunks) { }

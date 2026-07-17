@@ -1,4 +1,4 @@
-# OpenSpec archive index
+﻿# OpenSpec archive index
 
 Each archived change has one canonical primary technical domain. Related
 domains are navigation tags only; they never create a second copy of an
@@ -35,3 +35,4 @@ archived change or replace its artifacts.
 
 
 | workflow-governance | [2026-07-13-reorganize-openspec-archive](./workflow-governance/2026-07-13-reorganize-openspec-archive/) | - |
+| learning-rag | [2026-07-17-fix-knowledge-point-generation](./learning-rag/2026-07-17-fix-knowledge-point-generation/) | - |

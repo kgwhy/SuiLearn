@@ -52,6 +52,13 @@ public final class RuntimeFixtureAiProvider implements AiProvider {
     }
 
     @Override
+    public List<GeneratedKnowledgePoint> repairKnowledgePointExtraction(
+        KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+    ) {
+        return invoke(() -> delegate.repairKnowledgePointExtraction(prompt, validationFailures));
+    }
+
+    @Override
     public GeneratedNote generateKnowledgePointExplanation(KnowledgePointExplanationPrompt prompt) {
         return invoke(() -> delegate.generateKnowledgePointExplanation(prompt));
     }

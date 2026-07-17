@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -31,6 +32,7 @@ class OpenAiCompatibleAiProviderTest {
     private final AtomicInteger chatResponseStatus = new AtomicInteger(200);
     private final AtomicInteger chatTransientFailuresRemaining = new AtomicInteger();
     private final AtomicInteger embeddingTransientFailuresRemaining = new AtomicInteger();
+    private final AtomicBoolean structuredKnowledgePointAliases = new AtomicBoolean();
     private HttpServer server;
     private SuiLearnAiProperties properties;
 
@@ -301,6 +303,38 @@ class OpenAiCompatibleAiProviderTest {
     }
 
     @Test
+    void normalizesFencedKnowledgePointAliasesWithoutChangingEvidence() {
+        structuredKnowledgePointAliases.set(true);
+        var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
+
+        var points = provider.extractKnowledgePoints(new AiProvider.KnowledgePointExtractionPrompt(
+            "kb_1", "mat_1", "HashMap source", List.of(sourceRef()), 4
+        ));
+
+        assertThat(points).singleElement().satisfies(point -> {
+            assertThat(point.shortSummary()).isEqualTo("How HashMap resolves bucket collisions.");
+            assertThat(point.applicationScenarios()).containsExactly("Fast key-value lookup");
+            assertThat(point.citations()).singleElement().satisfies(citation -> {
+                assertThat(citation.revisionId()).isEqualTo("rev_2");
+                assertThat(citation.blockId()).isEqualTo("block_7");
+            });
+        });
+    }
+
+    @Test
+    void repairRequestRequiresTheKnowledgePointsTopLevelArray() {
+        var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
+
+        provider.repairKnowledgePointExtraction(
+            new AiProvider.KnowledgePointExtractionPrompt("kb_1", "mat_1", "HashMap source", List.of(sourceRef()), 4),
+            List.of("AI returned incomplete structured knowledge points")
+        );
+
+        assertThat(lastChatRequest.get())
+            .contains("repair_knowledge_point_extraction", "field named knowledgePoints", "knowledgePoints must be an array");
+    }
+
+    @Test
     void sendsVersionedCitationLocationAndExcerptInQuestionGenerationRequestBody() {
         var provider = new OpenAiCompatibleAiProvider(properties, objectMapper);
         var citation = new SourceRef(SourceType.MATERIAL_CHUNK, "chunk_7", "kb_1", "HashMap source", "mat_1", "chunk_7", false,
@@ -354,7 +388,13 @@ class OpenAiCompatibleAiProviderTest {
             respond(exchange, 503, "{\"error\":\"temporary chat failure\"}");
             return;
         }
-        var content = lastChatRequest.get().contains("extract_knowledge_points")
+        var content = lastChatRequest.get().contains("extract_knowledge_points") && structuredKnowledgePointAliases.get()
+            ? """
+                ```json
+                {"knowledge_points":[{"title":"HashMap collision handling","summary":"How HashMap resolves bucket collisions.","definition":"HashMap stores entries in buckets and resolves collisions within a bucket.","principles":["Bucket lookup","Hash equality"],"applications":["Fast key-value lookup"],"pitfalls":["Mutable keys break lookup"],"citations":[{"type":"MATERIAL_CHUNK","id":"chunk_7","knowledgeBaseId":"kb_1","title":"HashMap source","materialId":"mat_1","chunkId":"chunk_7","deleted":false,"excerpt":"HashMap resolves collisions in buckets.","revisionId":"rev_2","blockId":"block_7"}]}]}
+                ```
+                """
+            : lastChatRequest.get().contains("extract_knowledge_points")
             ? """
                 {"knowledgePoints":[{"title":"HashMap collision handling","shortSummary":"How HashMap resolves bucket collisions.","definition":"HashMap stores entries in buckets and resolves collisions within a bucket.","principles":["Bucket lookup","Hash equality"],"applicationScenarios":["Fast key-value lookup"],"pitfalls":["Mutable keys break lookup"],"citations":[{"type":"MATERIAL_CHUNK","id":"chunk_7","knowledgeBaseId":"kb_1","title":"HashMap source","materialId":"mat_1","chunkId":"chunk_7","deleted":false,"excerpt":"HashMap resolves collisions in buckets.","revisionId":"rev_2","blockId":"block_7"}]}]}
                 """

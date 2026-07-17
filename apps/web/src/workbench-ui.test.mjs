@@ -48,10 +48,15 @@ test("imported material detail only renders full content and knowledge points, n
   assert.doesNotMatch(appSource, /ref\.excerpt/);
 });
 
-test("knowledge point extraction stores and displays the extraction task status", () => {
+test("knowledge point extraction submits and displays the durable task status", () => {
   assert.match(appSource, /const \[extractionTasks, setExtractionTasks]/);
-  assert.match(appSource, /setExtractionTasks\(\(current\) => \(\{ \.\.\.current, \[materialId]: extraction\.task \}\)\)/);
-  assert.match(appSource, /<TaskStatusCard task=\{props\.extractionTasks\[props\.materialDetail\.id\]\} \/>/);
+  assert.match(appSource, /api\.generateMaterialKnowledgePoints\(materialId\)/);
+  assert.match(appSource, /submitKnowledgePointExtractionTask/);
+  assert.match(appSource, /applyKnowledgePointExtractionTaskStatus/);
+  assert.match(appSource, /刷新知识点提取任务/);
+  assert.doesNotMatch(appSource, /async function extractKnowledgePoints\(materialId: string\)\s*\{[\s\S]*?api\.extractKnowledgePoints\(materialId\)/);
+  assert.match(appSource, /const extractionTask = props\.materialDetail \? props\.extractionTasks\[props\.materialDetail\.id\] : undefined/);
+  assert.match(appSource, /<TaskStatusCard task=\{extractionTask\} \/>/);
 });
 
 test("knowledge-point workbench shows structured list and detail fields with citation jumps and review actions", () => {

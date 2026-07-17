@@ -2,6 +2,7 @@ package com.suilearn.api.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.model.QuestionType;
 import com.suilearn.api.model.SourceRef;
@@ -116,21 +117,43 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
 
     @Override
     public List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt) {
-        var root = completeJson("""
+        return requestKnowledgePoints(prompt, List.of());
+    }
+
+    @Override
+    public List<GeneratedKnowledgePoint> repairKnowledgePointExtraction(
+        KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+    ) {
+        return requestKnowledgePoints(prompt, validationFailures == null ? List.of() : List.copyOf(validationFailures));
+    }
+
+    private List<GeneratedKnowledgePoint> requestKnowledgePoints(
+        KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+    ) {
+        boolean repair = !validationFailures.isEmpty();
+        var root = completeJson(repair ? """
+            Return a complete replacement JSON object for the prior knowledge-point extraction.
+            Fix every listed validation failure. Return only the JSON object, with no markdown fence or explanation.
+            The top-level object MUST have exactly one field named knowledgePoints.
+            knowledgePoints must be an array of objects. Every knowledge point must contain title, shortSummary, definition, principles, applicationScenarios, pitfalls,
+            and citations. Each citation must use only a provided source reference and contain materialId, revisionId,
+            pageNumber or blockId, and excerpt.
+        """ : """
             Return a JSON object with field knowledgePoints.
             knowledgePoints must be an array of objects with fields: name, description, title, shortSummary, definition,
             principles, applicationScenarios, pitfalls, citations. citations must contain materialId, revisionId, pageNumber or blockId, excerpt.
             Extract only real study concepts, APIs, patterns, or pitfalls that are supported by the source excerpts.
             Do not return sentence fragments, headings without concept value, punctuation-only text, or duplicate names.
         """, payload()
-            .putValue("task", "extract_knowledge_points")
+            .putValue("task", repair ? "repair_knowledge_point_extraction" : "extract_knowledge_points")
             .putValue("knowledgeBaseId", prompt.knowledgeBaseId())
             .putValue("materialId", prompt.materialId())
             .putValue("materialTitle", prompt.materialTitle())
             .putValue("maxKnowledgePoints", prompt.maxKnowledgePoints())
             .putValue("sourceRefs", sourceRefs(prompt.evidenceRefs()))
+            .putValue("validationFailures", validationFailures)
             .toMap());
-        return knowledgePoints(root.path("knowledgePoints"), prompt.maxKnowledgePoints());
+        return knowledgePoints(normalizeKnowledgePointResponse(root).path("knowledgePoints"), prompt.maxKnowledgePoints());
     }
 
     @Override
@@ -276,6 +299,27 @@ public class OpenAiCompatibleAiProvider implements AiProvider {
             return objectMapper.readTree(stripJsonFence(content));
         } catch (IOException exception) {
             throw new IllegalStateException("OpenAI-compatible response was not valid JSON", exception);
+        }
+    }
+
+    private JsonNode normalizeKnowledgePointResponse(JsonNode root) {
+        if (!root.isObject()) {
+            return root;
+        }
+        var normalized = (ObjectNode) root.deepCopy();
+        copyAlias(normalized, "knowledgePoints", "knowledge_points");
+        for (var point : normalized.path("knowledgePoints")) {
+            if (point instanceof ObjectNode object) {
+                copyAlias(object, "shortSummary", "summary");
+                copyAlias(object, "applicationScenarios", "applications");
+            }
+        }
+        return normalized;
+    }
+
+    private void copyAlias(ObjectNode target, String canonicalName, String alias) {
+        if (!target.has(canonicalName) && target.has(alias)) {
+            target.set(canonicalName, target.get(alias));
         }
     }
 

@@ -1396,6 +1396,13 @@ class SuiLearnV2ServiceTest {
                 .toList();
         }
 
+        @Override
+        public List<GeneratedKnowledgePoint> repairKnowledgePointExtraction(
+            KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+        ) {
+            return extractKnowledgePoints(prompt);
+        }
+
         private GeneratedKnowledgePoint structuredPoint(String name, KnowledgePointExtractionPrompt prompt) {
             var citations = prompt.evidenceRefs().stream().map(ref -> new SourceRef(
                 ref.type(), ref.id(), ref.knowledgeBaseId(), ref.title(), ref.materialId(), ref.chunkId(), ref.deleted(),
@@ -1537,6 +1544,13 @@ class SuiLearnV2ServiceTest {
                 new GeneratedKnowledgePoint("Java", "Generic material label"),
                 new GeneratedKnowledgePoint("Provider Concept", "Provider extraction description")
             );
+        }
+
+        @Override
+        public List<GeneratedKnowledgePoint> repairKnowledgePointExtraction(
+            KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+        ) {
+            return extractKnowledgePoints(prompt);
         }
 
         @Override

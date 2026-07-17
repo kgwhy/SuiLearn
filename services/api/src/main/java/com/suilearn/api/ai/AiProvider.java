@@ -11,6 +11,10 @@ public interface AiProvider {
 
     List<GeneratedKnowledgePoint> extractKnowledgePoints(KnowledgePointExtractionPrompt prompt);
 
+    List<GeneratedKnowledgePoint> repairKnowledgePointExtraction(
+        KnowledgePointExtractionPrompt prompt, List<String> validationFailures
+    );
+
     GeneratedNote generateKnowledgePointExplanation(KnowledgePointExplanationPrompt prompt);
 
     GeneratedNote generateReviewSuggestion(ReviewSuggestionPrompt prompt);

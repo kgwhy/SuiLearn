@@ -2,7 +2,6 @@ package com.suilearn.api.knowledgepoint.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -60,7 +59,7 @@ class StructuredKnowledgePointContractTest {
     }
 
     @Test
-    void rejectsAiResultsThatDoNotContainEveryRequiredStructuredField() {
+    void marksTaskFailedWhenAiResultsRemainIncompleteAfterOneRepairAttempt() {
         var knowledgePoints = mock(KnowledgePointStore.class);
         when(knowledgePoints.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         var aiProvider = mock(AiProvider.class);
@@ -68,10 +67,13 @@ class StructuredKnowledgePointContractTest {
             .thenReturn(List.of(new AiProvider.GeneratedKnowledgePoint("HashMap", "A short sentence only")));
         var service = service(configuredProperties(0), aiProvider, knowledgePoints);
 
-        assertThatThrownBy(() -> service.extractKnowledgePoints(material().id()))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("schema");
+        var result = service.extractKnowledgePoints(material().id());
+
+        assertThat(result.task().status().name()).isEqualTo("FAILED");
+        assertThat(result.task().errorCode()).isEqualTo("AI_STRUCTURED_OUTPUT_INVALID");
+        assertThat(result.knowledgePoints()).isEmpty();
         verify(knowledgePoints, never()).save(any());
+        verify(aiProvider).repairKnowledgePointExtraction(any(), any());
     }
 
     @Test
