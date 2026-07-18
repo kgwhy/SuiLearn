@@ -1,0 +1,14 @@
+[
+  {
+    "case": "no-evidence",
+    "researchResult": {"evidence": []},
+    "expectedAction": "STOP_UNCERTAIN",
+    "practiceCoachCalled": false
+  },
+  {
+    "case": "verified-evidence-with-practice",
+    "researchResult": {"evidence": [{"stableId": "fixture-1", "verified": true}]},
+    "expectedAction": "PRACTICE_COACH",
+    "practiceCoachCalled": true
+  }
+]

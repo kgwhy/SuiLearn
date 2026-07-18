@@ -3,11 +3,11 @@
 ## 变更信息
 
 - 变更：`add-react-learning-agent-mvp`
-- 状态：等待 Approval Gate
+- 状态：已通过 Approval Gate
 - 等级：Major
 - 负责人：Leader Agent
 - 基线引用：`6f1434ef849bd8e467cc8e0e1c68c37fa9e998c4`
-- 阶段：Spec
+- 阶段：Verify（完整运行态/全量回归与稳定事实同步待完成）
 - 工作树/锁：当前工作区；创建 proposal 时不存在活动文件锁。Build 批次只能锁定已声明文件，范围扩大时必须停止。
 
 ## 角色归属
@@ -98,4 +98,5 @@
 ## 审批记录
 
 - 用户已于 2026-07-17 批准概念/设计方向。
-- 生成的 change package 仍等待用户审阅后通过 Artifact Approval Gate。
+- 用户已于 2026-07-18 通过“实现 agent”指令批准本 change package 进入 Build。
+- `openspec validate add-react-learning-agent-mvp --strict` 已于 2026-07-18 通过；任务 1.1 仍是业务实现前的阻塞兼容性门禁。

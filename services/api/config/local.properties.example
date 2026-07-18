@@ -12,6 +12,10 @@ spring.datasource.username=${SUILEARN_DB_USERNAME:suilearn}
 spring.datasource.password=${SUILEARN_DB_PASSWORD:suilearn_dev_password}
 spring.jpa.hibernate.ddl-auto=${SUILEARN_DB_DDL_AUTO:update}
 
+# Host-run API -> local Redis started from the root compose.yml
+spring.data.redis.host=${SPRING_DATA_REDIS_HOST:localhost}
+spring.data.redis.port=${SPRING_DATA_REDIS_PORT:6379}
+
 # Host-run API -> local RabbitMQ started from the root compose.yml
 spring.rabbitmq.host=${SUILEARN_RABBITMQ_HOST:localhost}
 spring.rabbitmq.port=${SUILEARN_RABBITMQ_PORT:5672}
@@ -54,6 +58,19 @@ suilearn.ai.api-key=${SUILEARN_AI_API_KEY:}
 suilearn.ai.chat-model=${SUILEARN_AI_CHAT_MODEL:gpt-4.1-mini}
 suilearn.ai.embedding-model=${SUILEARN_AI_EMBEDDING_MODEL:text-embedding-3-small}
 suilearn.ai.timeout-ms=${SUILEARN_AI_TIMEOUT_MS:30000}
+
+# Study Agent remains disabled unless explicitly enabled. All values are validated at startup.
+suilearn.agent.enabled=${SUILEARN_AGENT_ENABLED:false}
+suilearn.agent.max-steps=${SUILEARN_AGENT_MAX_STEPS:4}
+suilearn.agent.subagent-max-steps=${SUILEARN_AGENT_SUBAGENT_MAX_STEPS:3}
+suilearn.agent.max-tool-calls=${SUILEARN_AGENT_MAX_TOOL_CALLS:8}
+suilearn.agent.run-timeout=${SUILEARN_AGENT_RUN_TIMEOUT:90s}
+suilearn.agent.context-max-tokens=${SUILEARN_AGENT_CONTEXT_MAX_TOKENS:12000}
+suilearn.agent.practice-default-count=${SUILEARN_AGENT_PRACTICE_DEFAULT_COUNT:3}
+suilearn.agent.session.ttl=${SUILEARN_AGENT_SESSION_TTL:24h}
+suilearn.agent.session.max-turns=${SUILEARN_AGENT_SESSION_MAX_TURNS:20}
+suilearn.agent.memory.top-k=${SUILEARN_AGENT_MEMORY_TOP_K:5}
+suilearn.agent.memory.min-confidence=${SUILEARN_AGENT_MEMORY_MIN_CONFIDENCE:0.80}
 
 # Canonical adapter retry setting for new local configurations.
 suilearn.adapter.max-retries=${SUILEARN_ADAPTER_MAX_RETRIES:0}

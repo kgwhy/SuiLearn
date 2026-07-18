@@ -1,0 +1,12 @@
+[
+  {
+    "case": "missing-required-field",
+    "reasonCodes": ["REQUIRED_FIELD_MISSING"],
+    "expected": "return the same structured result with the required field supplied from existing evidence"
+  },
+  {
+    "case": "unknown-action",
+    "reasonCodes": ["ACTION_NOT_ALLOWED"],
+    "expected": "return one registered action or a controlled failure; do not add a new action"
+  }
+]
