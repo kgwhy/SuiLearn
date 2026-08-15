@@ -41,7 +41,7 @@ echo ""
 
 echo "── Android ──"
 if [ "$JAVA_AVAILABLE" = true ] && [ -f gradlew ]; then
-    check "Unit tests"       java      ./gradlew :app:test --no-daemon
+    check "Unit tests"       java      ./gradlew :app:testDebugUnitTest --no-daemon
 else
     echo "  [Unit tests] ${YELLOW}SKIP${NC} (需要 Java 环境 + gradlew)"
     ((SKIP+=1))
@@ -69,6 +69,19 @@ print('OK')
 else
     echo "  [OpenAPI valid] ${YELLOW}SKIP${NC} (未安装 python)"
     ((SKIP+=1))
+fi
+
+echo ""
+echo "── Workflow ──"
+if [ -n "$PYTHON_CMD" ]; then
+    check "Workflow skill" "$PYTHON_CMD" "$PYTHON_CMD" scripts/check_workflow_skill.py
+    check "Workflow tests" "$PYTHON_CMD" "$PYTHON_CMD" -m unittest discover -s tests -p 'test_workflow_scripts.py'
+    BASE_REF="$(git merge-base HEAD origin/dev 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || git rev-parse HEAD)"
+    check "Workflow policy" "$PYTHON_CMD" "$PYTHON_CMD" scripts/check_suilearn_workflow.py --base-ref "$BASE_REF"
+else
+    echo "  [Workflow skill] ${YELLOW}SKIP${NC} (未安装 python)"
+    echo "  [Workflow policy] ${YELLOW}SKIP${NC} (未安装 python)"
+    ((SKIP+=2))
 fi
 
 echo ""

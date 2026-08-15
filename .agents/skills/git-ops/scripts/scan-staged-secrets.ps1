@@ -89,9 +89,13 @@ try {
         exit 0
     }
 
+    $allowlistedBinaryExtensions = @('.jar', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.ttf', '.otf', '.woff', '.woff2', '.zip', '.gz', '.mp3', '.mp4')
+
     $rules = @(
         @{ Name = 'github-token'; Pattern = '\bgh[pousr]_[A-Za-z0-9]{36,255}\b' },
         @{ Name = 'github-fine-grained-token'; Pattern = '\bgithub_pat_[A-Za-z0-9_]{22,255}\b' },
+        @{ Name = 'openai-api-key'; Pattern = '\bsk-[A-Za-z0-9_-]{20,}\b' },
+        @{ Name = 'jwt-token'; Pattern = '\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b' },
         @{ Name = 'aws-access-key-id'; Pattern = '\bAKIA[0-9A-Z]{16}\b' },
         @{ Name = 'slack-token'; Pattern = '\bxox[baprs]-[A-Za-z0-9-]{10,}\b' },
         @{ Name = 'private-key-header'; Pattern = '-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----' },
@@ -103,6 +107,10 @@ try {
         $quotedSpec = Quote-GitArgument -Value (':' + $path)
         $blob = Invoke-GitBytes -Arguments "-C $quotedRepository cat-file blob $quotedSpec"
 
+        $extension = [System.IO.Path]::GetExtension($path).ToLowerInvariant()
+        if ($allowlistedBinaryExtensions -contains $extension) {
+            continue
+        }
         if (Test-BinaryOrInvalidUtf8 -Bytes $blob) {
             Write-Output ("{0} 'binary-or-invalid-utf8' {1} '$path'." -f (Get-Utf8Text '5o+Q5Lqk5YmN6aKE5qOA5aSx6LSl77ya6KeE5YiZ'), (Get-Utf8Text '5ZG95Lit5pqC5a2Y5paH5Lu2'))
             $failures++

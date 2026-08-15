@@ -2,41 +2,33 @@
 
 ```text
 Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
-             ^                           |
-             +---- spec issue found -----+
+             ^                           |          |
+             +---- spec issue -----------+          |
+             +---- verify fail: 小问题返 Build，范围/规格问题返 Spec
+             +---- archive 前 sync 不通过返 Spec 或 Build
 ```
 
 ## Explore
 
-用于澄清、比较、调查和风险发现。
-
-- 允许：阅读文档、代码、测试、日志和 CodeGraph，上下文提问，比较方案。
-- 禁止：写业务代码，或把讨论材料当成已确认需求。
-- 退出条件：问题和预期结果已能清楚表述，或本轮工作停止。
+允许阅读、比较、提问和风险分析；禁止写业务代码。
 
 ## Spec
 
-用于行为、工作流、架构、产品范围、契约或存储变化。创建或更新
-`openspec/changes/<change-name>/**`。
+- Light：创建 `tasks.md`。
+- Standard：创建 `tasks.md`、`policy.md`；需要时补 `proposal.md`/`design.md`。
+- Major：创建完整产物。
 
-- Tiny 最低产物：`tasks.md`、`policy.md`。
-- Normal 最低产物：`proposal.md`、`design.md`、`tasks.md`、`policy.md`。
-- Major 最低产物：proposal、design、specs、tasks、policy、verification、archive。
-
-只有 Approval Gate 通过后才能退出。
+只有 Approval Gate 通过后进入 Build。
 
 ## Build
 
-用于已批准任务。根据变更等级选择的循环等级，协调实现、测试、审查和修复。
+- L1 Light：Implement -> Verify。
+- L2 Standard：Implement -> Test -> Review -> Fix。
+- L2 Auto：一次批准后逐任务 TDD、逐任务提交；失败或高风险步骤暂停。
+- L3 Major：批次实现 -> Test -> Spec Review -> Code Review -> Fix。
 
-当范围、契约、架构、数据或验收标准存在歧义时，返回 Spec。
+实现、规格或验收有歧义时返回 Spec。
 
-## Verify
+## Verify / Archive
 
-用于任何完成声明之前。收集测试、diff stat、文件范围核对、任务状态和最终审查证据。
-
-只有 Sync Gate 要求已满足，或已明确记录非发布状态后才能退出。
-
-## Archive
-
-用于关闭已完成变更。记录最终状态、实现引用、验证摘要、已同步事实、延期项和审查闭环。
+Verify 失败时小问题返 Build，范围/规格问题返 Spec。Sync Gate 通过后，使用 `scripts/archive_openspec_change.py` 扁平归档。

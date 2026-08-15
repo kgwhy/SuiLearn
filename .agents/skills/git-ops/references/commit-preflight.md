@@ -7,6 +7,12 @@
 1. 查看 `git diff --cached -- <path>`，确认暂存内容与提交边界。
 2. 在仓库根目录运行：
 
+```bash
+python3 .agents/skills/git-ops/scripts/scan-staged-secrets.py
+```
+
+无 Python 时：
+
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/git-ops/scripts/scan-staged-secrets.ps1
 ```
@@ -21,4 +27,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .agents/skills/git-ops/scrip
 
 ## 扫描范围
 
-扫描器使用 `git diff --cached --name-only -z --diff-filter=ACMR` 取得待提交路径，并读取每个路径的完整暂存 blob。因此它能发现同一文件中未被本次 diff 触及的泄露内容。二进制或非 UTF-8 暂存文件会被安全阻断，不会输出其内容。
+扫描器使用 `git diff --cached --name-only -z --diff-filter=ACMR` 取得待提交路径，并读取每个路径的完整暂存 blob。因此它能发现同一文件中未被本次 diff 触及的泄露内容。
+
+已知二进制资源（`jar/png/jpg/webp/pdf/字体/压缩包/媒体`）使用扩展名 allowlist 跳过内容扫描；其他二进制或非 UTF-8 暂存文件会被安全阻断，不会输出其内容。扫描规则包含 GitHub token、OpenAI `sk-` key、JWT、AWS key、Slack token、私钥头和通用凭据赋值。

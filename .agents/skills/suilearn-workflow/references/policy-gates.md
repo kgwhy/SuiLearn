@@ -2,42 +2,30 @@
 
 ## Gate A：编辑前
 
-- 加载活动角色文件。
-- 将变更判定为 Tiny、Normal 或 Major。
+- 读取角色文件和 active change 的 `tasks.md`；Standard/Major 再读 `policy.md`。
 - 记录 `base_ref`。
-- 检查 lock/worktree 要求。
-- 在需要 active change home 时确认其存在。
-- 列出计划修改文件，并逐项对照角色规则和 `policy.md` 范围。
-- 业务代码编辑前运行基线测试。
-- 对纯文档、纯工作流或只读审查，记录模块测试不适用的原因。
-
-对于配置、启动、集成、端口、CORS、Docker/Compose、反向代理、环境变量、
-CI wrapper、数据库或服务地址变更，进入 Build 前必须写清验收矩阵、默认值语义、
-覆盖口、残留扫描项和运行态验证计划。
+- 列出允许/禁止文件。
+- 业务代码编辑前运行基线测试，或记录不适用原因。
 
 ## Gate B：编辑期间
 
-每个编辑批次前声明：
+每批编辑前声明：
 
 ```text
 📝 本次修改: <file list>
 ```
 
-如果需要新增文件，先停止并声明扩展范围，再编辑。
+新增范围外文件前，先停止并更新任务范围。
 
 ## Gate C：完成前
 
-- 运行验证，或说明为什么不适用。
+- 运行验证命令，或记录不适用原因。
 - 运行 `git diff <base_ref> --stat`。
-- 对照允许范围检查已修改文件。
-- 声明关闭前检查 active change 产物中是否有陈旧的 `In progress`、`Status: open`
-  或无 Owner 的 `pending` 状态。
-- 对 Major 或跨角色工作，记录最终审查闭环。
-- 提供 reviewer-style 自审。
+- 核对文件都在允许范围内。
+- 核对任务完成或延期到具名 follow-up。
+- 提供统一返回格式和 self-review。
 
 ## Gate D：自我审查
-
-以 reviewer-style 扫描收尾：
 
 ```text
 🔍 自我审查
@@ -45,10 +33,12 @@ CI wrapper、数据库或服务地址变更，进入 Build 前必须写清验收
 无阻塞问题 / 发现 N 个问题
 ```
 
-## 退役路径
+## 退役路径与草稿位置
 
-不要在以下路径下创建新文件：
+不创建新文件：
 
 - `docs/proposals/**`
 - `docs/superpowers/specs/**`
 - `docs/superpowers/plans/**`
+
+未批准计划草案优先放 active change 的 `proposal.md`；用户要求独立保存时放 `docs/plans/**` 并标记 Draft。
