@@ -16,6 +16,8 @@ REQUIRED_REFS = [
     "policy-gates.md",
     "subagent-loop.md",
     "verification.md",
+    "verification-selection.md",
+    "ui-evidence.md",
     "archive-organization.md",
 ]
 
@@ -24,26 +26,31 @@ def fail(msg: str) -> None:
     print(f"- {msg}")
 
 
-def main() -> int:
+def check_skill_frontmatter(skill_dir: Path, expected_name: str) -> list[str]:
     issues: list[str] = []
-    skill = SKILL_DIR / "SKILL.md"
+    skill = skill_dir / "SKILL.md"
     if not skill.exists():
-        issues.append("missing SKILL.md")
-        print("SuiLearn workflow skill check failed:")
-        for issue in issues:
-            print(f"- {issue}")
-        return 1
-
+        return ["missing SKILL.md"]
     text = skill.read_text(encoding="utf-8")
     front = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.S)
     if not front:
         issues.append("SKILL.md missing YAML frontmatter")
-    else:
-        body = front.group(1)
-        if "name: suilearn-workflow" not in body:
-            issues.append("frontmatter missing name: suilearn-workflow")
-        if "description:" not in body:
-            issues.append("frontmatter missing description")
+        return issues
+    body = front.group(1)
+    if f"name: {expected_name}" not in body:
+        issues.append(f"frontmatter missing name: {expected_name}")
+    if "description:" not in body:
+        issues.append("frontmatter missing description")
+    return issues
+
+
+def main() -> int:
+    issues: list[str] = []
+    issues.extend(check_skill_frontmatter(SKILL_DIR, "suilearn-workflow"))
+    text = ""
+    skill = SKILL_DIR / "SKILL.md"
+    if skill.exists():
+        text = skill.read_text(encoding="utf-8")
 
     for ref in REQUIRED_REFS:
         path = SKILL_DIR / "references" / ref
@@ -54,6 +61,14 @@ def main() -> int:
 
     if not (SKILL_DIR / "scripts").exists():
         issues.append("missing scripts directory")
+
+    skills_root = ROOT / ".agents" / "skills"
+    for skill_dir in sorted(skills_root.glob("*/")):
+        name = skill_dir.name
+        if name == "suilearn-workflow":
+            continue
+        if (skill_dir / "SKILL.md").exists():
+            issues.extend(check_skill_frontmatter(skill_dir, name))
 
     if issues:
         print("SuiLearn workflow skill check failed:")

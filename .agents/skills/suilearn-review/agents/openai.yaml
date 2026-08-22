@@ -1,0 +1,4 @@
+interface:
+  display_name: "SuiLearn 单人自审"
+  short_description: "项目专属实现后自审与关闭前审查"
+  default_prompt: "使用 $suilearn-review 在关闭变更前执行单人自审，并输出统一 STATUS 格式。"

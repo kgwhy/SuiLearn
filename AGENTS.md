@@ -12,7 +12,7 @@ Explore -> Spec -> Build -> Verify -> Archive
 
 ## 会话恢复
 
-新会话或上下文被压缩后，先重读本文件和 `.agents/skills/suilearn-workflow/SKILL.md` 完成状态路由，再继续执行。
+新会话或上下文被压缩后，先重读本文件和 `.agents/skills/suilearn-workflow/SKILL.md` 完成状态路由；涉及设计取舍时再读 `.agents/notes/README.md` 定位长期决策，然后继续执行。
 
 ## 优先级
 
@@ -29,8 +29,9 @@ Explore -> Spec -> Build -> Verify -> Archive
 1. 判断状态、Owner、变更等级和 active change home。
 2. 记录 `base_ref`。
 3. 读取 `agents/<role>.md` 和 active change 的 `tasks.md`；Standard/Major 再读 `policy.md`。
-4. 声明计划修改文件并核对允许范围。
-5. 业务代码编辑前运行基线测试，或记录不可用原因。
+4. Major 或 Standard 有取舍时，定位或创建本次改动的 `.agents/notes/` 决策记录。
+5. 声明计划修改文件并核对允许范围。
+6. 业务代码编辑前运行基线测试，或记录不可用原因。
 
 每批编辑前声明：
 
@@ -42,11 +43,12 @@ Explore -> Spec -> Build -> Verify -> Archive
 
 声明完成前：
 
-1. 运行必需验证，或说明不适用原因。
-2. 运行 `git diff <base_ref> --stat`。
-3. 核对文件都在允许范围。
-4. 核对任务完成或延期到具名 follow-up。
-5. 做 reviewer-style 自审。
+1. 运行 `python3 scripts/change_scope.py --base <base_ref>`，按 workflow skill 的 `verification-selection.md` 选择最小验证并执行。
+2. 运行 `python3 scripts/check_agent_notes.py`。
+3. 运行 `git diff <base_ref> --stat`。
+4. 核对文件都在允许范围。
+5. 核对任务完成或延期到具名 follow-up。
+6. 按 `.agents/skills/suilearn-review/SKILL.md` 做单人自审。
 
 统一返回格式：
 
@@ -64,7 +66,9 @@ Blockers:
 - 业务代码实现必须来自已批准任务。
 - 同一用户问题链路只使用一个 active change home。
 - 不绕过角色归属、文件边界或批准门禁。
-- 实现 Agent 不能自证完成；独立 Test 或独立 Review 至少一项。
+- 单人项目默认独立验证：Test 用干净 shell 独立执行并保留原始输出；Review 用新会话/延迟自审或用户确认，并记录 `review_mode: single-agent`。
+- 用户可见 UI 变更必须附真实运行证据。
+- 当前事实文档只写已落地事实；未落地 Build 目标只存在于 active change。
 - 不在 `docs/proposals/**` 创建新文件。
 - 通用 `.codex/skills/openspec-*` 只是参考；与 SuiLearn 工作流冲突时，以本项目和 `docs/development-workflow.md` 为准。
 

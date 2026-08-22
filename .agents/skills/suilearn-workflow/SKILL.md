@@ -32,6 +32,9 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 | 编辑/完成门禁 | `references/policy-gates.md` |
 | Build 循环 | `references/subagent-loop.md` |
 | 完成和关闭 | `references/verification.md` |
+| 最小验证选择 | `references/verification-selection.md` |
+| UI 证据要求 | `references/ui-evidence.md` |
+| 单人自审清单 | `../suilearn-review/SKILL.md` |
 | 归档目录 | `references/archive-organization.md` |
 | 真实触发示例 | `references/usage-examples.md` |
 | 修改本 Skill 的行为测试 | `references/forward-testing.md` |
@@ -40,6 +43,7 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 
 - `agents/<role>.md`
 - active change 的 `tasks.md`；Standard/Major 还要读取 `policy.md`
+- `.agents/notes/README.md`；Standard 有取舍或 Major 时，定位或创建本次改动的 Agent Note
 
 ## 路由规则
 
@@ -49,7 +53,10 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 - 已批准且任务可独立验证/提交的 Standard 可使用 L2 Auto。
 - Major 变更使用完整产物。
 - 业务代码实现必须来自已批准任务。
-- 实现 Agent 不能自证完成；独立 Test 或独立 Review 至少有一项。
+- 单人项目默认 `review_mode: single-agent`；Test 用干净 shell 独立执行并保留原始输出，Review 用新会话/延迟自审或用户确认。
+- Major 必写 Agent Note；Standard 有取舍时必写。
+- 用户可见 UI 变更必须附 `references/ui-evidence.md` 要求的证据。
+- 验证前先运行 `python3 scripts/change_scope.py --base <base_ref>`，按 `references/verification-selection.md` 选最小验证。
 - 完成声明使用统一 `STATUS / Changed files / Tests / Summary / Assumptions / Blockers` 格式。
 
 ## 不可协商项
@@ -59,4 +66,5 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 - 不绕过角色归属、文件边界或批准门禁。
 - 业务代码变更需要测试或明确复现步骤。
 - 证据先于完成声明。
+- 当前事实文档只写已落地事实；未落地 Build 目标只存在于 active change。
 - 通用 `.codex/skills/openspec-*` 只是参考；与本文冲突时以本文为准。

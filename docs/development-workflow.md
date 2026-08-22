@@ -19,17 +19,20 @@ Explore -> Spec --[Approval Gate]--> Build -> Verify --[Sync Gate]--> Archive
 - 契约先于消费端实现。
 - 文件归属和允许路径必须先于编辑确认。
 - 业务代码变更必须有测试或明确复现证据。
-- 实现 Agent 不能自证完成；独立 Test 或独立 Review 至少存在一项。
+- 单人项目默认独立验证而不是独立 Agent：Test 用干净 shell 独立执行并保留原始输出；Review 用新会话/延迟自审或用户确认，并记录 `review_mode: single-agent`。
 - 证据先于完成声明。
+- 长期决策理由必须写入 `.agents/notes/`，不依赖聊天上下文或 Git 历史考古。
+- 当前事实文档只写已落地事实；计划、目标和状态留在 active change。
+- 用户可见 UI 变更必须附真实运行证据。
 - 不在 `docs/proposals/**` 下创建新文件。
 
 ## 变更等级
 
-| 等级 | 适用 | 最低产物 | Build 循环 |
-|---|---|---|---|
-| Light | 单角色、不改变产品/架构/契约/存储/行为，通常不超过 3 个文件 | `tasks.md` | L1 |
-| Standard | 用户可见行为、多文件实现、普通 bug、常规配置 | `tasks.md`、`policy.md`；新功能或跨模块时补 `proposal.md`，数据/架构影响明显时补 `design.md` | L2 或 L2 Auto |
-| Major | 跨角色、共享文件、契约、存储、架构、工作流、安全或高风险变更 | `proposal.md`、`design.md`、`specs/**`、`tasks.md`、`policy.md`、`verification.md`、`archive.md` | L3 |
+| 等级 | 适用 | 最低产物 | 决策记录 | Build 循环 |
+|---|---|---|---|---|
+| Light | 单角色、不改变产品/架构/契约/存储/行为，通常不超过 3 个文件 | `tasks.md` | 可选 | L1 |
+| Standard | 用户可见行为、多文件实现、普通 bug、常规配置 | `tasks.md`、`policy.md`；新功能或跨模块时补 `proposal.md`，数据/架构影响明显时补 `design.md` | 有取舍时必写 Agent Note | L2 或 L2 Auto |
+| Major | 跨角色、共享文件、契约、存储、架构、工作流、安全或高风险变更 | `proposal.md`、`design.md`、`specs/**`、`tasks.md`、`policy.md`、`verification.md`、`archive.md` | 必写 Agent Note | L3 |
 
 Light 允许不创建 OpenSpec change，但必须有一个可追溯的 `tasks.md`，内容至少包含：
 
@@ -57,6 +60,7 @@ Standard 和 Major 必须进入 `openspec/changes/<change-name>/**`。
 - `base_ref` 已记录；
 - 允许/禁止文件已记录；
 - 每个任务有 Owner 和验证命令；
+- 决策记录已就绪：Major 或 Standard 有取舍时，在 `policy.md` 写明对应 `.agents/notes/` 路径；
 - 批准状态已记录：在 `policy.md` 或 `tasks.md` 顶部写 `Status: Approved` / `状态：已批准`，并写批准者和日期；
 - 配置/启动/集成类变更默认 Standard；发布关键路径（端口、CORS、Docker、数据库、服务地址）必须写清验收矩阵和默认值语义，Major 才要求完整残留扫描与运行态验证计划。
 
@@ -78,19 +82,22 @@ L3 Major:    Batch[Implement + local tests] -> Test -> Spec Review -> Code Revie
 - 同一任务同一文件三轮修复仍失败，停止并返回 Spec。
 - 用户取消时，停止新派发，等待进程退出，再处理未验收改动。
 
-### 单 Agent 环境降级
+### 单人项目默认路径
 
-当前环境无法派发独立子 Agent 时允许：
+SuiLearn 是单人项目，以下规则是默认，不是降级：
 
-- 独立 Test 用干净 shell 独立运行命令，并在报告中记录完整命令输出；
-- 独立 Review 用新会话或用户确认代替，并在 `verification.md` 或完成报告中记录 `review_mode: single-agent`；
-- 该降级只适用于 Light 和 Standard；Major 仍需用户明确参与审查或批准降级。
+- Test：在干净 shell 独立运行命令，保留完整命令和原始输出；不得把实现 Agent 的同一次运行当作独立验证。
+- Review：完成实现后开新会话或隔一段时间自审，或由用户确认；在 `verification.md` 或完成报告中记录 `review_mode: single-agent`。
+- Major 的 Spec Review 先于 Code Review；用户明确参与审查也算有效 Review 证据。
+- 子 Agent 不可用时，Leader 在同一会话中切换角色执行，但仍须遵守独立命令和延迟自审原则。
 
 ## 状态：Verify
 
 完成声明前必须提供：
 
+- `python3 scripts/change_scope.py --base <base_ref>` 输出，并按最小验证选择执行；
 - 必需测试命令输出，或明确的不适用原因；
+- `python3 scripts/check_agent_notes.py` 输出；
 - `git diff <base_ref> --stat`；
 - 文件范围核对；
 - 任务完成或延期到具名 follow-up 的核对；
@@ -104,6 +111,7 @@ L3 Major:    Batch[Implement + local tests] -> Test -> Spec Review -> Code Revie
 - 架构结论 -> `docs/architecture.md`
 - 技术结论 -> `docs/tech-selection.md`
 - 契约 -> `contracts/**`
+- 决策结论 -> `.agents/notes/`：`proposed/` 改写为 `implemented/`，Status 与目录一致
 - 未同步项必须在 archive note 中记录 `not affected`。
 
 ## 状态：Archive
@@ -123,6 +131,8 @@ contracts/**                  # 契约
 
 `docs/chat.md` 是历史讨论，只读。`docs/proposals/**` 和 Superpowers 路径已退役，不创建新文件。未批准的计划草案优先放 active change 的 `proposal.md`；用户明确要求独立保存时放 `docs/plans/**` 并标记 Draft，`docs/plans/**` 不属于当前事实目录。
 
+当前事实文档只写已实现且可验证的事实；“已批准 Build 目标”、实施进度、任务状态只存在于 active change。目标只有在验证和 Review 闭环后才改写为未标注的当前事实。
+
 ## 文件归属
 
 | 范围 | 默认 Owner |
@@ -137,6 +147,7 @@ contracts/**                  # 契约
 | 内容源文件 | Content Agent |
 | 测试代码 | Test Agent 或任务所属实现 Agent |
 | `AGENTS.md`、`docs/development-workflow.md` | Leader Agent |
+| `.agents/notes/**` | Leader Agent |
 | `openspec/changes/**` | Leader 协调，Owner 按 change 范围 |
 
 ## 测试命令
@@ -147,7 +158,7 @@ contracts/**                  # 契约
 | Android 构建 | `.\gradlew.bat :app:assembleDebug --no-daemon` | `./gradlew :app:assembleDebug --no-daemon` |
 | 后端 | `mvn -f services/api/pom.xml test -q` | 同左 |
 | Web | `npm --prefix apps/web run build` | 同左 |
-| 工作流 | `python3 -m unittest discover -s tests -p 'test_workflow_scripts.py'`；`python3 scripts/check_workflow_skill.py`；`python3 scripts/check_suilearn_workflow.py --base-ref <ref>` | 同左 |
+| 工作流 | `python3 -m unittest discover -s tests -p 'test_workflow_scripts.py'`；`python3 scripts/check_workflow_skill.py`；`python3 scripts/check_suilearn_workflow.py --base-ref <ref>`；`python3 scripts/check_agent_notes.py`；`python3 scripts/change_scope.py --base <ref>` | 同左 |
 
 ## 统一返回格式
 

@@ -14,6 +14,7 @@ SuiLearn 文档按“当前事实 + OpenSpec 变更 + Git 历史”组织。本�
 
 - 当前规格：`docs/product-requirements.md`、`docs/architecture.md`、`docs/tech-selection.md`。
 - 变更目录：`openspec/changes/**`。新变更统一沉淀 proposal、design、tasks、specs、policy、verification 和 archive 记录。
+- 长期决策：`.agents/notes/**`。保存“为什么这样决定、放弃了什么”。
 - 历史提案：`docs/proposals/README.md`。该目录已退役，仅保留迁移参考。
 - 多 Agent 执行流程：`docs/development-workflow.md`。
 - 工作流技能：`.agents/skills/suilearn-workflow/`。

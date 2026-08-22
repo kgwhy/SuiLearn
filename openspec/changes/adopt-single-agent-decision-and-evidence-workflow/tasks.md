@@ -1,0 +1,56 @@
+# 采用单人决策记录与证据工作流
+
+- Owner: Leader 协调，单人执行
+- 级别: Major
+- 决策记录: `.agents/notes/implemented/process/2026-08-19-adopt-single-agent-decision-and-evidence-workflow.md`
+
+## 待办
+
+- [x] 1.1 创建 `.agents/notes/` 目录与 `README.md`
+  - Allowed: `.agents/notes/**`
+  - Test: `python3 scripts/check_agent_notes.py`
+  - Review focus: 路径编码、格式、何时写规则是否自洽
+- [x] 1.2 创建 `scripts/check_agent_notes.py` 并添加 unittest
+  - Allowed: `scripts/check_agent_notes.py`, `tests/test_workflow_scripts.py`
+  - Test: `python3 scripts/check_agent_notes.py`；`python3 -m unittest discover -s tests -p 'test_workflow_scripts.py'`
+  - Review focus: 校验器只检查格式，不检查语义
+- [x] 1.3 创建本次改动的 Agent Note
+  - Allowed: `.agents/notes/implemented/process/2026-08-19-adopt-single-agent-decision-and-evidence-workflow.md`
+  - Test: `python3 scripts/check_agent_notes.py`
+  - Review focus: Alternatives 真实，Decision 为现在时
+- [x] 2.1 创建 `scripts/change_scope.py` 并添加 unittest
+  - Allowed: `scripts/change_scope.py`, `tests/test_workflow_scripts.py`
+  - Test: `python3 scripts/change_scope.py --json`；unittest
+  - Review focus: base 必须显式验证，四类 path 不互相混淆
+- [x] 2.2 创建 `verification-selection.md` 并接入 workflow SKILL
+  - Allowed: `.agents/skills/suilearn-workflow/**`
+  - Test: `python3 scripts/check_workflow_skill.py`
+  - Review focus: 不默认全量，规则可执行
+- [x] 3.1 创建 `suilearn-review` 自审 SKILL 与 `ui-evidence.md`
+  - Allowed: `.agents/skills/**`
+  - Test: `python3 scripts/check_workflow_skill.py`
+  - Review focus: 单人自审可独立执行，UI 证据要求不依赖 mock
+- [x] 4.1 更新 `AGENTS.md` 与 `docs/development-workflow.md`
+  - Allowed: `AGENTS.md`, `docs/development-workflow.md`
+  - Test: workflow checker 与 unittest
+  - Review focus: 主政策与 SKILL 摘要一致，单人规则为默认
+- [x] 5.1 迁移 `docs/architecture.md` 中已实现的 Build 目标章节
+  - Allowed: `docs/architecture.md`
+  - Test: `python3 scripts/check_suilearn_workflow.py --base-ref <ref>`
+  - Review focus: 只改写已实现事实，未实现内容不得留在当前事实文档
+- [x] 5.2 迁移 `docs/tech-selection.md` 中已实现的 Build 目标章节
+  - Allowed: `docs/tech-selection.md`
+  - Test: 同上
+  - Review focus: 版本、依赖、运行态与代码/配置一致
+- [x] 5.3 清理 `docs/product-requirements.md` 的会话叙述
+  - Allowed: `docs/product-requirements.md`
+  - Test: 同上
+  - Review focus: 产品事实不变，只删过程叙述
+- [x] 6.1 更新 `check_workflow_skill.py` 的 reference 与跨 SKILL frontmatter 检查
+  - Allowed: `scripts/check_workflow_skill.py`
+  - Test: `python3 scripts/check_workflow_skill.py`
+  - Review focus: 新 reference 必须在 SKILL 中链接
+- [x] 7.1 运行最终验证并记录 verification
+  - Allowed: `openspec/changes/adopt-single-agent-decision-and-evidence-workflow/**`
+  - Test: 见 verification.md
+  - Review focus: 证据先于完成声明
