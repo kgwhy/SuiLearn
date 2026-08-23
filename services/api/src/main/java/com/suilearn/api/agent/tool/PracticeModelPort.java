@@ -1,13 +1,12 @@
 package com.suilearn.api.agent.tool;
 
-import com.suilearn.api.agent.application.LearningAgentPort.Difficulty;
 import java.util.List;
 
 @FunctionalInterface
 public interface PracticeModelPort {
     Draft generate(Request request);
 
-    record Request(String learningGoal, EvidenceBundle evidence, Difficulty difficulty, int practiceCount) {
+    record Request(String learningGoal, EvidenceBundle evidence, PracticeDifficulty difficulty, int practiceCount) {
         public Request {
             learningGoal = RequiredText.value(learningGoal, "learningGoal");
             if (evidence == null || difficulty == null) {
@@ -23,17 +22,13 @@ public interface PracticeModelPort {
         String explanation,
         List<TemporaryExercise> exercises,
         List<String> citations,
-        String nextStep,
-        AgentAction requestedAction
+        String nextStep
     ) {
         public Draft {
             explanation = RequiredText.value(explanation, "explanation");
             exercises = List.copyOf(exercises == null ? List.of() : exercises);
             citations = List.copyOf(citations == null ? List.of() : citations);
             nextStep = nextStep == null ? "" : nextStep;
-            if (requestedAction == null) {
-                throw new IllegalArgumentException("requestedAction is required");
-            }
         }
     }
 }

@@ -1,7 +1,5 @@
 package com.suilearn.api.agent.tool;
 
-import com.suilearn.api.agent.application.LearningAgentPort.AgentScope;
-import com.suilearn.api.agent.runtime.StudyScope;
 import java.util.List;
 import java.util.Map;
 
@@ -85,7 +83,4 @@ public final class ToolArguments {
         return list.stream().map(item -> (Map<String, Object>) item).toList();
     }
 
-    public static AgentScope scope(StudyScope scope) {
-        return new AgentScope(scope.knowledgeBaseId(), scope.materialId());
-    }
 }

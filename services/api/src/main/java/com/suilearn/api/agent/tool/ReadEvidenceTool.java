@@ -41,7 +41,7 @@ public final class ReadEvidenceTool implements Tool {
             var pointer = new EvidencePointer(effectiveStableId, effectiveSourceRef,
                 context.scope().knowledgeBaseId(), context.scope().materialId(), 0.0d);
             return readPort.read(new EvidenceReadPort.ReadRequest(effectiveSourceRef, pointer,
-                ToolArguments.scope(context.scope())))
+                context.scope()))
                 .filter(record -> !record.deleted())
                 .map(record -> {
                     var metadata = new LinkedHashMap<String, Object>();

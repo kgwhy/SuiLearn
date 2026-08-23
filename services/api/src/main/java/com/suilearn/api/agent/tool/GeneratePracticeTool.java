@@ -1,9 +1,6 @@
 package com.suilearn.api.agent.tool;
 
-import com.suilearn.api.agent.application.LearningAgentPort.Difficulty;
 import com.suilearn.api.agent.runtime.TurnContext;
-import java.time.Clock;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +38,7 @@ public final class GeneratePracticeTool implements Tool {
     public ToolResult execute(TurnContext context, Map<String, Object> args) {
         String learningGoal = ToolArguments.requiredString(args, "learningGoal", 4000);
         String difficultyText = ToolArguments.optionalString(args, "difficulty", 16);
-        Difficulty difficulty = difficultyText == null ? Difficulty.MEDIUM : Difficulty.valueOf(difficultyText);
+        PracticeDifficulty difficulty = difficultyText == null ? PracticeDifficulty.MEDIUM : PracticeDifficulty.valueOf(difficultyText);
         int practiceCount = ToolArguments.integer(args, "practiceCount", 3, 1, 5);
         List<EvidenceBundle.Item> evidence = evidence(args);
         if (coach == null) {
@@ -50,8 +47,7 @@ public final class GeneratePracticeTool implements Tool {
         }
         try {
             var result = coach.coach(new PracticeCoachSubAgent.Request(learningGoal,
-                    new EvidenceBundle(evidence), difficulty, practiceCount),
-                new SharedAgentBudget(1, 1, 2, Duration.ofSeconds(30), Clock.systemUTC()));
+                    new EvidenceBundle(evidence), difficulty, practiceCount));
             var metadata = new LinkedHashMap<String, Object>();
             metadata.put("uncertain", result.uncertain());
             metadata.put("explanation", result.explanation());

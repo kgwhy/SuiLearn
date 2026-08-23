@@ -19,7 +19,6 @@
     <properties>
         <java.version>21</java.version>
         <spring-ai.version>1.1.2</spring-ai.version>
-        <spring-ai-alibaba-agent-framework.version>1.1.2.2</spring-ai-alibaba-agent-framework.version>
     </properties>
 
     <dependencyManagement>
@@ -54,11 +53,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.alibaba.cloud.ai</groupId>
-            <artifactId>spring-ai-alibaba-agent-framework</artifactId>
-            <version>${spring-ai-alibaba-agent-framework.version}</version>
         </dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>

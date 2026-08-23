@@ -2,7 +2,6 @@ package com.suilearn.api.agent.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.suilearn.api.agent.application.LearningAgentPort.Difficulty;
 import com.suilearn.api.agent.memory.AgentSemanticMemory;
 import com.suilearn.api.agent.memory.EmbeddingResult;
 import com.suilearn.api.agent.memory.MemoryManager;
@@ -54,8 +53,8 @@ class AgentDeclarativeToolsTest {
 
         var model = (PracticeModelPort) request -> new PracticeModelPort.Draft(
             "explanation", List.of(new TemporaryExercise("q", "a", "why", List.of("ref-1"))),
-            List.of("ref-1"), "next", AgentAction.NONE);
-        var coach = new PracticeCoachSubAgent(model, AgentToolCatalog.fixedMvp(), com.suilearn.api.agent.metrics.AgentMetrics.noop());
+            List.of("ref-1"), "next");
+        var coach = new PracticeCoachSubAgent(model);
         var tool = new GeneratePracticeTool(coach);
 
         var result = tool.execute(context(), Map.of("learningGoal", "java", "difficulty", "EASY",

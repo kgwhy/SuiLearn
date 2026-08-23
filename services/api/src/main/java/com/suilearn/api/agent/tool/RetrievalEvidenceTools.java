@@ -1,6 +1,7 @@
 package com.suilearn.api.agent.tool;
 
 import com.suilearn.api.ai.application.RetrievalPort;
+import com.suilearn.api.agent.runtime.StudyScope;
 import com.suilearn.api.ai.application.RetrievalPort.RetrievalRequest;
 import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.SourceRef;
@@ -53,8 +54,7 @@ public final class RetrievalEvidenceTools implements EvidenceSearchPort, Evidenc
             source.pageNumber(), source.blockId(), source.excerpt()));
     }
 
-    private boolean matches(MaterialChunk chunk, EvidencePointer pointer,
-                            com.suilearn.api.agent.application.LearningAgentPort.AgentScope scope) {
+    private boolean matches(MaterialChunk chunk, EvidencePointer pointer, StudyScope scope) {
         SourceRef source = chunk.sourceRef();
         return source != null && !source.deleted()
             && pointer.sourceRef().equals(source.id())

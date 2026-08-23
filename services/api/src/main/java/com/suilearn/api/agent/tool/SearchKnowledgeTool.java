@@ -34,7 +34,7 @@ public final class SearchKnowledgeTool implements Tool {
         }
         try {
             var pointers = searchPort.search(new EvidenceSearchPort.SearchRequest(
-                query, ToolArguments.scope(context.scope()), limit));
+                query, context.scope(), limit));
             var metadata = new LinkedHashMap<String, Object>();
             metadata.put("count", pointers.size());
             metadata.put("pointers", pointers.stream().map(SearchKnowledgeTool::pointer).toList());

@@ -18,6 +18,11 @@ public record StudyScope(String knowledgeBaseId, String materialId) {
         }
     }
 
+    public boolean matches(String candidateKnowledgeBaseId, String candidateMaterialId) {
+        return (knowledgeBaseId == null || knowledgeBaseId.equals(candidateKnowledgeBaseId))
+            && (materialId == null || materialId.equals(candidateMaterialId));
+    }
+
     public boolean hasKnowledgeBase() {
         return knowledgeBaseId != null;
     }

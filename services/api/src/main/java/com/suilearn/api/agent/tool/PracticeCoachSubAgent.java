@@ -1,26 +1,27 @@
 package com.suilearn.api.agent.tool;
 
-import com.suilearn.api.agent.application.LearningAgentPort.Difficulty;
+import com.suilearn.api.agent.metrics.AgentMetrics;
 import java.util.HashSet;
 import java.util.Set;
-import com.suilearn.api.agent.metrics.AgentMetrics;
 
+/**
+ * Deterministic practice-validation helper used only by GeneratePracticeTool.
+ * It is not an Agent graph and does not consume a legacy catalog or budget.
+ */
 public final class PracticeCoachSubAgent {
     private final PracticeModelPort model;
-    private final AgentToolCatalog catalog;
     private final AgentMetrics metrics;
 
-    public PracticeCoachSubAgent(PracticeModelPort model, AgentToolCatalog catalog) {
-        this(model, catalog, AgentMetrics.noop());
+    public PracticeCoachSubAgent(PracticeModelPort model) {
+        this(model, AgentMetrics.noop());
     }
 
-    public PracticeCoachSubAgent(PracticeModelPort model, AgentToolCatalog catalog, AgentMetrics metrics) {
+    public PracticeCoachSubAgent(PracticeModelPort model, AgentMetrics metrics) {
         this.model = model;
-        this.catalog = catalog;
         this.metrics = metrics;
     }
 
-    public PracticeResult coach(Request request, SharedAgentBudget budget) {
+    public PracticeResult coach(Request request) {
         if (request.evidence().items().isEmpty()) {
             metrics.recordSubAgent(AgentMetrics.Agent.PRACTICE_COACH, AgentMetrics.Outcome.REJECTED);
             return PracticeResult.noEvidence();
@@ -28,8 +29,6 @@ public final class PracticeCoachSubAgent {
         if (request.evidence().items().stream().anyMatch(item -> !item.verified() || !item.untrusted())) {
             throw new InvalidEvidenceException();
         }
-        budget.consumeTool(AgentRole.SUPERVISOR, AgentAction.PRACTICE_COACH);
-        budget.consumeStep(AgentRole.PRACTICE_COACH);
         PracticeModelPort.Draft draft;
         try {
             draft = model.generate(new PracticeModelPort.Request(
@@ -37,9 +36,6 @@ public final class PracticeCoachSubAgent {
         } catch (RuntimeException exception) {
             metrics.recordSubAgent(AgentMetrics.Agent.PRACTICE_COACH, AgentMetrics.Outcome.FAILED);
             throw exception;
-        }
-        if (draft.requestedAction() != AgentAction.NONE) {
-            catalog.requireAllowed(AgentRole.PRACTICE_COACH, draft.requestedAction());
         }
         Set<String> allowedRefs = request.evidence().items().stream()
             .map(EvidenceBundle.Item::sourceRef)
@@ -62,7 +58,7 @@ public final class PracticeCoachSubAgent {
         }
     }
 
-    public record Request(String learningGoal, EvidenceBundle evidence, Difficulty difficulty, int practiceCount) {
+    public record Request(String learningGoal, EvidenceBundle evidence, PracticeDifficulty difficulty, int practiceCount) {
         public Request {
             learningGoal = RequiredText.value(learningGoal, "learningGoal");
             if (evidence == null || difficulty == null) {
