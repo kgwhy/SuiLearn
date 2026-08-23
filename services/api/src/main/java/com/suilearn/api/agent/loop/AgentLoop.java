@@ -12,6 +12,7 @@ import com.suilearn.api.agent.llm.LlmClient;
 import com.suilearn.api.agent.llm.LlmMessage;
 import com.suilearn.api.agent.llm.LlmRequest;
 import com.suilearn.api.agent.llm.LlmUsage;
+import com.suilearn.api.agent.llm.UsageTracker;
 import com.suilearn.api.agent.runtime.EventType;
 import com.suilearn.api.agent.runtime.TurnContext;
 import com.suilearn.api.agent.runtime.TurnEventSink;
@@ -41,25 +42,33 @@ public final class AgentLoop {
     private final ContextBuilder contextBuilder;
     private final SessionMessageHistory history;
     private final RollingSessionSummary summaries;
+    private final UsageTracker usageTracker;
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model) {
         this(client, dispatcher, tools, properties, clock, model,
             new ContextBuilder(TokenEstimator.conservativeCharacters(),
                 new PromptBlockAssembler(TokenEstimator.conservativeCharacters()),
-                properties.contextMaxTokens()), null, null);
+                properties.contextMaxTokens()), null, null, null);
     }
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model,
                      ContextBuilder contextBuilder, SessionMessageHistory history) {
-        this(client, dispatcher, tools, properties, clock, model, contextBuilder, history, null);
+        this(client, dispatcher, tools, properties, clock, model, contextBuilder, history, null, null);
     }
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model,
                      ContextBuilder contextBuilder, SessionMessageHistory history,
                      RollingSessionSummary summaries) {
+        this(client, dispatcher, tools, properties, clock, model, contextBuilder, history, summaries, null);
+    }
+
+    public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
+                     AgentConfigurationProperties properties, Clock clock, String model,
+                     ContextBuilder contextBuilder, SessionMessageHistory history,
+                     RollingSessionSummary summaries, UsageTracker usageTracker) {
         this.client = client;
         this.dispatcher = dispatcher;
         this.tools = tools;
@@ -69,6 +78,7 @@ public final class AgentLoop {
         this.contextBuilder = contextBuilder;
         this.history = history;
         this.summaries = summaries;
+        this.usageTracker = usageTracker;
     }
 
     public LoopResult run(TurnContext context, CapabilityManifest manifest, TurnEventSink events) {
@@ -154,11 +164,15 @@ public final class AgentLoop {
                 continue;
             }
 
+            double costUsd = 0.0;
+            if (usageTracker != null) {
+                costUsd = usageTracker.track(context.turnId(), model, usage).costUsd();
+            }
             events.publish(EventType.RESULT, context.capability(), "loop", content,
                 Map.of("toolCalls", toolCalls, "promptTokens", usage.promptTokens(),
                     "completionTokens", usage.completionTokens(),
                     "estimatedContextTokens", built.estimatedContextTokens(),
-                    "actualPromptTokens", usage.promptTokens()));
+                    "actualPromptTokens", usage.promptTokens(), "usageCostUsd", costUsd));
             events.publishTerminal(EventType.DONE, TurnStatus.COMPLETED, context.capability(), "loop",
                 content, Map.of("toolCalls", toolCalls));
             return new LoopResult(LoopResult.Status.COMPLETED, content, toolCalls, usage);
