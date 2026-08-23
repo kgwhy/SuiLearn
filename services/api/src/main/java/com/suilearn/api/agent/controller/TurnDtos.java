@@ -67,7 +67,12 @@ public final class TurnDtos {
         long lastSeq,
         TurnEventResponse terminalEvent,
         String createdAt,
-        String finishedAt
+        String finishedAt,
+        long promptTokens,
+        long completionTokens,
+        double usageCostUsd,
+        int actionTraceCount,
+        int estimatedContextTokens
     ) {}
 
     public record TurnControlResponse(String turnId, String status) {}

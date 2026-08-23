@@ -9,6 +9,7 @@ import com.suilearn.api.agent.controller.TurnDtos.TurnControlResponse;
 import com.suilearn.api.agent.controller.TurnDtos.TurnEventResponse;
 import com.suilearn.api.agent.controller.TurnDtos.TurnResultResponse;
 import com.suilearn.api.agent.runtime.Attachment;
+import com.suilearn.api.agent.runtime.EventType;
 import com.suilearn.api.agent.runtime.StartTurnCommand;
 import com.suilearn.api.agent.runtime.StreamEvent;
 import com.suilearn.api.agent.runtime.StudyScope;
@@ -59,7 +60,7 @@ public class AgentTurnController {
         var outcome = runtime.start(command);
         try {
             TurnResult result = runtime.awaitResult(outcome.record().turnId(), syncTimeout);
-            return map(result);
+            return map(result, runtime.eventsAfter(result.turnId(), 0).events());
         } catch (TimeoutException timeout) {
             throw new TurnApiException(TurnErrorCode.AGENT_TURN_TIMEOUT);
         }
@@ -120,9 +121,27 @@ public class AgentTurnController {
             .toList();
     }
 
-    private static TurnResultResponse map(TurnResult result) {
+    private static TurnResultResponse map(TurnResult result, List<StreamEvent> events) {
+        StreamEvent terminal = result.terminalEvent();
+        StreamEvent usageSource = events == null ? terminal : events.stream()
+            .filter(event -> event.type() == EventType.RESULT)
+            .reduce((first, second) -> second)
+            .orElse(terminal);
         return new TurnResultResponse(result.turnId(), result.sessionId(), result.status().name(),
-            result.lastSeq(), map(result.terminalEvent()), result.createdAt().toString(), result.finishedAt().toString());
+            result.lastSeq(), map(terminal), result.createdAt().toString(), result.finishedAt().toString(),
+            metadataLong(usageSource, "promptTokens"), metadataLong(usageSource, "completionTokens"),
+            metadataDouble(usageSource, "usageCostUsd"), (int) metadataLong(usageSource, "toolCalls"),
+            (int) metadataLong(usageSource, "estimatedContextTokens"));
+    }
+
+    private static long metadataLong(StreamEvent event, String key) {
+        Object value = event.metadata().get(key);
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private static double metadataDouble(StreamEvent event, String key) {
+        Object value = event.metadata().get(key);
+        return value instanceof Number number ? number.doubleValue() : 0.0;
     }
 
     private static TurnEventResponse map(StreamEvent event) {

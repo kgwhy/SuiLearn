@@ -1218,7 +1218,8 @@ components:
          active_turn_info]
     AgentTurnResult:
       type: object
-      required: [turnId, sessionId, status, lastSeq, terminalEvent, createdAt, finishedAt]
+      required: [turnId, sessionId, status, lastSeq, terminalEvent, createdAt, finishedAt,
+                 promptTokens, completionTokens, usageCostUsd, actionTraceCount, estimatedContextTokens]
       properties:
         turnId:
           type: string
@@ -1238,6 +1239,24 @@ components:
         finishedAt:
           type: string
           format: date-time
+        promptTokens:
+          type: integer
+          format: int64
+          minimum: 0
+        completionTokens:
+          type: integer
+          format: int64
+          minimum: 0
+        usageCostUsd:
+          type: number
+          format: double
+          minimum: 0
+        actionTraceCount:
+          type: integer
+          minimum: 0
+        estimatedContextTokens:
+          type: integer
+          minimum: 0
     AgentTurnStatus:
       type: string
       enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED]

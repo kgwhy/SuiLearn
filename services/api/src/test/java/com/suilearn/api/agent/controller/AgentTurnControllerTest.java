@@ -62,6 +62,44 @@ class AgentTurnControllerTest {
     }
 
     @Test
+    void synchronousStartCarriesUsageSummaryFromLatestResultEvent() throws Exception {
+        var runtime = runtime((context, events) -> {
+            events.publish(EventType.RESULT, "study_agent", "loop", "answer",
+                Map.of("toolCalls", 3, "promptTokens", 120L, "completionTokens", 30L,
+                    "usageCostUsd", 0.0004d, "estimatedContextTokens", 2400));
+            events.publishTerminal(EventType.DONE, com.suilearn.api.agent.runtime.TurnStatus.COMPLETED,
+                "study_agent", "loop", "done", Map.of("toolCalls", 3));
+        });
+        var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
+
+        var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
+            "study_agent", new ScopeRequest("kb-1", null), List.of()));
+
+        assertThat(response.terminalEvent().type()).isEqualTo("done");
+        assertThat(response.promptTokens()).isEqualTo(120L);
+        assertThat(response.completionTokens()).isEqualTo(30L);
+        assertThat(response.usageCostUsd()).isEqualTo(0.0004d);
+        assertThat(response.actionTraceCount()).isEqualTo(3);
+        assertThat(response.estimatedContextTokens()).isEqualTo(2400);
+    }
+
+    @Test
+    void usageSummaryDefaultsToZeroWithoutResultMetadata() throws Exception {
+        var runtime = runtime((context, events) -> events.publishTerminal(EventType.FAILED,
+            com.suilearn.api.agent.runtime.TurnStatus.FAILED, "test", null, "failed", Map.of()));
+        var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
+
+        var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
+            null, new ScopeRequest("kb-1", null), List.of()));
+
+        assertThat(response.promptTokens()).isZero();
+        assertThat(response.completionTokens()).isZero();
+        assertThat(response.usageCostUsd()).isZero();
+        assertThat(response.actionTraceCount()).isZero();
+        assertThat(response.estimatedContextTokens()).isZero();
+    }
+
+    @Test
     void disabledAgentAndMissingScopeAreRejected() {
         var runtime = runtime((context, events) -> events.publishTerminal(EventType.DONE,
             com.suilearn.api.agent.runtime.TurnStatus.COMPLETED, "test", null, "done", Map.of()));

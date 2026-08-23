@@ -31,6 +31,13 @@ class AgentTurnOpenApiContractTest {
 
         Map<String, Object> event = map(schemas.get("AgentTurnEvent"));
         assertThat((List<String>) event.get("required")).contains("turnId", "sessionId", "seq", "type", "metadata");
+
+        Map<String, Object> result = map(schemas.get("AgentTurnResult"));
+        assertThat((List<String>) result.get("required")).contains(
+            "promptTokens", "completionTokens", "usageCostUsd", "actionTraceCount", "estimatedContextTokens");
+        assertThat(map(result.get("properties")).keySet()).contains(
+            "promptTokens", "completionTokens", "usageCostUsd", "actionTraceCount", "estimatedContextTokens");
+
         assertThat(contract).contains("AGENT_TURN_NOT_WAITING_FOR_INPUT", "TURN_EXECUTOR_UNAVAILABLE");
         assertThat(contract).doesNotContain("StudyAgentRunRequest", "StudyAgentError");
         assertThat(contract).contains("FAILED_ORPHANED", "turn_started");
