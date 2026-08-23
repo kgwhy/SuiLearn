@@ -1,0 +1,12 @@
+{
+  "kind": "event",
+  "turnId": "turn_01",
+  "sessionId": "sess_01",
+  "seq": 1,
+  "type": "turn_started",
+  "source": "study_agent",
+  "stage": null,
+  "content": "",
+  "metadata": {},
+  "ts": "2026-08-23T08:00:00.000Z"
+}

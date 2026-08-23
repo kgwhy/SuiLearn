@@ -761,6 +761,154 @@ paths:
           $ref: "#/components/responses/AgentNotFound"
         "503":
           $ref: "#/components/responses/AgentUnavailable"
+
+  /api/v2/agent/turns:
+    post:
+      summary: Start a v2 Agent turn and wait synchronously for its terminal event
+      description: >
+        Synchronous convenience wrapper over the v2 Agent turn runtime. The turn, the user message, and the
+        first turn_started event are persisted in one transaction before the caller waits for the unique
+        terminal event. learnerId is a caller-provided logical scope, not an authenticated identity. At least
+        knowledgeBaseId or materialId is required. This endpoint intentionally does not reproduce the legacy
+        /api/v2/agents/study/runs behavior; the legacy endpoint remains available until change-3.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAgentTurnRequest"
+      responses:
+        "200":
+          description: Terminal turn result snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnResult"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "409":
+          $ref: "#/components/responses/AgentTurnConflict"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+  /api/v2/agent/turns/{turnId}/events:
+    get:
+      summary: Replay persisted turn events after afterSeq
+      description: >
+        REST equivalent of subscribe_turn/resume_from. Events are ordered by seq and belong only to turnId.
+      parameters:
+        - in: path
+          name: turnId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+        - in: query
+          name: afterSeq
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Replayed event page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnEventPage"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+  /api/v2/agent/turns/{turnId}/cancel:
+    post:
+      summary: Cancel an active v2 Agent turn
+      parameters:
+        - in: path
+          name: turnId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Current turn status after cancellation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnControlResponse"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "409":
+          $ref: "#/components/responses/AgentTurnConflict"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+  /api/v2/agent/turns/{turnId}/reply:
+    post:
+      summary: Deliver a reply to a WAITING_INPUT Agent turn
+      parameters:
+        - in: path
+          name: turnId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentTurnReplyRequest"
+      responses:
+        "200":
+          description: Current turn status after accepting the reply command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnControlResponse"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "409":
+          $ref: "#/components/responses/AgentTurnConflict"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+  /api/v2/agent/sessions/{sessionId}/active-turn:
+    get:
+      summary: Check the current active turn for a session
+      description: >
+        Returns the active RUNNING or WAITING_INPUT turn if one exists. A persisted RUNNING turn that has no
+        live runtime handle is treated as an orphan, marked FAILED_ORPHANED, and reported as such.
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Active turn information; turnId and status are null when no active turn exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentTurnActiveResponse"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/tasks/{taskId}:
     get:
       summary: Get generation, material import, or embedding task status
@@ -936,6 +1084,31 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/StudyAgentError"
+
+    AgentTurnBadRequest:
+      description: Invalid v2 Agent turn request or scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentTurnError"
+    AgentTurnNotFound:
+      description: Agent feature is disabled or the requested turn/session does not exist
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentTurnError"
+    AgentTurnConflict:
+      description: The turn is terminal, not waiting for input, or the session already has an active turn
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentTurnError"
+    AgentTurnUnavailable:
+      description: A required v2 Agent turn runtime dependency is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AgentTurnError"
   schemas:
     NonBlankText:
       type: string
@@ -1209,6 +1382,208 @@ components:
             [INVALID_AGENT_REQUEST, AGENT_SCOPE_REQUIRED, AGENT_SCOPE_MISMATCH, AGENT_SCOPE_NOT_FOUND,
              AGENT_FEATURE_DISABLED, AGENT_MODEL_UNAVAILABLE, AGENT_SESSION_MEMORY_UNAVAILABLE,
              AGENT_DEPENDENCY_UNAVAILABLE, INVALID_MODEL_OUTPUT]
+        message:
+          $ref: "#/components/schemas/NonBlankText"
+        correlationId:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+
+    StartAgentTurnRequest:
+      type: object
+      required: [learnerId, message, scope]
+      description: >
+        v2 Agent turn start request. The server normalizes and validates scope before constructing
+        TurnContext. learnerId is a logical scope identifier, not an authenticated identity.
+      properties:
+        learnerId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Optional; the server generates one when omitted.
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+          description: User-visible message content; never persisted in turn_events metadata.
+        capability:
+          type: string
+          minLength: 1
+          maxLength: 64
+          default: study_agent
+          description: Optional capability name. Only registered capabilities are accepted by the server.
+        scope:
+          $ref: "#/components/schemas/AgentTurnScope"
+        attachments:
+          type: array
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/AgentTurnAttachment"
+    AgentTurnScope:
+      type: object
+      anyOf:
+        - required: [knowledgeBaseId]
+        - required: [materialId]
+      description: Server-validated mandatory study scope for this turn.
+      properties:
+        knowledgeBaseId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        materialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+    AgentTurnAttachment:
+      type: object
+      required: [attachmentId, reference]
+      properties:
+        attachmentId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        mediaType:
+          type: string
+          minLength: 1
+          maxLength: 128
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 512
+    AgentTurnReplyRequest:
+      type: object
+      anyOf:
+        - required: [text]
+        - required: [answers]
+      properties:
+        text:
+          type: string
+          maxLength: 8000
+        answers:
+          type: object
+          additionalProperties: true
+    AgentTurnEventPage:
+      type: object
+      required: [turnId, afterSeq, lastSeq, events]
+      properties:
+        turnId:
+          type: string
+        afterSeq:
+          type: integer
+          format: int64
+          minimum: 0
+        lastSeq:
+          type: integer
+          format: int64
+          minimum: 0
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentTurnEvent"
+    AgentTurnEvent:
+      type: object
+      required: [turnId, sessionId, seq, type, content, metadata, ts]
+      description: >
+        Sanitized structured turn event. metadata MUST NOT contain user message text, prompts, raw model
+        output, or API keys.
+      properties:
+        turnId:
+          type: string
+        sessionId:
+          type: string
+        seq:
+          type: integer
+          format: int64
+          minimum: 1
+        type:
+          $ref: "#/components/schemas/AgentTurnEventType"
+        source:
+          type: string
+          nullable: true
+        stage:
+          type: string
+          nullable: true
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        ts:
+          type: string
+          format: date-time
+    AgentTurnEventType:
+      type: string
+      enum:
+        [turn_started, stage_start, stage_end, thinking, content, tool_call, tool_result,
+         progress, sources, result, error, wait_for_input, done, cancelled, failed,
+         active_turn_info]
+    AgentTurnResult:
+      type: object
+      required: [turnId, sessionId, status, lastSeq, terminalEvent, createdAt, finishedAt]
+      properties:
+        turnId:
+          type: string
+        sessionId:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentTurnStatus"
+        lastSeq:
+          type: integer
+          format: int64
+          minimum: 1
+        terminalEvent:
+          $ref: "#/components/schemas/AgentTurnEvent"
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+    AgentTurnStatus:
+      type: string
+      enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED]
+    AgentTurnControlResponse:
+      type: object
+      required: [turnId, status]
+      properties:
+        turnId:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentTurnStatus"
+    AgentTurnActiveResponse:
+      type: object
+      required: [sessionId]
+      properties:
+        sessionId:
+          type: string
+        turnId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED, null]
+          nullable: true
+    AgentTurnError:
+      type: object
+      required: [code, message]
+      description: >
+        Stable sanitized v2 Agent turn error. Never contains user text, prompts, raw model output,
+        credentials, queue names, or API keys.
+      properties:
+        code:
+          type: string
+          enum:
+            [INVALID_AGENT_REQUEST, AGENT_FEATURE_DISABLED, AGENT_WEBSOCKET_DISABLED,
+             AGENT_SCOPE_REQUIRED, AGENT_CAPABILITY_UNKNOWN, AGENT_TURN_NOT_FOUND,
+             AGENT_TURN_ACTIVE_CONFLICT, AGENT_TURN_NOT_WAITING_FOR_INPUT, AGENT_TURN_TERMINAL,
+             AGENT_TURN_TIMEOUT, AGENT_DEPENDENCY_UNAVAILABLE, TURN_EXECUTOR_UNAVAILABLE,
+             INVALID_EVENT_PAYLOAD]
         message:
           $ref: "#/components/schemas/NonBlankText"
         correlationId:

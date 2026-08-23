@@ -1,0 +1,11 @@
+{
+  "kind": "command",
+  "command": "start_turn",
+  "learnerId": "learner_01",
+  "sessionId": "sess_01",
+  "message": "Explain this material.",
+  "capability": "study_agent",
+  "scope": {
+    "knowledgeBaseId": "kb_01"
+  }
+}

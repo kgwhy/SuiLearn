@@ -1,0 +1,252 @@
+# SuiLearn Agent WebSocket companion schema.
+#
+# OpenAPI 3.0.3 cannot describe WebSocket frames, so commands, events, acks,
+# errors, and pong live here. This file is intentionally OpenAPI-style but is
+# not a standalone OpenAPI document. Golden files under
+# services/api/src/test/resources/agent-turn/golden/** are locked by tests.
+
+components:
+  schemas:
+    TurnWsEnvelope:
+      type: object
+      description: All WebSocket text frames use kind as the discriminator.
+      oneOf:
+        - $ref: "#/components/schemas/TurnCommandEnvelope"
+        - $ref: "#/components/schemas/TurnEventEnvelope"
+        - $ref: "#/components/schemas/TurnAckEnvelope"
+        - $ref: "#/components/schemas/TurnErrorEnvelope"
+        - $ref: "#/components/schemas/TurnPongEnvelope"
+
+    TurnCommandEnvelope:
+      type: object
+      required: [kind, command]
+      properties:
+        kind:
+          type: string
+          enum: [command]
+        command:
+          $ref: "#/components/schemas/TurnCommandName"
+        learnerId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sessionId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        turnId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        message:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        capability:
+          type: string
+          minLength: 1
+          maxLength: 64
+        scope:
+          $ref: "#/components/schemas/TurnScope"
+        afterSeq:
+          type: integer
+          minimum: 0
+          default: 0
+        text:
+          type: string
+          maxLength: 8000
+        answers:
+          type: object
+          additionalProperties: true
+
+    TurnCommandName:
+      type: string
+      enum: [start_turn, subscribe_turn, resume_from, cancel_turn, submit_user_reply, check_active_turn, ping]
+
+    TurnScope:
+      type: object
+      anyOf:
+        - required: [knowledgeBaseId]
+        - required: [materialId]
+      properties:
+        knowledgeBaseId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        materialId:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    TurnEventEnvelope:
+      type: object
+      required: [kind, turnId, sessionId, seq, type, content, metadata, ts]
+      properties:
+        kind:
+          type: string
+          enum: [event]
+        turnId:
+          type: string
+        sessionId:
+          type: string
+        seq:
+          type: integer
+          minimum: 1
+        type:
+          $ref: "#/components/schemas/TurnEventType"
+        source:
+          type: string
+          nullable: true
+        stage:
+          type: string
+          nullable: true
+        content:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        ts:
+          type: string
+          format: date-time
+
+    TurnEventType:
+      type: string
+      enum:
+        [turn_started, stage_start, stage_end, thinking, content, tool_call, tool_result,
+         progress, sources, result, error, wait_for_input, done, cancelled, failed,
+         active_turn_info]
+
+    TurnAckEnvelope:
+      type: object
+      required: [kind, command]
+      properties:
+        kind:
+          type: string
+          enum: [ack]
+        command:
+          $ref: "#/components/schemas/TurnCommandName"
+        turnId:
+          type: string
+        sessionId:
+          type: string
+        status:
+          type: string
+          nullable: true
+          enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED, null]
+
+    TurnErrorEnvelope:
+      type: object
+      required: [kind, code, message]
+      description: Sanitized protocol error. Never includes user text, prompts, raw model output, or API keys.
+      properties:
+        kind:
+          type: string
+          enum: [error]
+        code:
+          $ref: "#/components/schemas/TurnErrorCode"
+        message:
+          type: string
+          minLength: 1
+        turnId:
+          type: string
+
+    TurnErrorCode:
+      type: string
+      enum:
+        [INVALID_AGENT_REQUEST, AGENT_FEATURE_DISABLED, AGENT_WEBSOCKET_DISABLED,
+         AGENT_SCOPE_REQUIRED, AGENT_CAPABILITY_UNKNOWN, AGENT_TURN_NOT_FOUND,
+         AGENT_TURN_ACTIVE_CONFLICT, AGENT_TURN_NOT_WAITING_FOR_INPUT, AGENT_TURN_TERMINAL,
+         AGENT_TURN_TIMEOUT, AGENT_DEPENDENCY_UNAVAILABLE, TURN_EXECUTOR_UNAVAILABLE,
+         INVALID_EVENT_PAYLOAD]
+
+    TurnPongEnvelope:
+      type: object
+      required: [kind, ts]
+      properties:
+        kind:
+          type: string
+          enum: [pong]
+        ts:
+          type: string
+          format: date-time
+
+  messages:
+    start_turn:
+      summary: Create and start a turn, then auto-subscribe this connection.
+      command:
+        kind: command
+        command: start_turn
+        learnerId: learner_01
+        sessionId: sess_01
+        message: Explain this material.
+        capability: study_agent
+        scope:
+          knowledgeBaseId: kb_01
+    subscribe_turn:
+      summary: Replay persisted events after afterSeq, then attach live stream.
+      command:
+        kind: command
+        command: subscribe_turn
+        turnId: turn_01
+        afterSeq: 3
+    cancel_turn:
+      summary: Cancel an active turn.
+      command:
+        kind: command
+        command: cancel_turn
+        turnId: turn_01
+    submit_user_reply:
+      summary: Deliver a WAITING_INPUT reply.
+      command:
+        kind: command
+        command: submit_user_reply
+        turnId: turn_01
+        text: "Answer text"
+        answers: {}
+    check_active_turn:
+      summary: Check the current session turn.
+      command:
+        kind: command
+        command: check_active_turn
+        sessionId: sess_01
+    turn_started:
+      summary: First persisted event of a turn.
+      event:
+        kind: event
+        turnId: turn_01
+        sessionId: sess_01
+        seq: 1
+        type: turn_started
+        source: study_agent
+        stage: null
+        content: ""
+        metadata: {}
+        ts: "2026-08-23T08:00:00.000Z"
+    unavailable_error:
+      summary: change-1 placeholder executor error.
+      event:
+        kind: event
+        turnId: turn_01
+        sessionId: sess_01
+        seq: 3
+        type: error
+        source: turn-runtime
+        stage: unavailable
+        content: "This change does not provide a real Agent executor yet."
+        metadata:
+          code: TURN_EXECUTOR_UNAVAILABLE
+        ts: "2026-08-23T08:00:00.010Z"
+    failed:
+      summary: change-1 terminal failure.
+      event:
+        kind: event
+        turnId: turn_01
+        sessionId: sess_01
+        seq: 4
+        type: failed
+        source: turn-runtime
+        stage: unavailable
+        content: "Agent turn executor unavailable."
+        metadata:
+          code: TURN_EXECUTOR_UNAVAILABLE
+        ts: "2026-08-23T08:00:00.020Z"

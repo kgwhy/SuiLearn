@@ -1,0 +1,6 @@
+{
+  "kind": "command",
+  "command": "subscribe_turn",
+  "turnId": "turn_01",
+  "afterSeq": 3
+}

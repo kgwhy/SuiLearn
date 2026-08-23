@@ -1,0 +1,83 @@
+# Agent-Native Turn Runtime 任务
+
+- Change: `agent-native-turn-runtime`
+- Owner: Leader 协调；Architect 拥有契约，Server Backend 拥有 `services/api/**`，Test 独立验证，Reviewer 单人自审
+- 级别: Major
+- 基线引用: `6de3ec5caeead9e85ad18bc94c3886a7fe9f1e5e`
+- 执行模式: serial（L3）
+- 决策记录: `.agents/notes/implemented/architecture/2026-08-23-agent-native-turn-runtime.md`
+
+## 待办
+
+- [x] 1.1 创建 change 包与 proposed Agent Note
+  - Owner: Leader
+  - Allowed: `openspec/changes/agent-native-turn-runtime/**`, `.agents/notes/implemented/architecture/2026-08-23-agent-native-turn-runtime.md`
+  - Forbidden: `apps/**`, `services/**`, `contracts/**`, `docs/**`
+  - Test: `python3 scripts/check_agent_notes.py`
+  - Review focus: 一个 active change home、Major 产物完整、Alternatives 真实
+- [x] 2.1 实现回合核心类型与能力/工具协议
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/runtime/**`, `services/api/src/main/java/com/suilearn/api/agent/capability/**`, `services/api/src/main/java/com/suilearn/api/agent/tool/**`, `services/api/src/test/java/com/suilearn/api/agent/runtime/**`
+  - Forbidden: `contracts/**`, 旧 `agent/application/LearningAgentPort.java`, `agent/infrastructure/springai/**`
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnRuntimeTypesTest`
+  - Review focus: record 校验、枚举稳定、不依赖 Spring AI
+- [x] 3.1 更新 OpenAPI v2 回合契约
+  - Owner: Architect
+  - Allowed: `contracts/openapi/suilearn-v2.yaml`
+  - Forbidden: 旧 `/api/v2/agents/study/runs` 语义、`contracts/schemas/**`
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnOpenApiContractTest`
+  - Review focus: additive only、错误码 sanitized、scope 校验
+- [x] 3.2 创建 WS companion schema 与 golden files
+  - Owner: Architect
+  - Allowed: `contracts/schemas/suilearn-ws.yaml`, `services/api/src/test/resources/agent-turn/golden/**`, `services/api/src/test/java/com/suilearn/api/agent/contract/**`
+  - Forbidden: `apps/**`, 独立 OpenAPI 文档语义
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnWsContractTest`
+  - Review focus: kind 判别、命令/事件/错误枚举、golden 可重复
+- [x] 4.1 增加 websocket starter 与配置
+  - Owner: Server Backend
+  - Allowed: `services/api/pom.xml`, `services/api/src/main/resources/application.properties`, `services/api/config/local.properties.example`, `.env.example`, `compose.yml`
+  - Forbidden: WebFlux/Reactor 依赖、新增其他配置键
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnConfigurationTest`
+  - Review focus: 无 WebFlux bean、websocket 默认 true 且总开关优先
+- [x] 5.1 实现 turn/turn_events/session_message 持久化模型
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/infrastructure/turn/**`, `services/api/src/test/java/com/suilearn/api/agent/infrastructure/turn/**`
+  - Forbidden: 旧 memory store、Flyway/Liquibase
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnPersistenceModelTest`
+  - Review focus: 唯一键、索引、payload 上限、事务边界
+- [x] 6.1 实现 TurnEventBus
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/runtime/**`, `services/api/src/test/java/com/suilearn/api/agent/runtime/**`
+  - Forbidden: `contracts/**`
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=TurnEventBusTest`
+  - Review focus: 每回合一个、有界、终态唯一、慢消费者
+- [x] 7.1 实现 TurnRuntimeService 与占位 executor
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/runtime/**`, `services/api/src/test/java/com/suilearn/api/agent/runtime/**`
+  - Forbidden: 旧 Agent 调用、正式内容 store
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=TurnRuntimeServiceTest`
+  - Review focus: 首事件同事务、replay、cancel、submitReply、孤儿恢复
+- [x] 8.1 实现 REST TurnController 与错误映射
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/controller/**`, `services/api/src/test/java/com/suilearn/api/agent/controller/**`
+  - Forbidden: 修改 `LearningAgentController.java`、旧 DTO 语义
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnControllerTest`
+  - Review focus: 路径匹配 OpenAPI、状态码、AGENT_FEATURE_DISABLED
+- [x] 9.1 实现 WS handler 与命令分发
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/controller/**`, `services/api/src/test/java/com/suilearn/api/agent/controller/**`
+  - Forbidden: WebFlux/Reactor、Rabbit fanout
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentTurnWebSocketHandlerTest`
+  - Review focus: 文本 JSON、replay、错误不回显正文、慢消费者
+- [x] 10.1 运行定向验证并记录 verification
+  - Owner: Test
+  - Allowed: `openspec/changes/agent-native-turn-runtime/verification.md`, `openspec/changes/agent-native-turn-runtime/tasks.md`
+  - Forbidden: 业务代码、`contracts/**`
+  - Test: `python3 scripts/change_scope.py --base 6de3ec5caeead9e85ad18bc94c3886a7fe9f1e5e`；按 verification-selection 执行
+  - Review focus: 干净 shell、原始输出、失败根因、完整命令
+- [x] 11.1 单人自审与归档准备
+  - Owner: Reviewer
+  - Allowed: `openspec/changes/agent-native-turn-runtime/archive.md`, `openspec/changes/agent-native-turn-runtime/verification.md`, `.agents/notes/implemented/architecture/2026-08-23-agent-native-turn-runtime.md`
+  - Forbidden: 业务代码、`contracts/**`
+  - Test: `python3 scripts/check_suilearn_workflow.py --closing-change agent-native-turn-runtime`；`python3 scripts/check_agent_notes.py`
+  - Review focus: `review_mode: single-agent`、P0/P1/P2 关闭或延期、Sync Gate 范围
