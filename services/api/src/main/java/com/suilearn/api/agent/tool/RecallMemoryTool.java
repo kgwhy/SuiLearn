@@ -1,5 +1,7 @@
 package com.suilearn.api.agent.tool;
 
+import com.suilearn.api.agent.memory.MemoryL2DocRepository;
+import com.suilearn.api.agent.memory.MemoryL3DocRepository;
 import com.suilearn.api.agent.memory.MemoryManager;
 import com.suilearn.api.agent.memory.MemoryType;
 import com.suilearn.api.agent.runtime.TurnContext;
@@ -12,9 +14,17 @@ import java.util.stream.Collectors;
 
 public final class RecallMemoryTool implements Tool {
     private final MemoryManager memory;
+    private final MemoryL2DocRepository l2;
+    private final MemoryL3DocRepository l3;
 
     public RecallMemoryTool(MemoryManager memory) {
+        this(memory, null, null);
+    }
+
+    public RecallMemoryTool(MemoryManager memory, MemoryL2DocRepository l2, MemoryL3DocRepository l3) {
         this.memory = memory;
+        this.l2 = l2;
+        this.l3 = l3;
     }
 
     @Override
@@ -56,6 +66,14 @@ public final class RecallMemoryTool implements Tool {
                 metadata.put("detail", result.detail());
             }
             metadata.put("memories", memories);
+            if (l2 != null) {
+                metadata.put("l2Docs", l2.findByLearnerIdOrderByUpdatedAtDesc(context.learnerId()).stream()
+                    .limit(3).map(doc -> doc.getSurface() + ": " + doc.getContentMd()).toList());
+            }
+            if (l3 != null) {
+                metadata.put("l3Slots", l3.findByLearnerIdOrderBySlotAsc(context.learnerId()).stream()
+                    .limit(4).map(doc -> doc.getSlot() + ": " + doc.getContentMd()).toList());
+            }
             return new ToolResult("Recalled " + memories.size() + " memory item(s).", List.of(), metadata, true, null);
         } catch (RuntimeException exception) {
             return new ToolResult("Memory recall failed.", List.of(),

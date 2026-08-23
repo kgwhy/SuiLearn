@@ -4,7 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.agent.llm.LlmClient;
 import com.suilearn.api.agent.memory.EmbeddingProvider;
 import com.suilearn.api.agent.memory.EmbeddingResult;
+import com.suilearn.api.agent.memory.MemoryConsolidationCommandRepository;
+import com.suilearn.api.agent.memory.MemoryConsolidator;
+import com.suilearn.api.agent.memory.MemoryL2DocRepository;
+import com.suilearn.api.agent.memory.MemoryL3DocRepository;
 import com.suilearn.api.agent.memory.MemoryManager;
+import com.suilearn.api.agent.memory.MemoryMetaRepository;
+import com.suilearn.api.agent.memory.MemorySnapshotRecorder;
+import com.suilearn.api.agent.memory.MemorySnapshotRepository;
+import com.suilearn.api.agent.memory.MemoryTraceRecorder;
+import com.suilearn.api.agent.memory.MemoryTraceRepository;
 import com.suilearn.api.agent.memory.MemoryPromotionPolicy;
 import com.suilearn.api.agent.memory.SemanticMemoryStore;
 import com.suilearn.api.agent.memory.SessionMemoryKeyFactory;
@@ -100,6 +109,27 @@ public class AgentInfrastructureConfiguration {
         return store == null ? null : new SessionMemoryService(store,
             new SessionMemoryKeyFactory("suilearn:agent:session:v1"),
             properties.session().ttl(), properties.session().maxTurns());
+    }
+
+    @Bean
+    MemoryTraceRecorder memoryTraceRecorder(MemoryTraceRepository traces, Clock clock) {
+        return new MemoryTraceRecorder(traces, clock);
+    }
+
+    @Bean
+    MemorySnapshotRecorder memorySnapshotRecorder(MemorySnapshotRepository snapshots, Clock clock) {
+        return new MemorySnapshotRecorder(snapshots, clock);
+    }
+
+    @Bean
+    MemoryConsolidator memoryConsolidator(MemoryConsolidationCommandRepository commands,
+                                          MemorySnapshotRepository snapshots,
+                                          MemoryL2DocRepository l2, MemoryL3DocRepository l3,
+                                          MemoryMetaRepository meta, LlmClient client,
+                                          ObjectMapper objectMapper, SuiLearnAiProperties properties,
+                                          Clock clock) {
+        return new MemoryConsolidator(commands, snapshots, l2, l3, meta, client, objectMapper,
+            properties.chatModel(), clock);
     }
 
     @Bean
