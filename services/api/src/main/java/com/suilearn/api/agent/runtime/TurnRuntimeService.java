@@ -10,9 +10,12 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +30,7 @@ public class TurnRuntimeService {
     private final Set<String> supportedCapabilities;
     private final ExecutorService worker;
     private final ConcurrentHashMap<String, TurnEventBus> buses = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, BlockingQueue<TurnReply>> replies = new ConcurrentHashMap<>();
 
     public TurnRuntimeService(TurnStore store, TurnExecutor executor, ObjectMapper objectMapper,
                               Clock clock, Set<String> supportedCapabilities) {
@@ -63,8 +67,13 @@ public class TurnRuntimeService {
         var record = store.createTurn(context, messageId, firstEvent);
         var bus = new TurnEventBus(turnId, sessionId);
         buses.put(turnId, bus);
-        bus.terminalFuture().whenComplete((terminal, error) -> buses.remove(turnId, bus));
-        var sink = new TurnEventSink(turnId, sessionId, record.lastSeq(), store, bus, objectMapper, clock);
+        bus.terminalFuture().whenComplete((terminal, error) -> {
+            buses.remove(turnId, bus);
+            replies.remove(turnId);
+        });
+        replies.put(turnId, new LinkedBlockingQueue<>());
+        var sink = new TurnEventSink(turnId, sessionId, record.lastSeq(), store, bus, objectMapper, clock,
+            this::awaitReply);
         worker.submit(() -> executeSafely(context, sink));
         return new StartTurnOutcome(record, bus);
     }
@@ -112,9 +121,15 @@ public class TurnRuntimeService {
         if ((text == null || text.isBlank()) && (answers == null || answers.isEmpty())) {
             throw new TurnApiException(TurnErrorCode.INVALID_AGENT_REQUEST);
         }
-        // change-1 has no pause/resume executor yet. The command contract is stable but the
-        // pending-reply queue is delivered together with ask_user in change-3.
-        return record;
+        BlockingQueue<TurnReply> queue = replies.get(turnId);
+        if (queue == null) {
+            throw new TurnApiException(TurnErrorCode.AGENT_DEPENDENCY_UNAVAILABLE);
+        }
+        store.updateStatus(turnId, TurnStatus.RUNNING);
+        if (!queue.offer(new TurnReply(text, answers))) {
+            throw new TurnApiException(TurnErrorCode.AGENT_DEPENDENCY_UNAVAILABLE);
+        }
+        return store.findTurn(turnId).orElse(record);
     }
 
     public ActiveTurnInfo checkActiveTurn(String sessionId) {
@@ -149,10 +164,23 @@ public class TurnRuntimeService {
         return Optional.ofNullable(buses.get(turnId));
     }
 
+    private TurnReply awaitReply(String turnId, Duration timeout) throws InterruptedException, TimeoutException {
+        BlockingQueue<TurnReply> queue = replies.get(turnId);
+        if (queue == null) {
+            throw new TurnApiException(TurnErrorCode.AGENT_DEPENDENCY_UNAVAILABLE);
+        }
+        TurnReply reply = queue.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (reply == null) {
+            throw new TimeoutException("turn reply timed out: " + turnId);
+        }
+        return reply;
+    }
+
     @PreDestroy
     public void close() {
         buses.values().forEach(TurnEventBus::close);
         buses.clear();
+        replies.clear();
         worker.shutdownNow();
     }
 

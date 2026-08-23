@@ -58,8 +58,20 @@ public final class ToolRegistry {
 
     /** OpenAI function-calling compatible tool schemas, sorted by tool name. */
     public List<Map<String, Object>> openAiSchemas() {
+        return schemas(definitions());
+    }
+
+    /** Schemas limited to the tools owned by one capability. */
+    public List<Map<String, Object>> openAiSchemas(CapabilityManifest manifest) {
+        Objects.requireNonNull(manifest, "manifest");
+        return schemas(definitions().stream()
+            .filter(definition -> manifest.ownedTools().contains(definition.name()))
+            .toList());
+    }
+
+    private List<Map<String, Object>> schemas(List<ToolDefinition> definitions) {
         var schemas = new ArrayList<Map<String, Object>>();
-        for (var definition : definitions()) {
+        for (var definition : definitions) {
             var function = new LinkedHashMap<String, Object>();
             function.put("name", definition.name());
             function.put("description", definition.description());

@@ -3,6 +3,10 @@ package com.suilearn.api.agent.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.agent.capability.CapabilityManifest;
 import com.suilearn.api.agent.infrastructure.turn.JpaTurnStore;
+import com.suilearn.api.agent.llm.LlmClient;
+import com.suilearn.api.agent.llm.OpenAiCompatibleLlmClient;
+import com.suilearn.api.agent.loop.AgentLoop;
+import com.suilearn.api.agent.loop.ToolDispatcher;
 import com.suilearn.api.agent.memory.MemoryManager;
 import com.suilearn.api.agent.tool.AskUserTool;
 import com.suilearn.api.agent.tool.EvidenceReadPort;
@@ -17,6 +21,7 @@ import com.suilearn.api.agent.tool.Tool;
 import com.suilearn.api.agent.infrastructure.turn.SessionMessageJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnEventJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnJpaRepository;
+import com.suilearn.api.config.SuiLearnAiProperties;
 import java.time.Clock;
 import java.util.Map;
 import java.util.Set;
@@ -48,8 +53,25 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
-    TurnOrchestrator turnOrchestrator(CapabilityRegistry capabilities) {
-        return new TurnOrchestrator(capabilities);
+    LlmClient llmClient(SuiLearnAiProperties aiProperties, ObjectMapper objectMapper) {
+        return new OpenAiCompatibleLlmClient(aiProperties, objectMapper);
+    }
+
+    @Bean
+    ToolDispatcher toolDispatcher(ToolRegistry tools, ObjectMapper objectMapper) {
+        return new ToolDispatcher(tools, objectMapper);
+    }
+
+    @Bean
+    AgentLoop agentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
+                        com.suilearn.api.agent.config.AgentConfigurationProperties properties,
+                        Clock clock, SuiLearnAiProperties aiProperties) {
+        return new AgentLoop(client, dispatcher, tools, properties, clock, aiProperties.chatModel());
+    }
+
+    @Bean
+    TurnOrchestrator turnOrchestrator(CapabilityRegistry capabilities, AgentLoop loop) {
+        return new TurnOrchestrator(capabilities, loop);
     }
 
     @Bean
