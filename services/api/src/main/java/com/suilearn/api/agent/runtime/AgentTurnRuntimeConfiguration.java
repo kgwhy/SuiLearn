@@ -7,6 +7,7 @@ import com.suilearn.api.agent.llm.LlmClient;
 import com.suilearn.api.agent.llm.OpenAiCompatibleLlmClient;
 import com.suilearn.api.agent.context.ContextBuilder;
 import com.suilearn.api.agent.context.PromptBlockAssembler;
+import com.suilearn.api.agent.context.RollingSessionSummary;
 import com.suilearn.api.agent.context.SessionMessageHistory;
 import com.suilearn.api.agent.context.TokenEstimator;
 import com.suilearn.api.agent.loop.AgentLoop;
@@ -23,6 +24,7 @@ import com.suilearn.api.agent.tool.RecallMemoryTool;
 import com.suilearn.api.agent.tool.SearchKnowledgeTool;
 import com.suilearn.api.agent.tool.Tool;
 import com.suilearn.api.agent.infrastructure.turn.SessionMessageJpaRepository;
+import com.suilearn.api.agent.infrastructure.turn.SessionSummaryJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnEventJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnJpaRepository;
 import com.suilearn.api.config.SuiLearnAiProperties;
@@ -83,12 +85,23 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
+    RollingSessionSummary rollingSessionSummary(SessionMessageJpaRepository messages,
+                                                SessionSummaryJpaRepository summaries,
+                                                LlmClient client, Clock clock,
+                                                SuiLearnAiProperties aiProperties,
+                                                com.suilearn.api.agent.config.AgentConfigurationProperties properties) {
+        return new RollingSessionSummary(messages, summaries, client, clock, aiProperties.chatModel(),
+            properties.session().maxTurns());
+    }
+
+    @Bean
     AgentLoop agentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                         com.suilearn.api.agent.config.AgentConfigurationProperties properties,
                         Clock clock, SuiLearnAiProperties aiProperties,
-                        ContextBuilder contextBuilder, SessionMessageHistory history) {
+                        ContextBuilder contextBuilder, SessionMessageHistory history,
+                        RollingSessionSummary summaries) {
         return new AgentLoop(client, dispatcher, tools, properties, clock, aiProperties.chatModel(),
-            contextBuilder, history);
+            contextBuilder, history, summaries);
     }
 
     @Bean

@@ -22,7 +22,16 @@ public final class ContextBuilder {
 
     public ContextBuildResult build(TurnContext context, CapabilityManifest manifest,
                                     List<LlmMessage> history) {
-        var prompt = prompts.assemble(manifest, List.of());
+        return build(context, manifest, history, "");
+    }
+
+    public ContextBuildResult build(TurnContext context, CapabilityManifest manifest,
+                                    List<LlmMessage> history, String sessionSummary) {
+        var memoryBlocks = sessionSummary == null || sessionSummary.isBlank()
+            ? List.<PromptBlock>of()
+            : List.of(new PromptBlock("session_summary", sessionSummary,
+                estimator.estimate(sessionSummary)));
+        var prompt = prompts.assemble(manifest, memoryBlocks);
         var retained = new ArrayList<LlmMessage>();
         var historyBudget = Math.max(1, (int) (contextMaxTokens * 0.35d));
         int historyTokens = 0;

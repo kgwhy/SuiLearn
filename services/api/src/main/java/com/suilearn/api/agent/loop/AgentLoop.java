@@ -5,6 +5,7 @@ import com.suilearn.api.agent.config.AgentConfigurationProperties;
 import com.suilearn.api.agent.context.ContextBuilder;
 import com.suilearn.api.agent.context.ContextBuildResult;
 import com.suilearn.api.agent.context.PromptBlockAssembler;
+import com.suilearn.api.agent.context.RollingSessionSummary;
 import com.suilearn.api.agent.context.SessionMessageHistory;
 import com.suilearn.api.agent.context.TokenEstimator;
 import com.suilearn.api.agent.llm.LlmClient;
@@ -39,18 +40,26 @@ public final class AgentLoop {
     private final String model;
     private final ContextBuilder contextBuilder;
     private final SessionMessageHistory history;
+    private final RollingSessionSummary summaries;
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model) {
         this(client, dispatcher, tools, properties, clock, model,
             new ContextBuilder(TokenEstimator.conservativeCharacters(),
                 new PromptBlockAssembler(TokenEstimator.conservativeCharacters()),
-                properties.contextMaxTokens()), null);
+                properties.contextMaxTokens()), null, null);
     }
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model,
                      ContextBuilder contextBuilder, SessionMessageHistory history) {
+        this(client, dispatcher, tools, properties, clock, model, contextBuilder, history, null);
+    }
+
+    public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
+                     AgentConfigurationProperties properties, Clock clock, String model,
+                     ContextBuilder contextBuilder, SessionMessageHistory history,
+                     RollingSessionSummary summaries) {
         this.client = client;
         this.dispatcher = dispatcher;
         this.tools = tools;
@@ -59,11 +68,20 @@ public final class AgentLoop {
         this.model = model == null || model.isBlank() ? "suilearn-default" : model;
         this.contextBuilder = contextBuilder;
         this.history = history;
+        this.summaries = summaries;
     }
 
     public LoopResult run(TurnContext context, CapabilityManifest manifest, TurnEventSink events) {
+        String sessionSummary = "";
+        if (summaries != null) {
+            try {
+                sessionSummary = summaries.ensure(context.sessionId(), context.turnId()).orElse("");
+            } catch (RuntimeException summaryFailure) {
+                sessionSummary = "";
+            }
+        }
         ContextBuildResult built = contextBuilder.build(context, manifest,
-            history == null ? List.of() : history.recent(context.sessionId(), context.turnId()));
+            history == null ? List.of() : history.recent(context.sessionId(), context.turnId()), sessionSummary);
         var messages = new ArrayList<>(built.messages());
         events.publish(EventType.PROGRESS, context.capability(), "context",
             "Context budget report", Map.of("estimatedContextTokens", built.estimatedContextTokens(),
