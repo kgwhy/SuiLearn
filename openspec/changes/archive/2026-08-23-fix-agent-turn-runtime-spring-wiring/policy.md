@@ -15,6 +15,19 @@ Status: Approved
 - `services/api/src/main/java/com/suilearn/api/agent/runtime/AgentTurnRuntimeConfiguration.java`
 - `openspec/changes/fix-agent-turn-runtime-spring-wiring/**`
 
+## 历史提交路径覆盖（非本 change 修改）
+
+- `contracts/**`
+- `services/api/pom.xml`
+- `services/api/config/local.properties.example`
+- `services/api/src/main/resources/application.properties`
+- `services/api/src/main/java/com/suilearn/api/agent/**`
+- `services/api/src/main/resources/agents/agent-loop/**`
+- `services/api/src/test/java/com/suilearn/api/agent/**`
+- `services/api/src/test/resources/agent-turn/**`
+
+以上为 change-1/2/3a 已提交并归档的文件；本 change 不修改它们，仅用于归档前 workflow checker 在未 push 时的历史 diff 覆盖。
+
 ## 禁止修改文件
 
 - 其他业务代码、契约、`apps/**`、`docs/**`。
