@@ -542,3 +542,16 @@ change-6: UsageTracker、统一 TurnResult、可观测与客户端切换
 2. 补齐 `design.md`、`specs/**`、`tasks.md`、`policy.md`、`verification.md`；
 3. 先完成 Phase 0 的 OpenAPI diff 和核心类型契约；
 4. 批准后按 change-1 → change-2 → ... 顺序进入 Build。
+
+---
+
+## 12. 执行环境与工具链说明（执行补充）
+
+本计划在 AgentProject 沙箱中落地时使用以下工具链决策：
+
+1. **Java 后端编译**：使用本地 JDK 21 + Maven 3.9 构建，不依赖系统级 JDK/Maven。
+2. **Docker 使用方式**：当前 WSL 发行版未启用 Docker Desktop 的 WSL Integration，也暂未开放 `tcp://localhost:2375`。因此本计划执行过程中：
+   - 需要容器/中间件时，统一通过 Windows 侧 `docker.exe` 手动启动 PostgreSQL、RabbitMQ、MinIO 等容器；
+   - Java Testcontainers 自动管理容器的集成测试暂不作为本沙箱内默认门禁；若后续 WSL Integration 或 Docker TCP 可用，再恢复 Testcontainers 相关测试。
+3. **Android 构建**：Android SDK / Gradle 暂不可用，本执行轮次聚焦 Java 后端与契约层；Android 本地闭环不受影响，不在本批次强制构建验证。
+4. **数据与中间件**：新 Agent 运行时的核心逻辑优先以可编译、可单测的内存实现落地；PostgreSQL 持久化以 JPA/Repository 接口和迁移脚本形式提供，联调时再通过 `docker.exe` 启动真实数据库验证。
