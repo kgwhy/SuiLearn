@@ -222,6 +222,40 @@
 - 回答可以展示来源；无法确定时明确表达不确定。
 - 语义搜索结果可以展示类型、摘要、所属知识库、关联知识点和详情入口。
 
+### 需求 7：Agent 学习助手（Agent-Native Runtime）
+
+#### 用户故事
+
+1. 作为在指定知识库或单份资料范围内提问的学习者，我希望实时看到学习过程，并在结束时得到带已验证引用的讲解、临时练习和下一步建议，以便证据不足时不被误导。
+2. 作为连续追问的学习者，我希望同一个 `sessionId` 的后续问题复用最近上下文和滚动摘要，以便不必重复说明范围。
+3. 作为网络不稳定的用户，我希望 WebSocket 断线后按 `afterSeq` 继续接收同一回合事件，以便不重复消费已完成事件。
+4. 作为需要澄清问题的学习者，我希望 Agent 在目标、难度或选项缺失时进入 `WAITING_INPUT`，回复后从原工具调用继续，以便不需要重跑整个回合。
+5. 作为关注成本的使用者，我希望每次回合结果包含 token、成本、动作步数和上下文预算的聚合数字，且事件元数据不包含我的正文、Prompt、原始模型输出或密钥。
+
+#### 需求要点
+
+- 当前 Agent 学习助手是 Backend 能力，入口为 v2 REST 与 WebSocket：
+  - REST：`POST /api/v2/agent/turns` 同步等待终态；`GET /api/v2/agent/turns/{turnId}/events` 按 `afterSeq` 重放；`POST /api/v2/agent/turns/{turnId}/cancel` 取消；`POST /api/v2/agent/turns/{turnId}/reply` 提交暂停追问回复；`GET /api/v2/agent/sessions/{sessionId}/active-turn` 查询当前活动回合；`GET /api/v2/agent/capabilities` 枚举能力与工具 schema。
+  - WebSocket：`/api/v2/ws`，支持 `start_turn`、`subscribe_turn`、`resume_from`、`cancel_turn`、`submit_user_reply`、`check_active_turn`、`ping`。
+- 能力注册表内置 `study_agent`（默认）、`rag_qa`、`question_generation`。当前 `study_agent` 已接入通用 AgentLoop；`rag_qa` 与 `question_generation` 已注册清单但尚未接入独立循环，启动对应能力时服务端返回显式 `TURN_EXECUTOR_UNAVAILABLE`，不伪造回答。
+- `study_agent` 工具面为 `search_knowledge`、`read_evidence`、`generate_practice`、`recall_memory`、`persist_memory`、`ask_user`；`rag_qa` 为 `search_knowledge`、`read_evidence`；`question_generation` 为 `generate_practice`、`ask_user`。工具允许集由 `CapabilityManifest.ownedTools()` + 服务端权限校验决定。
+- 回合事件 `seq` 按 `turnId` 从 1 单调递增且唯一；REST/WS 均支持按 `afterSeq` 续流。应用重启后残留 `RUNNING` 回合标记为 `FAILED_ORPHANED` 并产生唯一终态事件。
+- `ask_user` 工具会发布 `wait_for_input`，回合进入 `WAITING_INPUT`；用户回复后继续同一 AgentLoop，不重跑回合。
+- 每回合结果信封 `AgentTurnResult` 包含状态、`terminalEvent`、`lastSeq`、创建/结束时间，以及 `promptTokens`、`completionTokens`、`usageCostUsd`、`actionTraceCount`、`estimatedContextTokens` 五个非负汇总字段；缺失或失败路径返回 0。
+- Agent 开关沿用 `suilearn.agent.enabled`（默认 false）；WebSocket 子开关为 `suilearn.agent.websocket.enabled`（默认 true）。关闭 Agent 总开关时 REST 与 WS 返回统一的 `AGENT_FEATURE_DISABLED` 语义。
+- `learnerId` 仍是调用方提供的逻辑范围标识，不是登录身份；鉴权与多租户隔离属于 Phase 8，当前未启动。
+- Android 本地刷题、错题、收藏和统计离线闭环保持不变；本批次不切换 Android 新 Agent 协议客户端。Web 知识库工作台不调用旧 Agent 路径，本次 not affected。
+- 本能力使用轻量 Spec Key：`SPEC-AGENT-NATIVE-RUNTIME`。
+
+#### 验收标准
+
+- 用户可以在知识库或资料范围内启动一个 `study_agent` 回合，并同步获得带终态事件的 `AgentTurnResult`。
+- 同一会话可以按 `afterSeq` 重放或续流事件，不重复、不跳号。
+- 取消、暂停追问、孤儿恢复均返回稳定状态，不产生虚假完成内容。
+- 回合失败、取消或模型输出非法时不会生成正式题目、正式答案或伪造引用。
+- usage/action/context 汇总字段可解析且非负；事件 `metadata` 不包含用户正文、Prompt、原始模型输出或密钥。
+- `suilearn.agent.enabled=false` 时入口明确降级，Android 本地学习闭环不受影响。
+
 ## 产品决策
 
 - 当前文档是当前已确认产品规格，作为产品真相源。
@@ -229,11 +263,12 @@
 - 后续产品变更先进入 `openspec/changes/<change-name>/**`；通过 Approval Gate 后可作为实现依据；实现完成后把稳定结论合并回当前规格。
 - 不维护多份完整版本 PRD，不默认建立全量需求 ID；本文不承担历史需求库职责。
 - 只有跨模块、高风险、测试或审查需要稳定引用的能力，才使用轻量 Spec Key。
-- 当前保留的 Spec Key 包括：`SPEC-HOME-PACK-HEADER`、`SPEC-AI-CONTENT-GATE`、`SPEC-KB-BOUNDARY`、`SPEC-RAG-TRACEABILITY`、`SPEC-OFFLINE-CORE`。
+- 当前保留的 Spec Key 包括：`SPEC-HOME-PACK-HEADER`、`SPEC-AI-CONTENT-GATE`、`SPEC-KB-BOUNDARY`、`SPEC-RAG-TRACEABILITY`、`SPEC-OFFLINE-CORE`、`SPEC-AGENT-NATIVE-RUNTIME`。
 - 产品核心表达是：随心学是个人学习工具，Java 八股是第一批学习内容。即使第一阶段只有一个 Java 八股学习包，也要避免把产品表达限制成单纯 Java 题库 App。
 - 刷题流程支持在当前练习会话内回看上一题；该能力用于回看和继续学习，不承担撤销历史答题记录或重算统计的职责。
 - 第二阶段可以先支持 Java 面试、Spring、MySQL 等知识库场景；英语单词、古诗词等多学科内容包留到后续版本。
 - 架构边界、服务端介入程度、资料处理方式和 AI / RAG 技术细节由架构 Agent 在实现前进一步确认。
+- Agent 学习助手是第二阶段已有 AI/RAG 能力之上的通用回合运行时：`study_agent` 是当前唯一接线的学习能力，`rag_qa`/`question_generation` 保持显式 unavailable，直到各自循环策略通过新 change 验收。
 
 ## 测试决策
 
@@ -265,6 +300,7 @@
 - 第一阶段不支持用户从网络拉取题库，不支持用户导入题库。
 - 第二阶段不包含社交学习、公开知识库市场、多人协作编辑、企业团队管理、自动制定长期学习计划、自动发布未经用户确认的 AI 生成题。
 - 第二阶段不把 AI 回答直接等同于正式答案，不让 AI 内容绕过用户确认进入正式学习内容。
+- 本批次不实现 Android 新 Agent 协议客户端、Web 学习端、Phase 8 鉴权/learner 隔离/技能 Prompt；Android 本地学习闭环不受影响。
 - 第二阶段不正式展开英语单词、古诗词等多学科内容包；这些属于后续多学习包版本。
 - 首页启动体验修正不新增多学习包切换功能，只修正首页信息层级和启动体验表达。
 
@@ -272,6 +308,7 @@
 
 - 第一阶段成功指标只使用客观、可验证的开发指标：50 道内置题、四种题型可完成、刷题入口可达、记录可持久化、搜索和知识点详情可用、错题本可复盘。
 - 第二阶段成功指标同样使用客观指标：用户可以生成并确认 AI 内容，保存后的 AI 题目可以完成刷题和错题流程，可以创建至少一个知识库，可以完成资料导入、语义搜索和资料问答。
+- Agent 学习助手成功指标使用客观指标：`study_agent` 回合可启动、可流式/重放、可暂停追问、可取消，REST 结果信封包含 usage/action/context 汇总；`rag_qa`/`question_generation` 在未接线时只返回显式 unavailable，不伪造成功。
 - 第一阶段角色影响：产品 Agent 维护需求范围；架构 Agent 确认 Android 本地架构和数据模型边界；内容 Agent 准备 Java 八股题库、分类、知识点和解析；Android Agent 实现本地 App；测试 Agent 围绕最终验收标准设计测试范围。
 - 第二阶段角色影响：架构 Agent 确认 AI、知识库、资料导入、语义搜索和本地数据之间的边界；内容 Agent 定义 AI 生成题、知识点解释、复习建议的内容质量标准和人工修正规则；Android Agent 复用第一阶段能力并实现新增学习流程；Server Backend Agent 可能介入 AI 调用、资料处理、RAG 和知识库能力；Web Frontend Agent 承载知识库工作台；测试 Agent 覆盖 AI 内容可控、知识库边界、资料问答不确定性表达和第一阶段兼容。
 - 本文档是可发布的产品规格正文；发布到 issue tracker 的步骤由 `$to-prd` 流程负责，发布被阻塞时本文档仍保持可直接使用的规格正文格式。

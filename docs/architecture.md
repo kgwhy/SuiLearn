@@ -175,6 +175,18 @@ Backend 位于 `services/api`，根 package 为 `com.suilearn.api`。
 ```text
 services/api/src/main/java/com/suilearn/api/
 ├─ SuiLearnApiApplication.java
+├─ agent/
+│  ├─ capability/            # Capability、CapabilityManifest、内置能力
+│  ├─ runtime/               # TurnRuntimeService、TurnEventBus、TurnContext/StreamEvent、注册表
+│  ├─ loop/                  # AgentLoop、ToolDispatcher、暂停恢复
+│  ├─ llm/                   # LlmClient、OpenAI-compatible streaming adapter、UsageTracker
+│  ├─ tool/                  # Tool、ToolDefinition、声明式工具 bean
+│  ├─ context/               # ContextBuilder、PromptBlock、RollingSessionSummary
+│  ├─ memory/                # L1/L2/L3 记忆实体、Consolidator、Scheduler
+│  ├─ prompt/                # PromptRegistry 与结构化输出处理（历史类）
+│  ├─ metrics/
+│  ├─ controller/            # AgentTurnController、AgentCapabilitiesController、WS handler
+│  └─ infrastructure/        # turn/ 与 memory/ 的 JPA 持久化
 ├─ ai/
 ├─ config/
 ├─ controller/
@@ -189,6 +201,11 @@ services/api/src/main/java/com/suilearn/api/
 │  ├─ entity/
 │  └─ repository/
 ├─ rag/
+│  ├─ application/
+│  ├─ pipeline/              # RagPipeline、PipelineFactory、PgvectorHybridRagPipeline
+│  ├─ index/                 # EmbeddingSignature、IndexVersionManager
+│  ├─ parsing/               # ParseEngine 注册表与 text/pdf/office/ocr engines
+│  └─ SmartRetriever.java
 ├─ retrieval/
 ├─ search/
 ├─ source/
@@ -207,9 +224,11 @@ services/api/src/main/java/com/suilearn/api/
 | Module Infrastructure | `<module>/infrastructure/**` | 按聚合承载 Store / adapter 边界，供 Application Service 访问持久化或外部能力 |
 | Compatibility | `service/SuiLearnV2Service`、`service/internal/SuiLearnV2Workflow`、`persistence/SuiLearnV2Store` | V2 兼容 facade 和底层兼容持久化 facade，供旧入口留存，不作为新增业务入口 |
 | Persistence | `persistence/**` | JPA Entity、Repository 和兼容持久化 facade |
-| AI | `ai/**` | SuiLearn AI port、Fake Provider、OpenAI-compatible Provider、Spring AI adapter 边界 |
+| AI | `ai/**` | SuiLearn AI port、Fake Provider、OpenAI-compatible Provider、未启用的 Spring AI 占位 adapter |
 | Retrieval | `retrieval/**` | 检索接口、关键词检索、Embedding Provider |
 | Material | `material/**` | 资料解析、切片 |
+| Agent | `agent/**` | Agent-Native 回合运行时、能力/工具注册表、AgentLoop、LlmClient、上下文与记忆 |
+| RAG engine | `rag/{pipeline,index,parsing}/**` | RAG pipeline 工厂、embedding 索引签名、解析引擎注册表 |
 | Config | `config/**` | CORS、AI Provider、应用配置 |
 
 规则：
@@ -251,6 +270,8 @@ services/api/src/main/java/com/suilearn/api/
 | `source` | `SourceRef` 标准化、来源可用性、引用构造和删除影响规则边界 |
 | `pack` | `LearningPack` 服务层抽象；当前通过 `packId == knowledgeBaseId` 适配现有知识库 |
 | `ai` | SuiLearn 自有 AI port 与基础设施 adapter，业务模块不得直接依赖厂商 SDK 或 Spring AI 类型 |
+| `agent` | Agent-Native 学习助手运行时：回合生命周期、事件流、能力/工具注册表、AgentLoop、上下文、记忆与 usage 可观测 |
+| `rag` | 资料问答、证据约束、RagPipeline 工厂、索引版本签名与 ParseEngine 注册表边界 |
 
 依赖方向：
 
@@ -292,6 +313,9 @@ RabbitMQ listener 使用与 HTTP executor 完全隔离的有界线程池；文�
 | `SearchController` | `SearchService` | 语义/关键词搜索入口 |
 | `TaskController` | `TaskService` | 任务状态查询 |
 | `AiProviderController` | `AiProviderStatusService` | AI Provider 脱敏状态 |
+| `AgentTurnController` | `TurnRuntimeService` | v2 Agent 回合 REST：启动、事件重放、取消、追问回复、活动回合 |
+| `AgentCapabilitiesController` | `CapabilityRegistry`、`ToolRegistry` | 枚举能力清单与声明式工具 schema |
+| `AgentTurnWebSocketHandler` | `TurnRuntimeService` | `/api/v2/ws` 命令分发、事件订阅与重放 |
 | `ApiExceptionHandler` | Spring MVC exception boundary | API 异常统一响应 |
 
 规则：
@@ -386,15 +410,43 @@ PostgreSQL 事务与 MinIO 不能原子提交，因此衍生资产先写临时 k
 
 环境变量覆盖 RabbitMQ host/port/username/password/vhost，MinIO endpoint/access key/secret key/bucket，以上处理开关与限制，以及 parser/OCR/LibreOffice/AI 的 timeout/retry/circuit breaker。具体键、默认值和合法范围以 `docs/tech-selection.md` 为唯一技术基线，根 `.env.example` 只提供非敏感本地值。启动时必须校验覆盖值；配置缺失、依赖不可用或 adapter 失败均不得产生静默 fallback 或虚假成功。
 
+### 3.3.3 Agent-Native 持久化模型
+
+Agent 运行时直接使用 PostgreSQL/JPA 表，不走 Flyway/Liquibase；Hibernate `ddl-auto` 管理基础列，必要的 PostgreSQL 索引和 vector 扩展由幂等 `ApplicationRunner` 补齐。
+
+```text
+turn                    # 回合主记录：scope/source JSON、状态、lastSeq、时间
+turn_events             # 结构化事件；唯一键 (turn_id, seq)，索引 (session_id, created_at)
+session_message         # 用户回合消息；索引 (session_id, created_at)
+session_summary         # PostgreSQL 滚动会话摘要与 summary watermark
+memory_trace            # L1 append-only 审计摘要
+memory_snapshot         # 领域实体快照，L2 的唯一内容输入
+memory_l2_doc           # 按 learner/surface 的 Markdown 记忆文档
+memory_l3_doc           # recent/profile/scope/preferences 四槽 Markdown 文档
+memory_meta             # L2 合并水位
+memory_consolidation_command  # 后台合并命令，唯一幂等键
+agent_semantic_memories      # 兼容语义召回索引；新增 L2/L3 不读取旧表
+```
+
+规则：
+
+- `turn`、用户消息和首个 `turn_started` 事件在同一事务落库；事件先持久化再实时推送。
+- `turn_events.metadata` 不得包含用户正文、Prompt、原始模型输出或 API key。
+- `session_summary` 的 `summary_up_to_message_id/created_at` 只在摘要成功后推进。
+- `memory_trace` 只追加摘要，不复制原文；`MemoryConsolidator` 只消费 `memory_snapshot`，不读 L1。
+- 当前在线回合尚未挂接 L1/snapshot 生产者，L2/L3 组件与调度器已落地；见开放风险。
+
 ### 3.4 AI 与 RAG 边界
 
 AI Provider 边界：
 
 ```text
 Generation / KnowledgePoint Application Service
-  -> AiProvider or SuiLearn AI Port
-     -> OpenAiCompatibleAiProvider
-     -> ai/infrastructure/springai adapter（预留）
+  -> AiProvider / SuiLearn AI Port
+     -> OpenAiCompatibleAiProvider（结构化 JSON）
+agent/loop
+  -> agent/llm/LlmClient
+     -> OpenAiCompatibleLlmClient（java.net.http SSE streaming + tool calls + usage）
 ```
 
 检索边界：
@@ -402,8 +454,9 @@ Generation / KnowledgePoint Application Service
 ```text
 RagController / SearchController
   -> RagService / SearchService
-  -> Retriever
-     -> KeywordRetriever
+  -> Retriever / RagPipeline
+     -> PgvectorHybridRagPipeline（包装 KeywordRetriever）
+     -> SmartRetriever（可选多查询改写，直接实例化于测试；生产未强制替换 KeywordRetriever）
      -> EmbeddingProvider
 ```
 
@@ -411,8 +464,8 @@ RagController / SearchController
 
 - OpenAI-compatible Provider 是当前运行时 AI 实现；默认开发和测试流程不得依赖生产替身 Provider。
 - Provider 只作为基础设施适配，不让业务层感知具体厂商。
-- Spring AI 只允许出现在 `ai/infrastructure/springai/**`，业务模块只能依赖 `ChatPort`、`EmbeddingPort`、`StructuredGenerationPort`、`RetrievalPort` 等 SuiLearn 自有端口。
-- 首轮只定义 Chat、Structured Output、Embedding 的 adapter 边界；VectorStore、Advisor 和 Tool Calling 后续单独确认。
+- `ai/infrastructure/springai/**` 目前只有未启用的 port adapter 占位类；项目没有 Spring AI 运行时依赖，Agent 循环不依赖 Spring AI 类型。
+- 业务模块只依赖 SuiLearn 自有端口；Agent 路径使用 `agent/llm/LlmClient`，由 OpenAI-compatible streaming adapter 提供 chat/tool-call/usage。
 - Provider 状态接口只能返回脱敏信息。
 - RAG 必须受 `knowledgeBaseId` 或 `materialId` 范围约束。
 - 回答需要返回来源引用；证据不足时表达不确定。
@@ -420,6 +473,49 @@ RagController / SearchController
 - text-only 候选召回必须走持久化检索索引（chunk 写入时由 `TextSearchTokenizer` 生成 `search_text`，PostgreSQL 生成列 `search_tsv = to_tsvector('simple', search_text)` + GIN 索引），不以全表 `findAll()` Java 扫描为主路径；中文经应用层 n-gram 进入索引。
 - 索引收窄仅用于 text-only 路径；当 embedding 可用时，对 scope 候选全量打分以保留语义召回。
 - BM25 打分按候选集每次查询预计算一次语料统计（词频/长度/document frequency），不得按候选重复分词。
+
+### 3.5 Agent-Native 回合运行时
+
+```text
+REST /api/v2/agent/turns  +  WebSocket /api/v2/ws
+  -> TurnRuntimeService
+       start/await/cancel/reply/replay/checkActiveTurn/recoverOrphans
+  -> TurnEventBus（每回合有界实时通道；持久化事件先落库后推送）
+  -> TurnOrchestrator
+       -> CapabilityRegistry -> CapabilityManifest
+       -> study_agent -> AgentLoop
+            -> ContextBuilder（PromptBlock + session_message 窗口 + 滚动摘要）
+            -> LlmClient（OpenAI-compatible streaming）
+            -> ToolDispatcher（<=8 并行、去重、缺参拒绝、ask_user 暂停）
+            -> ToolRegistry（OpenAI function-calling schema + capability 白名单）
+```
+
+关键事实：
+
+- v2 REST 入口为 `/api/v2/agent/turns`、`/events`、`/cancel`、`/reply`、`/sessions/{sessionId}/active-turn`、`/capabilities`；旧 `/api/v2/agents/study/**` 已删除。
+- WS companion schema 为 `contracts/schemas/suilearn-ws.yaml`，命令 `start_turn/subscribe_turn/resume_from/cancel_turn/submit_user_reply/check_active_turn/ping`。
+- `TurnEventBus` 每回合一个，默认容量 256；慢消费者丢实时帧，仍可经 `afterSeq` 从 PostgreSQL 完整续流。
+- 终态唯一：`DONE/CANCELLED/FAILED`，终态后拒绝新事件；`FAILED_ORPHANED` 用于应用重启后的孤儿恢复。
+- `TurnRuntimeService` 使用虚拟线程执行回合；同步 REST 等待终态的超时默认由 `suilearn.agent.run-timeout` 控制。
+- 内置能力：`study_agent`（默认，已接 AgentLoop）、`rag_qa`、`question_generation`（后两者已注册但未接线，返回 `TURN_EXECUTOR_UNAVAILABLE`）。
+- `study_agent` 工具：`search_knowledge`、`read_evidence`、`generate_practice`、`recall_memory`、`persist_memory`、`ask_user`；工具权限由 `CapabilityManifest.ownedTools()` + `ToolRegistry` 服务端校验。
+- `AgentLoop` 以原生 function calling 为主，最多 `suilearn.agent.max-steps` 步、工具调用预算 `suilearn.agent.max-tool-calls`、空回答 nudge 后 fail closed；`ask_user` 发布 `wait_for_input` 并原地恢复。
+- `ContextBuilder` 历史预算 = `context-max-tokens × 0.35`，超限先裁旧 tool 消息并加截断标记；`RollingSessionSummary` 使用 PostgreSQL 水位与反漂移重建。
+- `OpenAiCompatibleLlmClient` 使用与结构化 Provider 相同的 `java.net.http` 栈解析 SSE，不引入 Spring AI/LangChain4j。
+- `UsageTracker` 按模型价格表累计 prompt/completion token 与 USD；成功 `RESULT` 事件携带 usage/cost/context 元数据，REST `AgentTurnResult` 从最后一个 RESULT 事件映射五个扁平汇总字段。
+- `suilearn.agent.enabled=false`（默认）时 REST/WS 返回 `AGENT_FEATURE_DISABLED`；`suilearn.agent.websocket.enabled=true` 控制 WS 子开关。
+- `learnerId` 只是调用方提供的逻辑范围，不是身份；Phase 8 鉴权/隔离未启动。
+- Web 知识库工作台不调用 Agent 端点；Android 新协议客户端本批次延后，本地闭环不受影响。
+
+### 3.6 RAG 引擎化边界
+
+已落地为可独立实例化、可单测的附加边界：
+
+- `RagPipeline` / `PipelineFactory`：默认 pipeline 名为 `pgvector-hybrid`，包装现有 `KeywordRetriever`，现有 RAG 行为不变。
+- `EmbeddingSignature` / `IndexVersionManager`：binding/model/dim/baseUrl/apiVersion 哈希；签名变化返回 `needs_reindex`。
+- `ParseEngine` / `ParseEngineRegistry`：text-only、PDF、Office 和 OCR 引擎统一输出 `ParsedDocument`；复杂引擎复用 `DocumentParser` / `TesseractOcrAdapter`。
+- `SmartRetriever`：fake/real LlmClient 可生成最多 3 个查询变体，虚拟线程并行检索并按结果 id 去重；检索失败回退原查询。
+- 当前这些组件以新增边界和测试形式存在，尚未替换 `RagService` 生产检索主路径；接入切换需要新的 change 与运行态验证。
 
 ## 4. Web 当前结构
 
@@ -460,14 +556,16 @@ apps/web/
 
 ```text
 contracts/
-└─ openapi/
-   └─ suilearn-v2.yaml
+├─ openapi/
+│  └─ suilearn-v2.yaml
+└─ schemas/
+   └─ suilearn-ws.yaml
 ```
 
 职责：
 
-- `contracts/openapi/suilearn-v2.yaml` 是 Backend、Web 和 Android 远程能力的 API 单点真相。
-- `contracts/schemas/**` 预留给后续 JSON schema 或内容契约。
+- `contracts/openapi/suilearn-v2.yaml` 是 Backend、Web 和 Android 远程能力的 REST API 单点真相，包含 v2 Agent 回合与能力 schema。
+- `contracts/schemas/suilearn-ws.yaml` 是 Agent WebSocket companion schema：命令、事件、ack、error、pong 的契约真相源，由 golden files 测试锁定。
 
 规则：
 
@@ -544,6 +642,25 @@ Architecture Agent updates contracts
   -> Test / Reviewer validates cross-end consistency
 ```
 
+### 6.5 Agent-Native 回合数据流
+
+```text
+REST / WebSocket command
+  -> TurnRuntimeService.start
+  -> one transaction: turn + session_message(USER) + turn_started(event)
+  -> TurnOrchestrator -> AgentLoop
+       ContextBuilder(history + rolling summary + prompt blocks)
+       -> LlmClient SSE stream
+       -> ToolDispatcher -> Tool beans -> Retrieval/Memory/Practice ports
+  -> persisted events (seq asc, terminal unique)
+  -> live bus / afterSeq replay
+  -> REST AgentTurnResult(terminalEvent + usage/action/context)
+```
+
+- 事件先写 `turn_events` 再进入实时总线；客户端断线后按 `afterSeq` 重放。
+- `session_message` 当前记录用户回合输入；助手/工具轮次内容存在于 `turn_events` 的 `result`/`tool_result` 等结构化事件中，未作为独立会话消息回填。
+- 记忆召回工具当前走 `agent_semantic_memories` 兼容索引；L2/L3 文档与合并组件已落地，但尚未接入在线召回主路径。
+
 ## 7. 关键业务边界
 
 ### 7.1 学习内容与用户记录
@@ -586,12 +703,24 @@ Architecture Agent updates contracts
 - `correlationId`、`taskId`、`materialId` 只进入结构化日志或 trace；可通过 trace exemplar 关联指标样本，但不得成为 metric tags。日志、trace 和 exemplar 均不得记录完整正文、原始模型响应、密钥、永久凭据或临时授权地址。
 - Actuator/Micrometer 将 HTTP liveness/readiness 与后台处理依赖健康分层：PostgreSQL、RabbitMQ、MinIO 状态和队列/Outbox/DLQ/阶段/OCR/AI 指标必须可区分，依赖降级不得伪装为全系统健康。metric tags 只允许 `stage`、`outcome`、`dependency`、`queue`、`taskType`、`assetType` 等固定集合；其中 `queue`、`taskType`、`assetType` 必须使用代码定义的受控枚举，不得使用 ID、文件名、object key、错误消息或其他无界值。
 
+### 7.6 Agent 回合安全与一致性
+
+- 事件 metadata 白名单化：只放 `toolCalls`、`promptTokens`、`completionTokens`、`usageCostUsd`、`estimatedContextTokens`、`code`、`capability`、`tool`、`callId` 等聚合/受控值，不得含用户正文、Prompt、原始模型输出或 API key。
+- 工具结果和用户文本是不可信数据；系统 Prompt 固定声明该边界，工具权限由服务端强制，不依赖模型自觉。
+- 每个会话同时最多一个活动回合；重复启动返回 `AGENT_TURN_ACTIVE_CONFLICT`。
+- 取消、回复和事件查询只对已持久化回合生效；终态后拒绝取消与新事件。
+- Agent 生成内容不直接进入正式题库；`generate_practice` 只产出临时练习，正式保存仍走 generation 确认门禁。
+- usage 失败只影响成本字段和可观测性，不阻断回合；日志只记录 usage/outcome/errorCode。
+- Phase 8 鉴权未启动，`learnerId` 不能作为安全边界。
+
 ## 8. 测试与验证边界
 
 | 范围 | 测试位置 | 验证重点 |
 |---|---|---|
 | Android 本地 | `apps/android/src/test/**`、`apps/android/src/androidTest/**` | JSON 解析、Room 导入、Repository、UseCase、远程 client、Smoke UI |
 | Backend | `services/api/src/test/**` | Service/任务/AI/RAG 规则；资料流水线还需覆盖格式解析/OCR、资产补偿、Outbox/RabbitMQ 幂等恢复、健康和指标，以及 Markdown raw HTML、危险/混淆 URL、远程资源不自动加载边界 |
+| Agent | `services/api/src/test/java/com/suilearn/api/agent/**` | 回合运行时/WS/契约、能力与工具注册表、LlmClient SSE、AgentLoop/ToolDispatcher Eval、ContextBuilder/RollingSummary、记忆组件、UsageTracker、TurnResult 信封 |
+| RAG engine | `services/api/src/test/java/com/suilearn/api/rag/**` | PipelineFactory、EmbeddingSignature/IndexVersion、ParseEngineRegistry、SmartRetriever 去重/回退 |
 | Web | `npm --prefix apps/web run build` | TypeScript 类型、Vite 构建、API client 调用形态 |
 | Contracts | `contracts/**` diff 审查 | API 兼容性、字段语义、消费端适配范围 |
 | Compose 运行态 | 根 `compose.yml` + Testcontainers / 故障验收矩阵 | PostgreSQL/Outbox、RabbitMQ 中断恢复/重复投递/DLQ、MinIO 临时对象/清理、OCR/AI 超时、API/消费者重启、分层健康和指标 |
@@ -602,7 +731,7 @@ Architecture Agent updates contracts
 
 - `ApplicationStoreBoundaryTest` 检查模块 `application` 包不得直接引用 `SuiLearnV2Store`。
 - 后端回归测试应覆盖 `TaskService` / `TaskExecutor` 的任务生命周期委托，以及 `SourceService` 的来源标准化和删除影响规则。
-- Spring AI adapter 真正启用前，应继续通过源码扫描或架构测试确认业务模块没有直接 import Spring AI 类型。
+- Agent 路径通过源码扫描/架构测试确认业务模块不直接 import Spring AI 类型；旧 ReactAgent 残留由 `LegacyRetirementScanTest` 阻断。
 
 ## 9. 变更规则
 
@@ -620,3 +749,7 @@ Architecture Agent updates contracts
 - Web 类型当前手写维护，后续若契约变化频繁，可评估从 OpenAPI 生成类型。
 - Backend 以模块化单体承载 HTTP 与 RabbitMQ listener，并用隔离有界线程池控制任务资源。只有未来出现经验证的独立扩缩容或故障隔离需求时，才通过新架构变更评估拆分 Worker。
 - pgvector 能力仍需按 PostgreSQL 部署环境验证；关键词检索保留为非语义兜底，真实向量能力落地时需要补契约、配置和集成验证。
+- Agent 运行态真实模型/真实 PostgreSQL/WS 联调仍属具名 follow-up；当前回归排除 Testcontainers WSL socket。
+- `rag_qa`、`question_generation` 尚未接线独立循环，启动会返回 `TURN_EXECUTOR_UNAVAILABLE`；Android 新协议客户端由用户明确延后。
+- L1 trace/snapshot 生产者尚未挂入在线 AgentLoop，L2/L3 文档与 Consolidator 以组件和测试形式落地；在线 `recall_memory` 仍走旧 `agent_semantic_memories` 索引。
+- `session_message` 当前只持久化用户回合输入，助手/工具消息以 `turn_events` 结构化事件保存；若后续需要在上下文中回放完整多轮原文，需要单独 change。

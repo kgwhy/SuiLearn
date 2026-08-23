@@ -26,7 +26,7 @@ SuiLearn 当前采用三端渐进路线：
 | 范围 | 定位 | 技术选择 |
 |---|---|---|
 | Android App | 本地学习闭环，以及轻量消费 AI/知识库能力 | Native Android、Kotlin、Jetpack Compose、Room |
-| Java Backend | AI 生成、知识库、资料导入、RAG、语义搜索和任务状态 | Java、Spring Boot、JPA、PostgreSQL、OpenAI-compatible Provider、Spring AI adapter 边界 |
+| Java Backend | AI 生成、知识库、资料导入、RAG、语义搜索、任务状态与 Agent-Native 学习助手 | Java、Spring Boot、JPA、PostgreSQL、OpenAI-compatible Provider、`agent/llm` streaming client、Spring MVC WebSocket、RAG pipeline 边界 |
 | Web Frontend | 知识库工作台，承载资料导入、生成确认、搜索和问答 | React、TypeScript、Vite |
 | Contracts | 跨端 API 单点真相 | OpenAPI |
 
@@ -95,7 +95,9 @@ Android 约束：
 | 语言 | Java 21 |
 | Framework | Spring Boot 3.5.14 |
 | Build | Maven |
-| API | REST + JSON |
+| API | REST + JSON + WebSocket（`/api/v2/ws`） |
+| Agent WebSocket | `spring-boot-starter-websocket` + Spring MVC `TextWebSocketHandler`；不引入 WebFlux/Reactor |
+| Agent LLM client | `agent/llm/OpenAiCompatibleLlmClient`：`java.net.http` SSE streaming、原生 tool-call delta 与 usage 聚合；不引入 LangChain4j / Spring AI 运行时依赖 |
 | Persistence | Spring Data JPA |
 | 开发 / 测试数据库 | PostgreSQL；本地统一使用根目录 `compose.yml` 启动数据库 |
 | 目标数据库 | PostgreSQL |
@@ -103,17 +105,23 @@ Android 约束：
 | 向量检索 | pgvector / OpenAI-compatible embedding 优先，关键词检索作为无语义命中时的兜底 |
 | 检索索引迁移 | 项目无 Flyway/Liquibase，schema 由 Hibernate `ddl-auto` 管理；生成列、GIN 索引与 `search_text` 回填由运行时 `ApplicationRunner` 组件完成（沿用 `PostgresLargeObjectTextMigration` 模式） |
 | AI Provider | 业务层依赖 `AiProvider`；当前运行时实现为 OpenAI-compatible |
-| Spring AI | 预留 1.0.x 稳定线；首轮只建立 SuiLearn port 与 `ai/infrastructure/springai/**` adapter 边界，不启用 starter |
+| Spring AI | `pom.xml` 只保留 `spring-ai-bom` 1.1.2 做版本管理，无任何 Spring AI runtime 依赖；`ai/infrastructure/springai/**` 仅保留未启用的 port adapter 占位类，Agent 循环不使用 Spring AI 类型 |
 | 测试 | Spring Boot Test / JUnit |
 
 Backend 约束：
 
 - 后端 Java source/target 目标基线为 21；当前工程配置升级需由 Backend 任务修改 `services/api/pom.xml` 的 `java.version` 并运行测试确认。
-- 业务层不得直接依赖具体 AI 厂商 SDK；必须通过 `AiProvider` 边界。
-- 业务模块不得直接 import Spring AI 类型，例如 `ChatClient`、`ChatModel`、`EmbeddingModel`、`VectorStore`、`Advisor` 或 Tool Calling 类型。
-- Spring AI 相关代码只允许位于 `services/api/src/main/java/com/suilearn/api/ai/infrastructure/springai/**`。
-- 当前阶段不新增 Spring AI Maven 依赖；真正替换 OpenAI-compatible Provider 或启用 Spring AI starter 时，必须由架构 Agent 更新本文、修改 `services/api/pom.xml` 并运行后端测试。
+- 业务层不得直接依赖具体 AI 厂商 SDK；结构化生成通过 `AiProvider` 边界，Agent 通过 `agent/llm/LlmClient` 边界。
+- 业务模块和 Agent 循环不得直接 import Spring AI 类型，例如 `ChatClient`、`ChatModel`、`EmbeddingModel`、`VectorStore`、`Advisor` 或 Tool Calling 类型。
+- Spring AI 相关占位代码只允许位于 `services/api/src/main/java/com/suilearn/api/ai/infrastructure/springai/**`。
+- 当前不新增 Spring AI runtime 依赖；`spring-ai-bom` 仅保留为版本管理。真正启用 Spring AI starter 时，必须由架构 Agent 更新本文、修改 `services/api/pom.xml` 并运行后端测试。
+- Agent 路径固定为：`OpenAiCompatibleLlmClient` 走 `/chat/completions` SSE，使用 `prompt_tokens/completion_tokens` 聚合 usage，不支持时 fail closed，不静默切回结构化 Provider。
 - Provider 状态接口只能暴露脱敏配置，例如 base URL、模型名、超时、重试和 API key 环境变量名。
+- Agent 总开关 `suilearn.agent.enabled` 默认 false；`suilearn.agent.websocket.enabled` 默认 true。总开关关闭时 REST/WS 返回 `AGENT_FEATURE_DISABLED`，WS 子开关关闭时返回 `AGENT_WEBSOCKET_DISABLED`。
+- Agent 回合事件必须先把结构化事件持久化到 `turn_events`，再进入每回合有界实时总线；客户端用 `afterSeq` 从 PostgreSQL 重放，不把内存广播当持久化事实源。
+- Agent 事件 `metadata` 只允许聚合数字、受控错误码、能力名和工具名；不得写入用户正文、Prompt、原始模型输出、文件名、object key 或 API key。
+- 新 Agent 运行时不使用 Redis 作为会话摘要事实源；会话摘要和记忆表均在 PostgreSQL。现有 `spring-data-redis` starter 与 legacy `RedisSessionMemoryStore` 仍保留在仓库，待后续清理 change 处理。
+- `learnerId` 只是逻辑范围标识；Phase 8 鉴权/多租户未启动，任何依赖 learnerId 的隔离都不能视为安全边界。
 - 资料导入、embedding、生成内容必须有任务状态或可追踪结果，避免不可解释的后台副作用。
 - RAG 回答必须受知识库或资料范围约束；证据不足时表达不确定。
 - RabbitMQ、MinIO、CommonMark、Tika/PDFBox/POI、LibreOffice/Tesseract、Resilience4j 与 Actuator/Micrometer 是当前 Backend 运行时基线，升级或替换时必须在本文更新版本与验证证据。
@@ -131,6 +139,9 @@ Backend 约束：
 | OCR | Tesseract adapter；仅处理文本不足页面，独立并发限制与超时 |
 | 韧性 | Resilience4j；外部 adapter 和 AI 使用有界 timeout/retry/circuit breaker，消息退避仍由 RabbitMQ retry queue 管理 |
 | 可观测性 | Spring Boot Actuator + Micrometer；分层健康以及队列、Outbox、DLQ、阶段、OCR、AI 指标 |
+| Agent runtime | `TurnRuntimeService` + 每回合 `TurnEventBus` + PostgreSQL `turn/turn_events/session_message`；虚拟线程执行，终态唯一，重启孤儿恢复 `FAILED_ORPHANED` |
+| Agent context/memory | `ContextBuilder` 窗口守卫 + `RollingSessionSummary` PostgreSQL 水位；L1/L2/L3 记忆表、snapshot/command 与 `@Scheduled` Consolidator（在线生产者见架构开放风险） |
+| RAG engine | `RagPipeline`/`PipelineFactory`（默认 `pgvector-hybrid`）、`EmbeddingSignature`/`IndexVersionManager`、`ParseEngineRegistry`、`SmartRetriever` 多查询并行检索 |
 
 约束：
 
@@ -141,7 +152,7 @@ Backend 约束：
 - 不可信 Markdown 必须优先使用 CommonMark renderer 内建的 `escapeHtml(true)`、`sanitizeUrls(true)` 或版本等价配置：raw HTML 转义/禁用；普通链接 scheme allowlist 仅为 `http`、`https`、`mailto`；`javascript`、`data`、`file`、`vbscript` 和未知 scheme 禁止。远程图片/外部资源默认渲染为不带远程 `src` 的占位或替代文本，不自动发起网络请求；受控代理属于后续可选实现，启用时必须有目标 allowlist、回环/私网阻断和重定向复检。只有安全测试证明内建能力不足时，才选择额外 sanitizer 并锁定版本，不默认引入新的大型 sanitizer 依赖。
 - Resilience4j 的 adapter 级 timeout/retry/circuit breaker 必须遵守 5.4 的统一矩阵；RabbitMQ retry queue 是跨 ProcessingTask 尝试的唯一退避调度者，SDK 内部 retry 不得再叠加。
 - Actuator/Micrometer 的 liveness、HTTP/read readiness 与 processing dependencies health 必须分层。`correlationId`、`taskId`、`materialId` 只进入结构化日志/trace，可作为 exemplar 关联但不得成为 metric tags；metric tags 只允许 `stage`、`outcome`、`dependency`、`queue`、`taskType`、`assetType` 等固定集合，且 `queue`、`taskType`、`assetType` 必须是代码定义的受控枚举。正文、文件名、object key、错误消息、模型原始响应及任何 ID 不得进入 tags。
-- Redis、独立向量库、独立 Worker/微服务仍不引入；RabbitMQ 只承载消息，不能替代 PostgreSQL 业务事实或 Outbox。
+- Redis 不进入新 Agent 运行时的会话/记忆事实路径；现有 Redis starter 与 legacy session store 只作为待清理历史资产。独立向量库、独立 Worker/微服务仍不引入；RabbitMQ 只承载消息，不能替代 PostgreSQL 业务事实或 Outbox。
 
 ### 5.2 资料知识流水线选型与回退
 
@@ -174,6 +185,13 @@ Backend 约束：
 | 知识点自动生成 | `SUILEARN_KNOWLEDGE_POINT_AUTO_GENERATION_ENABLED` | `true`；AI 不可用时任务失败/不可用，不生成 fallback |
 | RabbitMQ 连接 | `SUILEARN_RABBITMQ_HOST`、`SUILEARN_RABBITMQ_PORT`、`SUILEARN_RABBITMQ_USERNAME`、`SUILEARN_RABBITMQ_PASSWORD`、`SUILEARN_RABBITMQ_VHOST` | 环境覆盖；凭据无生产默认值，不写日志/响应 |
 | MinIO 连接 | `SUILEARN_MINIO_ENDPOINT`、`SUILEARN_MINIO_ACCESS_KEY`、`SUILEARN_MINIO_SECRET_KEY`、`SUILEARN_MINIO_BUCKET` | 环境覆盖；bucket 私有，凭据无生产默认值，不暴露给客户端 |
+| Agent 总开关 | `SUILEARN_AGENT_ENABLED` | `false`；关闭时 Agent REST/WS 返回 `AGENT_FEATURE_DISABLED` |
+| Agent WS 子开关 | `SUILEARN_AGENT_WEBSOCKET_ENABLED` | `true`；关闭时 WS 返回 `AGENT_WEBSOCKET_DISABLED` |
+| Agent 循环预算 | `SUILEARN_AGENT_MAX_STEPS`、`SUILEARN_AGENT_SUBAGENT_MAX_STEPS`、`SUILEARN_AGENT_MAX_TOOL_CALLS` | `4` / `3` / `8`；配置绑定 fail-fast 校验 |
+| Agent 回合超时 | `SUILEARN_AGENT_RUN_TIMEOUT` | `90s`；REST 同步等待与回合 deadline 共用语义 |
+| Agent 上下文 | `SUILEARN_AGENT_CONTEXT_MAX_TOKENS` | `12000`；`ContextBuilder` 按 0.35 历史预算守卫 |
+| Agent 会话 | `SUILEARN_AGENT_SESSION_TTL`、`SUILEARN_AGENT_SESSION_MAX_TURNS` | `24h` / `20` |
+| Agent 记忆 | `SUILEARN_AGENT_MEMORY_TOP_K`、`SUILEARN_AGENT_MEMORY_MIN_CONFIDENCE` | `5` / `0.80` |
 
 根 `.env.example` 只承载非敏感本地默认值。配置绑定必须 fail-fast 校验非法数值，生产凭据必须由部署环境注入。RabbitMQ/MinIO 凭据缺失、OCR/LibreOffice 不可执行或 AI 未配置时，系统必须暴露真实健康/任务状态，不能静默改走其他实现。
 
@@ -277,9 +295,9 @@ Contracts 约束：
 | 平台 | iOS、Flutter | 产品明确需要跨平台移动端 |
 | 账号 | 登录、账号、云同步、多租户权限 | 产品规格进入同步或多人场景 |
 | Android | Hilt、多 Gradle module、SQLite FTS | 手动注入或 Room 查询成为明确瓶颈 |
-| Backend | Redis、独立 Worker/微服务、Milvus 等独立向量库、浏览器直传、云 OCR/Office 转换 | 只有目标 RabbitMQ listener、MinIO 和本地受限 adapter 已实现、验证，且观测证明它们无法满足扩缩容、隔离或质量要求时，才通过新 change 评估 |
+| Backend | 新 Agent 路径引入 Redis、独立 Worker/微服务、Milvus 等独立向量库、浏览器直传、云 OCR/Office 转换 | 只有目标 RabbitMQ listener、MinIO 和本地受限 adapter 已实现、验证，且观测证明它们无法满足扩缩容、隔离或质量要求时，才通过新 change 评估；既有 Redis starter 仅作为 legacy 待清理项 |
 | Web | 完整刷题学习端、复杂状态管理、大型组件库 | Web 工作台之外的学习端进入当前规格 |
-| AI | 多 Provider 路由、成本平台、模型评测系统 | 单 Provider 抽象不足以支撑已确认运营需求 |
+| AI | 多 Provider 路由、成本平台、模型评测系统、Spring AI starter/LangChain4j | 单 Provider 抽象不足以支撑已确认运营需求，或当前 `agent/llm` OpenAI-compatible 客户端经验证无法覆盖目标模型 |
 
 ## 9. 升级规则
 
