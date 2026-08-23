@@ -22,6 +22,7 @@ import jakarta.validation.constraints.Size;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,6 +38,7 @@ public class AgentTurnController {
     private final AgentConfigurationProperties properties;
     private final Duration syncTimeout;
 
+    @Autowired
     public AgentTurnController(TurnRuntimeService runtime, AgentConfigurationProperties properties) {
         this(runtime, properties, properties.runTimeout());
     }

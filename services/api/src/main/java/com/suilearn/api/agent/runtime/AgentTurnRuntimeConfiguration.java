@@ -110,17 +110,12 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
-    TurnExecutor turnExecutor(TurnOrchestrator orchestrator) {
-        return orchestrator;
-    }
-
-    @Bean
-    TurnRuntimeService turnRuntimeService(TurnStore store, TurnExecutor executor,
+    TurnRuntimeService turnRuntimeService(TurnStore store, TurnOrchestrator orchestrator,
                                           ObjectMapper objectMapper, Clock clock,
                                           CapabilityRegistry capabilities) {
         Set<String> capabilityNames = capabilities.manifests().stream()
             .map(CapabilityManifest::name).collect(Collectors.toUnmodifiableSet());
-        return new TurnRuntimeService(store, executor, objectMapper, clock, capabilityNames);
+        return new TurnRuntimeService(store, orchestrator, objectMapper, clock, capabilityNames);
     }
 
     @Bean
