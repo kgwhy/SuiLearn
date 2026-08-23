@@ -25,7 +25,7 @@ class AgentLoopEvalTest {
             LoopFixtures.studyManifest(), sink.sink());
 
         assertThat(result.status()).isEqualTo(LoopResult.Status.COMPLETED);
-        assertThat(sink.store().countEvents("turn-loop")).isEqualTo(7);
+        assertThat(sink.store().countEvents("turn-loop")).isEqualTo(8);
     }
 
     @Test

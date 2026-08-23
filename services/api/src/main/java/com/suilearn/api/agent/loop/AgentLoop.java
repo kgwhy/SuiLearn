@@ -2,6 +2,11 @@ package com.suilearn.api.agent.loop;
 
 import com.suilearn.api.agent.capability.CapabilityManifest;
 import com.suilearn.api.agent.config.AgentConfigurationProperties;
+import com.suilearn.api.agent.context.ContextBuilder;
+import com.suilearn.api.agent.context.ContextBuildResult;
+import com.suilearn.api.agent.context.PromptBlockAssembler;
+import com.suilearn.api.agent.context.SessionMessageHistory;
+import com.suilearn.api.agent.context.TokenEstimator;
 import com.suilearn.api.agent.llm.LlmClient;
 import com.suilearn.api.agent.llm.LlmMessage;
 import com.suilearn.api.agent.llm.LlmRequest;
@@ -32,21 +37,37 @@ public final class AgentLoop {
     private final AgentConfigurationProperties properties;
     private final Clock clock;
     private final String model;
+    private final ContextBuilder contextBuilder;
+    private final SessionMessageHistory history;
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model) {
+        this(client, dispatcher, tools, properties, clock, model,
+            new ContextBuilder(TokenEstimator.conservativeCharacters(),
+                new PromptBlockAssembler(TokenEstimator.conservativeCharacters()),
+                properties.contextMaxTokens()), null);
+    }
+
+    public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
+                     AgentConfigurationProperties properties, Clock clock, String model,
+                     ContextBuilder contextBuilder, SessionMessageHistory history) {
         this.client = client;
         this.dispatcher = dispatcher;
         this.tools = tools;
         this.properties = properties;
         this.clock = clock;
         this.model = model == null || model.isBlank() ? "suilearn-default" : model;
+        this.contextBuilder = contextBuilder;
+        this.history = history;
     }
 
     public LoopResult run(TurnContext context, CapabilityManifest manifest, TurnEventSink events) {
-        var messages = new ArrayList<LlmMessage>();
-        messages.add(LlmMessage.system(systemPrompt(manifest)));
-        messages.add(LlmMessage.user(context.userMessage()));
+        ContextBuildResult built = contextBuilder.build(context, manifest,
+            history == null ? List.of() : history.recent(context.sessionId(), context.turnId()));
+        var messages = new ArrayList<>(built.messages());
+        events.publish(EventType.PROGRESS, context.capability(), "context",
+            "Context budget report", Map.of("estimatedContextTokens", built.estimatedContextTokens(),
+                "trimmedMessages", built.trimmedMessages()));
         var toolSchemas = tools.openAiSchemas(manifest);
         var deadline = clock.instant().plus(properties.runTimeout());
         int toolCalls = 0;
@@ -117,7 +138,9 @@ public final class AgentLoop {
 
             events.publish(EventType.RESULT, context.capability(), "loop", content,
                 Map.of("toolCalls", toolCalls, "promptTokens", usage.promptTokens(),
-                    "completionTokens", usage.completionTokens()));
+                    "completionTokens", usage.completionTokens(),
+                    "estimatedContextTokens", built.estimatedContextTokens(),
+                    "actualPromptTokens", usage.promptTokens()));
             events.publishTerminal(EventType.DONE, TurnStatus.COMPLETED, context.capability(), "loop",
                 content, Map.of("toolCalls", toolCalls));
             return new LoopResult(LoopResult.Status.COMPLETED, content, toolCalls, usage);
@@ -134,14 +157,4 @@ public final class AgentLoop {
         return new LoopResult(LoopResult.Status.BUDGET_EXHAUSTED, "", step, usage);
     }
 
-    private String systemPrompt(CapabilityManifest manifest) {
-        try {
-            String raw = new String(new ClassPathResource(PROMPT_RESOURCE).getInputStream().readAllBytes(),
-                StandardCharsets.UTF_8);
-            return raw.replace("{capability}", manifest.name())
-                .replace("{tools}", String.join(", ", manifest.ownedTools()));
-        } catch (IOException exception) {
-            throw new IllegalStateException("Agent loop prompt resource is unavailable", exception);
-        }
-    }
 }
