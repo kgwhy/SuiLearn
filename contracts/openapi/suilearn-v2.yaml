@@ -762,6 +762,25 @@ paths:
         "503":
           $ref: "#/components/responses/AgentUnavailable"
 
+
+  /api/v2/agent/capabilities:
+    get:
+      summary: List registered v2 Agent capabilities and declarative tool schemas
+      description: >
+        Enumerates built-in capabilities, each capability's owned tools, and every registered tool's
+        OpenAI-compatible function schema. The endpoint is gated by suilearn.agent.enabled and returns
+        sanitized metadata only; no prompts, user content, model output, or secrets are included.
+      responses:
+        "200":
+          description: Capability and tool registry descriptors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentCapabilitiesResponse"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/turns:
     post:
       summary: Start a v2 Agent turn and wait synchronously for its terminal event
@@ -1569,6 +1588,54 @@ components:
           type: string
           enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED, null]
           nullable: true
+
+    AgentCapabilitiesResponse:
+      type: object
+      required: [capabilities, tools]
+      properties:
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentCapabilityDescriptor"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentToolDescriptor"
+    AgentCapabilityDescriptor:
+      type: object
+      required: [name, description, ownedTools]
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        ownedTools:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    AgentToolDescriptor:
+      type: object
+      required: [name, description, parameters, deferred, requiredScopes]
+      description: >
+        OpenAI function-calling compatible tool descriptor. parameters is a JSON Schema object for tool
+        arguments. requiredScopes is server-side permission metadata and is never sent to a model as authority.
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        parameters:
+          type: object
+        deferred:
+          type: boolean
+        requiredScopes:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
     AgentTurnError:
       type: object
       required: [code, message]

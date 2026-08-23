@@ -1,0 +1,53 @@
+# Agent-Native Capability/Tool Registry 任务
+
+- Change: `agent-native-capability-tool-registry`
+- Owner: Leader 协调；Architect 拥有契约，Server Backend 拥有 `services/api/**`，Test 独立验证，Reviewer 单人自审
+- 级别: Major
+- 基线引用: `24720c11369caf1a0b06d569046083d3932f2266`
+- 执行模式: serial（L3）
+- 决策记录: `.agents/notes/implemented/architecture/2026-08-23-agent-native-capability-tool-registry.md`
+
+## 待办
+
+- [x] 1.1 创建 change 包与 proposed Agent Note
+  - Owner: Leader
+  - Allowed: `openspec/changes/agent-native-capability-tool-registry/**`, `.agents/notes/implemented/architecture/2026-08-23-agent-native-capability-tool-registry.md`
+  - Forbidden: `apps/**`, `services/**`, `contracts/**`
+  - Test: `python3 scripts/check_agent_notes.py`
+  - Review focus: 一个 active change home、Major 产物完整、Alternatives 真实
+- [x] 2.1 实现 ToolRegistry 与 CapabilityRegistry
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/runtime/**`, `services/api/src/main/java/com/suilearn/api/agent/capability/**`, `services/api/src/main/java/com/suilearn/api/agent/tool/**`, `services/api/src/test/java/com/suilearn/api/agent/runtime/**`
+  - Forbidden: `contracts/**`、旧 `AgentToolCatalog` 调用
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=CapabilityToolRegistryTest`
+  - Review focus: 默认 study_agent、重复名拒绝、OpenAI schema 形状、权限交集
+- [x] 3.1 实现六个声明式 Tool bean
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/tool/**`, `services/api/src/test/java/com/suilearn/api/agent/tool/**`
+  - Forbidden: 正式题库/generated-content/task store、旧 `AgentToolCatalog` 新依赖
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentDeclarativeToolsTest`
+  - Review focus: scope/删除校验、临时练习、memory 降级、pauseForUser
+- [x] 4.1 实现 TurnOrchestrator 并接入 TurnRuntimeService
+  - Owner: Server Backend
+  - Allowed: `services/api/src/main/java/com/suilearn/api/agent/runtime/**`, `services/api/src/test/java/com/suilearn/api/agent/runtime/**`
+  - Forbidden: 真实 LLM 循环、旧 Agent 桥接
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=TurnOrchestratorTest`
+  - Review focus: capability 路由、unavailable 终态、事件 source
+- [x] 5.1 新增 capabilities REST 契约与 controller
+  - Owner: Architect + Server Backend
+  - Allowed: `contracts/openapi/suilearn-v2.yaml`, `services/api/src/main/java/com/suilearn/api/agent/controller/**`, `services/api/src/test/java/com/suilearn/api/agent/controller/**`, `services/api/src/test/java/com/suilearn/api/agent/contract/**`
+  - Forbidden: 旧 `/api/v2/agents/study/runs` 语义、Web/Android
+  - Test: `mvn -f services/api/pom.xml test -q -Dtest=AgentCapabilitiesControllerTest,AgentCapabilitiesOpenApiContractTest`
+  - Review focus: additive 契约、总开关、schema sanitized
+- [x] 6.1 运行定向验证并记录 verification
+  - Owner: Test
+  - Allowed: `openspec/changes/agent-native-capability-tool-registry/verification.md`, `openspec/changes/agent-native-capability-tool-registry/tasks.md`
+  - Forbidden: 业务代码、`contracts/**`
+  - Test: `python3 scripts/change_scope.py --base 24720c11369caf1a0b06d569046083d3932f2266`；按 verification-selection 执行
+  - Review focus: 干净 shell、原始输出、失败根因
+- [x] 7.1 单人自审与归档准备
+  - Owner: Reviewer
+  - Allowed: `openspec/changes/agent-native-capability-tool-registry/archive.md`, `openspec/changes/agent-native-capability-tool-registry/verification.md`, `.agents/notes/implemented/architecture/2026-08-23-agent-native-capability-tool-registry.md`
+  - Forbidden: 业务代码、`contracts/**`
+  - Test: `python3 scripts/check_suilearn_workflow.py --closing-change agent-native-capability-tool-registry`；`python3 scripts/check_agent_notes.py`
+  - Review focus: `review_mode: single-agent`、P0/P1/P2 关闭或延期、Sync Gate 范围

@@ -10,7 +10,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-@RestControllerAdvice(assignableTypes = AgentTurnController.class)
+@RestControllerAdvice(assignableTypes = {AgentTurnController.class, AgentCapabilitiesController.class})
 public class AgentTurnExceptionHandler {
     @ExceptionHandler(TurnApiException.class)
     public ResponseEntity<AgentTurnError> handle(TurnApiException exception) {

@@ -1,17 +1,32 @@
 package com.suilearn.api.agent.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.suilearn.api.agent.capability.CapabilityManifest;
 import com.suilearn.api.agent.infrastructure.turn.JpaTurnStore;
+import com.suilearn.api.agent.memory.MemoryManager;
+import com.suilearn.api.agent.tool.AskUserTool;
+import com.suilearn.api.agent.tool.EvidenceReadPort;
+import com.suilearn.api.agent.tool.EvidenceSearchPort;
+import com.suilearn.api.agent.tool.GeneratePracticeTool;
+import com.suilearn.api.agent.tool.PersistMemoryTool;
+import com.suilearn.api.agent.tool.PracticeCoachSubAgent;
+import com.suilearn.api.agent.tool.ReadEvidenceTool;
+import com.suilearn.api.agent.tool.RecallMemoryTool;
+import com.suilearn.api.agent.tool.SearchKnowledgeTool;
+import com.suilearn.api.agent.tool.Tool;
 import com.suilearn.api.agent.infrastructure.turn.SessionMessageJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnEventJpaRepository;
 import com.suilearn.api.agent.infrastructure.turn.TurnJpaRepository;
 import java.time.Clock;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -28,14 +43,62 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
-    TurnExecutor turnExecutor() {
-        return new UnavailableTurnExecutor();
+    CapabilityRegistry capabilityRegistry() {
+        return CapabilityRegistry.builtin();
+    }
+
+    @Bean
+    TurnOrchestrator turnOrchestrator(CapabilityRegistry capabilities) {
+        return new TurnOrchestrator(capabilities);
+    }
+
+    @Bean
+    SearchKnowledgeTool searchKnowledgeTool(ObjectProvider<EvidenceSearchPort> searchPort) {
+        return new SearchKnowledgeTool(searchPort.getIfAvailable());
+    }
+
+    @Bean
+    ReadEvidenceTool readEvidenceTool(ObjectProvider<EvidenceReadPort> readPort) {
+        return new ReadEvidenceTool(readPort.getIfAvailable());
+    }
+
+    @Bean
+    GeneratePracticeTool generatePracticeTool(ObjectProvider<PracticeCoachSubAgent> coach) {
+        return new GeneratePracticeTool(coach.getIfAvailable());
+    }
+
+    @Bean
+    RecallMemoryTool recallMemoryTool(ObjectProvider<MemoryManager> memory) {
+        return new RecallMemoryTool(memory.getIfAvailable());
+    }
+
+    @Bean
+    PersistMemoryTool persistMemoryTool(ObjectProvider<MemoryManager> memory) {
+        return new PersistMemoryTool(memory.getIfAvailable());
+    }
+
+    @Bean
+    AskUserTool askUserTool() {
+        return new AskUserTool();
+    }
+
+    @Bean
+    ToolRegistry toolRegistry(Map<String, Tool> tools) {
+        return new ToolRegistry(tools);
+    }
+
+    @Bean
+    TurnExecutor turnExecutor(TurnOrchestrator orchestrator) {
+        return orchestrator;
     }
 
     @Bean
     TurnRuntimeService turnRuntimeService(TurnStore store, TurnExecutor executor,
-                                          ObjectMapper objectMapper, Clock clock) {
-        return new TurnRuntimeService(store, executor, objectMapper, clock, Set.of("study_agent"));
+                                          ObjectMapper objectMapper, Clock clock,
+                                          CapabilityRegistry capabilities) {
+        Set<String> capabilityNames = capabilities.manifests().stream()
+            .map(CapabilityManifest::name).collect(Collectors.toUnmodifiableSet());
+        return new TurnRuntimeService(store, executor, objectMapper, clock, capabilityNames);
     }
 
     @Bean
