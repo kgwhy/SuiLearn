@@ -72,6 +72,8 @@ suilearn.agent.session.ttl=${SUILEARN_AGENT_SESSION_TTL:24h}
 suilearn.agent.session.max-turns=${SUILEARN_AGENT_SESSION_MAX_TURNS:20}
 suilearn.agent.memory.top-k=${SUILEARN_AGENT_MEMORY_TOP_K:5}
 suilearn.agent.memory.min-confidence=${SUILEARN_AGENT_MEMORY_MIN_CONFIDENCE:0.80}
+suilearn.auth.enabled=${SUILEARN_AUTH_ENABLED:false}
+suilearn.auth.tokens=${SUILEARN_AUTH_TOKENS:}
 
 # Canonical adapter retry setting for new local configurations.
 suilearn.adapter.max-retries=${SUILEARN_ADAPTER_MAX_RETRIES:0}

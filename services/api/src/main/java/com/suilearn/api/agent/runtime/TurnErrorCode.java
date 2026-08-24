@@ -4,6 +4,7 @@ import org.springframework.http.HttpStatus;
 
 public enum TurnErrorCode {
     INVALID_AGENT_REQUEST(HttpStatus.BAD_REQUEST, "The Agent turn request is invalid."),
+    AGENT_AUTH_REQUIRED(HttpStatus.UNAUTHORIZED, "Agent authentication is required."),
     AGENT_FEATURE_DISABLED(HttpStatus.NOT_FOUND, "The study Agent feature is disabled."),
     AGENT_WEBSOCKET_DISABLED(HttpStatus.NOT_FOUND, "The Agent WebSocket endpoint is disabled."),
     AGENT_SCOPE_REQUIRED(HttpStatus.BAD_REQUEST, "A knowledge scope is required."),

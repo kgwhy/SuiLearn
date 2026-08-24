@@ -1,6 +1,7 @@
 package com.suilearn.api.agent.context;
 
 import com.suilearn.api.agent.capability.CapabilityManifest;
+import com.suilearn.api.agent.learner.LearnerProfile;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -18,10 +19,20 @@ public final class PromptBlockAssembler {
     }
 
     public Assembled assemble(CapabilityManifest manifest, List<PromptBlock> memoryBlocks) {
+        return assemble(manifest, memoryBlocks, null);
+    }
+
+    public Assembled assemble(CapabilityManifest manifest, List<PromptBlock> memoryBlocks, LearnerProfile profile) {
         var blocks = new java.util.ArrayList<PromptBlock>();
         blocks.add(block("general", generalFor(manifest.name())));
         blocks.add(block("policy", policy(manifest.name())));
         blocks.add(block("capability", "Capability: " + manifest.name()));
+        if (profile != null && profile.persona() != null && !profile.persona().isBlank()) {
+            blocks.add(block("persona", "Learner persona: " + profile.persona()));
+        }
+        if (profile != null && !profile.skills().isEmpty()) {
+            blocks.add(block("skills", "Learner skills: " + String.join(", ", profile.skills())));
+        }
         blocks.add(block("memory", memoryBlocks == null || memoryBlocks.isEmpty()
             ? "No long-term memory injected for this turn." : join(memoryBlocks)));
         blocks.add(block("tools", "Available tools: " + String.join(", ", manifest.ownedTools())));

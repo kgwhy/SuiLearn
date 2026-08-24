@@ -33,7 +33,7 @@ class AgentTurnWsContractTest {
             "wait_for_input");
 
         Map<String, Object> errors = map(schemas.get("TurnErrorCode"));
-        assertThat((List<String>) errors.get("enum")).contains("AGENT_WEBSOCKET_DISABLED", "AGENT_TURN_ACTIVE_CONFLICT");
+        assertThat((List<String>) errors.get("enum")).contains("AGENT_WEBSOCKET_DISABLED", "AGENT_TURN_ACTIVE_CONFLICT", "AGENT_AUTH_REQUIRED");
     }
 
     @Test

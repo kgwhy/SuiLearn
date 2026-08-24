@@ -86,24 +86,46 @@ public class TurnRuntimeService {
             record.createdAt(), record.finishedAt() == null ? terminal.ts() : record.finishedAt());
     }
 
+    public TurnRecord requireTurn(String turnId, String learnerId) {
+        var record = store.findTurn(turnId).orElseThrow(() -> new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        if (learnerId != null && !learnerId.equals(record.learnerId())) {
+            throw new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_FOUND);
+        }
+        return record;
+    }
+
     public TurnEventPage eventsAfter(String turnId, long afterSeq) {
+        return eventsAfter(turnId, afterSeq, null);
+    }
+
+    public TurnEventPage eventsAfter(String turnId, long afterSeq, String learnerId) {
         if (afterSeq < 0) {
             throw new TurnApiException(TurnErrorCode.INVALID_AGENT_REQUEST);
         }
-        var record = store.findTurn(turnId).orElseThrow(() -> new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        var record = requireTurn(turnId, learnerId);
         return new TurnEventPage(turnId, afterSeq, record.lastSeq(), store.findEventsAfter(turnId, afterSeq));
     }
 
     public TurnEventSubscription subscribeReplaying(String turnId, long afterSeq, TurnEventListener listener) {
+        return subscribeReplaying(turnId, afterSeq, listener, null);
+    }
+
+    public TurnEventSubscription subscribeReplaying(String turnId, long afterSeq, TurnEventListener listener,
+                                                    String learnerId) {
         if (afterSeq < 0) {
             throw new TurnApiException(TurnErrorCode.INVALID_AGENT_REQUEST);
         }
+        requireTurn(turnId, learnerId);
         var bus = requireBus(turnId);
         return bus.subscribeReplaying(listener, afterSeq, seq -> store.findEventsAfter(turnId, seq));
     }
 
     public TurnRecord cancel(String turnId) {
-        var record = store.findTurn(turnId).orElseThrow(() -> new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        return cancel(turnId, null);
+    }
+
+    public TurnRecord cancel(String turnId, String learnerId) {
+        var record = requireTurn(turnId, learnerId);
         if (record.status().isTerminal()) {
             throw new TurnApiException(TurnErrorCode.AGENT_TURN_TERMINAL);
         }
@@ -114,7 +136,11 @@ public class TurnRuntimeService {
     }
 
     public TurnRecord submitReply(String turnId, String text, Map<String, Object> answers) {
-        var record = store.findTurn(turnId).orElseThrow(() -> new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        return submitReply(turnId, text, answers, null);
+    }
+
+    public TurnRecord submitReply(String turnId, String text, Map<String, Object> answers, String learnerId) {
+        var record = requireTurn(turnId, learnerId);
         if (record.status() != TurnStatus.WAITING_INPUT) {
             throw new TurnApiException(TurnErrorCode.AGENT_TURN_NOT_WAITING_FOR_INPUT);
         }
@@ -133,11 +159,18 @@ public class TurnRuntimeService {
     }
 
     public ActiveTurnInfo checkActiveTurn(String sessionId) {
+        return checkActiveTurn(sessionId, null);
+    }
+
+    public ActiveTurnInfo checkActiveTurn(String sessionId, String learnerId) {
         var active = store.findActiveTurn(sessionId);
         if (active.isEmpty()) {
             return ActiveTurnInfo.none(sessionId);
         }
         var record = active.orElseThrow();
+        if (learnerId != null && !learnerId.equals(record.learnerId())) {
+            return ActiveTurnInfo.none(sessionId);
+        }
         var bus = buses.get(record.turnId());
         if (bus != null && !bus.isTerminal()) {
             return new ActiveTurnInfo(sessionId, record.turnId(), record.status());

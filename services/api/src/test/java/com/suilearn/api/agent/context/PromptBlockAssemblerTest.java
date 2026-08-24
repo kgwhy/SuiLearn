@@ -3,6 +3,7 @@ package com.suilearn.api.agent.context;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.suilearn.api.agent.capability.BuiltinCapabilities;
+import com.suilearn.api.agent.learner.LearnerProfile;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,18 @@ class PromptBlockAssemblerTest {
         assertThat(first.blocks()).extracting(PromptBlock::name)
             .containsExactly("general", "policy", "capability", "memory", "tools", "skills");
         assertThat(first.content()).contains("study_agent", "search_knowledge", "ask_user");
+    }
+
+    @Test
+    void learnerProfileAddsPersonaAndSkillsBlocks() {
+        var assembler = new PromptBlockAssembler(TokenEstimator.conservativeCharacters());
+
+        var assembled = assembler.assemble(BuiltinCapabilities.studyAgent().manifest(), List.of(),
+            new LearnerProfile("learner-a", "visual learner", List.of("Java", "Spring")));
+
+        assertThat(assembled.blocks()).extracting(PromptBlock::name)
+            .contains("persona", "skills");
+        assertThat(assembled.content()).contains("Learner persona: visual learner", "Learner skills: Java, Spring");
     }
 
     @Test

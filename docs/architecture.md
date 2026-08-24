@@ -419,6 +419,7 @@ turn                    # 回合主记录：scope/source JSON、状态、lastSeq
 turn_events             # 结构化事件；唯一键 (turn_id, seq)，索引 (session_id, created_at)
 session_message         # 用户回合消息；索引 (session_id, created_at)
 session_summary         # PostgreSQL 滚动会话摘要与 summary watermark
+learner_profile        # Phase 8 persona 与 skills，按 learnerId 主键
 memory_trace            # L1 append-only 审计摘要
 memory_snapshot         # 领域实体快照，L2 的唯一内容输入
 memory_l2_doc           # 按 learner/surface 的 Markdown 记忆文档
@@ -504,7 +505,9 @@ REST /api/v2/agent/turns  +  WebSocket /api/v2/ws
 - `OpenAiCompatibleLlmClient` 使用与结构化 Provider 相同的 `java.net.http` 栈解析 SSE，不引入 Spring AI/LangChain4j。
 - `UsageTracker` 按模型价格表累计 prompt/completion token 与 USD；成功 `RESULT` 事件携带 usage/cost/context 元数据，REST `AgentTurnResult` 从最后一个 RESULT 事件映射五个扁平汇总字段。
 - `suilearn.agent.enabled=false`（默认）时 REST/WS 返回 `AGENT_FEATURE_DISABLED`；`suilearn.agent.websocket.enabled=true` 控制 WS 子开关。
-- `learnerId` 只是调用方提供的逻辑范围，不是身份；Phase 8 鉴权/隔离未启动。
+- Phase 8 安全默认关闭：`suilearn.auth.enabled=false`。开启后 `AgentSecurityConfiguration` 保护 `/api/v2/agent/**`，`LearnerTokenHandshakeInterceptor` 校验 WS header/query token。
+- `LearnerProfileService` 提供有界 persona/skills 持久化；`PromptBlockAssembler` 对非空 profile 插入 `persona`/`skills` blocks。
+- `suilearn.auth.enabled=false` 时保持 trusted single-user；开启后 Agent REST/WS 使用 Bearer token，principal learnerId 是权威 learner。
 - Web 知识库工作台不调用 Agent 端点；Android 新协议客户端本批次延后，本地闭环不受影响。
 
 ### 3.6 RAG 引擎化边界
@@ -713,7 +716,7 @@ REST / WebSocket command
 - 取消、回复和事件查询只对已持久化回合生效；终态后拒绝取消与新事件。
 - Agent 生成内容不直接进入正式题库；`generate_practice` 只产出临时练习，正式保存仍走 generation 确认门禁。
 - usage 失败只影响成本字段和可观测性，不阻断回合；日志只记录 usage/outcome/errorCode。
-- Phase 8 鉴权未启动，`learnerId` 不能作为安全边界。
+- 鉴权开启时 Agent turn/events/profile 按 principal learnerId 隔离，跨 learner 访问返回 not found；鉴权关闭时仍是 trusted single-user 兼容模式。
 
 ## 8. 测试与验证边界
 
@@ -754,4 +757,5 @@ REST / WebSocket command
 - Agent 运行态真实模型/真实 PostgreSQL/WS 联调仍属具名 follow-up；当前回归排除 Testcontainers WSL socket。
 - Android 新协议客户端由用户明确延后；真实模型 / 真实 PostgreSQL / WS 运行态联调仍是具名 follow-up。
 - `SmartRetriever` 多查询改写保持可选，不默认替换 `pgvector-hybrid` 生产 pipeline。
+- 现有知识库工作台资源仍未挂 learner_id，不能宣称多租户；多 learner 安全边界当前覆盖 Agent runtime 与 profile。
 - `session_message` 当前只持久化用户回合输入，助手/工具消息以 `turn_events` 结构化事件保存；若后续需要在上下文中回放完整多轮原文，需要单独 change。

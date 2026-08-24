@@ -14,6 +14,8 @@ import com.suilearn.api.agent.runtime.TurnErrorCode;
 import com.suilearn.api.agent.runtime.TurnEventSubscription;
 import com.suilearn.api.agent.runtime.TurnEventListener;
 import com.suilearn.api.agent.runtime.TurnRuntimeService;
+import com.suilearn.api.security.AgentAuthProperties;
+import com.suilearn.api.security.LearnerTokenHandshakeInterceptor;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,20 +35,39 @@ public class AgentTurnWebSocketHandler extends TextWebSocketHandler {
     private final AgentConfigurationProperties agentProperties;
     private final AgentWebSocketProperties websocketProperties;
     private final ObjectMapper objectMapper;
+    private final AgentAuthProperties authProperties;
     private final Map<WebSocketSession, Map<String, TurnEventSubscription>> subscriptions = new ConcurrentHashMap<>();
 
     public AgentTurnWebSocketHandler(TurnRuntimeService runtime,
                                      AgentConfigurationProperties agentProperties,
                                      AgentWebSocketProperties websocketProperties,
                                      ObjectMapper objectMapper) {
+        this(runtime, agentProperties, websocketProperties, objectMapper, new AgentAuthProperties());
+    }
+
+    public AgentTurnWebSocketHandler(TurnRuntimeService runtime,
+                                     AgentConfigurationProperties agentProperties,
+                                     AgentWebSocketProperties websocketProperties,
+                                     ObjectMapper objectMapper,
+                                     AgentAuthProperties authProperties) {
         this.runtime = runtime;
         this.agentProperties = agentProperties;
         this.websocketProperties = websocketProperties;
         this.objectMapper = objectMapper;
+        this.authProperties = authProperties;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        if (authProperties.isEnabled() && !hasAuthenticatedLearner(session)) {
+            sendError(session, TurnErrorCode.AGENT_AUTH_REQUIRED, null);
+            try {
+                session.close(CloseStatus.POLICY_VIOLATION);
+            } catch (IOException ignored) {
+                // The sanitized error frame has already been sent.
+            }
+            return;
+        }
         sendAck(session, "connect", null, null);
     }
 
@@ -96,6 +117,10 @@ public class AgentTurnWebSocketHandler extends TextWebSocketHandler {
             sendError(session, TurnErrorCode.AGENT_WEBSOCKET_DISABLED, null);
             return;
         }
+        if (authProperties.isEnabled() && !hasAuthenticatedLearner(session)) {
+            sendError(session, TurnErrorCode.AGENT_AUTH_REQUIRED, null);
+            return;
+        }
 
         String command = root.path("command").asText("");
         switch (command) {
@@ -104,17 +129,18 @@ public class AgentTurnWebSocketHandler extends TextWebSocketHandler {
             case "subscribe_turn" -> subscribe(session, root, false);
             case "resume_from" -> subscribe(session, root, true);
             case "cancel_turn" -> {
-                var record = runtime.cancel(requiredText(root, "turnId"));
+                var record = runtime.cancel(requiredText(root, "turnId"), learnerId(session, root, null));
                 sendAck(session, "cancel_turn", record.turnId(), record.status().name());
             }
             case "submit_user_reply" -> {
                 var record = runtime.submitReply(requiredText(root, "turnId"),
                     root.hasNonNull("text") ? root.get("text").asText() : null,
-                    root.hasNonNull("answers") ? objectMapper.convertValue(root.get("answers"), Map.class) : null);
+                    root.hasNonNull("answers") ? objectMapper.convertValue(root.get("answers"), Map.class) : null,
+                    learnerId(session, root, null));
                 sendAck(session, "submit_user_reply", record.turnId(), record.status().name());
             }
             case "check_active_turn" -> {
-                var info = runtime.checkActiveTurn(requiredText(root, "sessionId"));
+                var info = runtime.checkActiveTurn(requiredText(root, "sessionId"), learnerId(session, root, null));
                 var payload = new LinkedHashMap<String, Object>();
                 payload.put("kind", "ack");
                 payload.put("command", "check_active_turn");
@@ -135,30 +161,53 @@ public class AgentTurnWebSocketHandler extends TextWebSocketHandler {
             throw new TurnApiException(TurnErrorCode.AGENT_SCOPE_REQUIRED);
         }
         var scope = new StudyScope(knowledgeBaseId, materialId);
-        var command = new StartTurnCommand(requiredText(root, "learnerId"),
+        String requestedLearnerId = textOrNull(root, "learnerId");
+        if (!authProperties.isEnabled() && requestedLearnerId == null) {
+            throw new TurnApiException(TurnErrorCode.INVALID_AGENT_REQUEST);
+        }
+        var command = new StartTurnCommand(learnerId(session, root, requestedLearnerId),
             textOrNull(root, "sessionId"), requiredText(root, "message"), textOrNull(root, "capability"), scope,
             List.of(), attachments(root));
         var outcome = runtime.start(command);
-        subscribe(session, outcome.record().turnId(), 0);
+        subscribe(session, outcome.record().turnId(), 0, command.learnerId());
         sendAck(session, "start_turn", outcome.record().turnId(), outcome.record().status().name());
     }
 
     private void subscribe(WebSocketSession session, JsonNode root, boolean resume) {
         String turnId = requiredText(root, "turnId");
         long afterSeq = root.path("afterSeq").asLong(0);
-        subscribe(session, turnId, afterSeq);
+        String learnerId = learnerId(session, root, null);
+        subscribe(session, turnId, afterSeq, learnerId);
         sendAck(session, resume ? "resume_from" : "subscribe_turn", turnId, null);
     }
 
-    private void subscribe(WebSocketSession session, String turnId, long afterSeq) {
+    private void subscribe(WebSocketSession session, String turnId, long afterSeq, String learnerId) {
         var sessionSubscriptions = subscriptions.computeIfAbsent(session, ignored -> new ConcurrentHashMap<>());
         var previous = sessionSubscriptions.remove(turnId);
         if (previous != null) {
             previous.close();
         }
         TurnEventListener listener = event -> sendEvent(session, event);
-        var subscription = runtime.subscribeReplaying(turnId, afterSeq, listener);
+        var subscription = runtime.subscribeReplaying(turnId, afterSeq, listener, learnerId);
         sessionSubscriptions.put(turnId, subscription);
+    }
+
+    private boolean hasAuthenticatedLearner(WebSocketSession session) {
+        Object value = session.getAttributes().get(LearnerTokenHandshakeInterceptor.LEARNER_ID_ATTRIBUTE);
+        Object failed = session.getAttributes().get(LearnerTokenHandshakeInterceptor.AUTH_FAILED_ATTRIBUTE);
+        return value != null && !Boolean.TRUE.equals(failed);
+    }
+
+    private String learnerId(WebSocketSession session, JsonNode root, String requested) {
+        if (!authProperties.isEnabled()) {
+            return requested;
+        }
+        Object value = session.getAttributes().get(LearnerTokenHandshakeInterceptor.LEARNER_ID_ATTRIBUTE);
+        Boolean failed = (Boolean) session.getAttributes().get(LearnerTokenHandshakeInterceptor.AUTH_FAILED_ATTRIBUTE);
+        if (value == null || Boolean.TRUE.equals(failed)) {
+            throw new TurnApiException(TurnErrorCode.AGENT_AUTH_REQUIRED);
+        }
+        return value.toString();
     }
 
     private void sendEvent(WebSocketSession session, StreamEvent event) {

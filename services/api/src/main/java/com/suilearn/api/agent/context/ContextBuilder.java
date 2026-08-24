@@ -1,6 +1,7 @@
 package com.suilearn.api.agent.context;
 
 import com.suilearn.api.agent.capability.CapabilityManifest;
+import com.suilearn.api.agent.learner.LearnerProfile;
 import com.suilearn.api.agent.llm.LlmMessage;
 import com.suilearn.api.agent.runtime.TurnContext;
 import java.util.ArrayList;
@@ -27,11 +28,16 @@ public final class ContextBuilder {
 
     public ContextBuildResult build(TurnContext context, CapabilityManifest manifest,
                                     List<LlmMessage> history, String sessionSummary) {
+        return build(context, manifest, history, sessionSummary, null);
+    }
+
+    public ContextBuildResult build(TurnContext context, CapabilityManifest manifest,
+                                    List<LlmMessage> history, String sessionSummary, LearnerProfile profile) {
         var memoryBlocks = sessionSummary == null || sessionSummary.isBlank()
             ? List.<PromptBlock>of()
             : List.of(new PromptBlock("session_summary", sessionSummary,
                 estimator.estimate(sessionSummary)));
-        var prompt = prompts.assemble(manifest, memoryBlocks);
+        var prompt = prompts.assemble(manifest, memoryBlocks, profile);
         var retained = new ArrayList<LlmMessage>();
         var historyBudget = Math.max(1, (int) (contextMaxTokens * 0.35d));
         int historyTokens = 0;

@@ -97,6 +97,7 @@ Android 约束：
 | Build | Maven |
 | API | REST + JSON + WebSocket（`/api/v2/ws`） |
 | Agent WebSocket | `spring-boot-starter-websocket` + Spring MVC `TextWebSocketHandler`；不引入 WebFlux/Reactor |
+| Agent Security | `spring-boot-starter-security`；默认关闭的 Bearer token filter + `AgentAuthProperties`，不引入 JWT/OAuth2 |
 | Agent LLM client | `agent/llm/OpenAiCompatibleLlmClient`：`java.net.http` SSE streaming、原生 tool-call delta 与 usage 聚合；不引入 LangChain4j / Spring AI 运行时依赖 |
 | Persistence | Spring Data JPA |
 | 开发 / 测试数据库 | PostgreSQL；本地统一使用根目录 `compose.yml` 启动数据库 |
@@ -121,7 +122,7 @@ Backend 约束：
 - Agent 回合事件必须先把结构化事件持久化到 `turn_events`，再进入每回合有界实时总线；客户端用 `afterSeq` 从 PostgreSQL 重放，不把内存广播当持久化事实源。
 - Agent 事件 `metadata` 只允许聚合数字、受控错误码、能力名和工具名；不得写入用户正文、Prompt、原始模型输出、文件名、object key 或 API key。
 - 新 Agent 运行时不使用 Redis 作为会话摘要事实源；会话摘要和记忆表均在 PostgreSQL。现有 `spring-data-redis` starter 与 legacy `RedisSessionMemoryStore` 仍保留在仓库，待后续清理 change 处理。
-- `learnerId` 只是逻辑范围标识；Phase 8 鉴权/多租户未启动，任何依赖 learnerId 的隔离都不能视为安全边界。
+- 鉴权关闭时 `learnerId` 只是逻辑范围标识；鉴权开启后 principal learnerId 是 Agent 资源隔离边界。现有知识库工作台仍未多租户化。
 - 资料导入、embedding、生成内容必须有任务状态或可追踪结果，避免不可解释的后台副作用。
 - RAG 回答必须受知识库或资料范围约束；证据不足时表达不确定。
 - RabbitMQ、MinIO、CommonMark、Tika/PDFBox/POI、LibreOffice/Tesseract、Resilience4j 与 Actuator/Micrometer 是当前 Backend 运行时基线，升级或替换时必须在本文更新版本与验证证据。
@@ -192,6 +193,8 @@ Backend 约束：
 | Agent 上下文 | `SUILEARN_AGENT_CONTEXT_MAX_TOKENS` | `12000`；`ContextBuilder` 按 0.35 历史预算守卫 |
 | Agent 会话 | `SUILEARN_AGENT_SESSION_TTL`、`SUILEARN_AGENT_SESSION_MAX_TURNS` | `24h` / `20` |
 | Agent 记忆 | `SUILEARN_AGENT_MEMORY_TOP_K`、`SUILEARN_AGENT_MEMORY_MIN_CONFIDENCE` | `5` / `0.80` |
+| Agent 鉴权开关 | `SUILEARN_AUTH_ENABLED` | `false`；开启后 Agent REST/WS 要求 Bearer token |
+| Agent token 绑定 | `SUILEARN_AUTH_TOKENS` | JSON 数组 `[{"token":"...","learnerId":"..."}]`；仅环境注入 |
 
 根 `.env.example` 只承载非敏感本地默认值。配置绑定必须 fail-fast 校验非法数值，生产凭据必须由部署环境注入。RabbitMQ/MinIO 凭据缺失、OCR/LibreOffice 不可执行或 AI 未配置时，系统必须暴露真实健康/任务状态，不能静默改走其他实现。
 

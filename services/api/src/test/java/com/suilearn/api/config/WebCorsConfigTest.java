@@ -14,7 +14,11 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(WebCorsConfigTest.TestController.class)
+@WebMvcTest(value = WebCorsConfigTest.TestController.class,
+    excludeAutoConfiguration = {
+        org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration.class
+    })
 @Import(WebCorsConfig.class)
 class WebCorsConfigTest {
 

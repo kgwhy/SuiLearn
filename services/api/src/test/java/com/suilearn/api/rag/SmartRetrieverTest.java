@@ -13,16 +13,18 @@ import com.suilearn.api.model.SearchResultType;
 import com.suilearn.api.retrieval.Retriever;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class SmartRetrieverTest {
     @Test
     void rewritesRunsInParallelAndDeduplicates() {
         var queries = new CopyOnWriteArrayList<String>();
+        var ids = new AtomicInteger();
         Retriever delegate = new Retriever() {
             @Override public List<SearchResult> search(RetrievalRequest request) {
                 queries.add(request.query());
-                return List.of(result("id-" + queries.size(), "title", request.query()));
+                return List.of(result("id-" + ids.incrementAndGet(), "title", request.query()));
             }
             @Override public List<MaterialChunk> retrieveEvidence(RetrievalRequest request, int limit) { return List.of(); }
         };

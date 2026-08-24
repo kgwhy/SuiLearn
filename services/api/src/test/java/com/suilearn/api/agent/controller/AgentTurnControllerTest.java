@@ -33,11 +33,14 @@ class AgentTurnControllerTest {
 
     @Test
     void controllerPathsMatchOpenApiResourceSurface() throws Exception {
-        assertThat(AgentTurnController.class.getMethod("start", StartTurnRequest.class)
+        assertThat(AgentTurnController.class.getMethod("start", StartTurnRequest.class,
+            org.springframework.security.core.Authentication.class)
             .getAnnotation(PostMapping.class).value()).containsExactly("/api/v2/agent/turns");
-        assertThat(AgentTurnController.class.getMethod("events", String.class, long.class)
+        assertThat(AgentTurnController.class.getMethod("events", String.class, long.class,
+            org.springframework.security.core.Authentication.class)
             .getAnnotation(GetMapping.class).value()).containsExactly("/api/v2/agent/turns/{turnId}/events");
-        assertThat(AgentTurnController.class.getMethod("activeTurn", String.class)
+        assertThat(AgentTurnController.class.getMethod("activeTurn", String.class,
+            org.springframework.security.core.Authentication.class)
             .getAnnotation(GetMapping.class).value()).containsExactly("/api/v2/agent/sessions/{sessionId}/active-turn");
     }
 
@@ -51,13 +54,13 @@ class AgentTurnControllerTest {
         var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
 
         var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            "study_agent", new ScopeRequest("kb-1", null), List.of()));
+            "study_agent", new ScopeRequest("kb-1", null), List.of()), null);
 
         assertThat(response.status()).isEqualTo("COMPLETED");
         assertThat(response.lastSeq()).isEqualTo(3);
         assertThat(response.terminalEvent().type()).isEqualTo("done");
 
-        var page = controller.events(response.turnId(), 1);
+        var page = controller.events(response.turnId(), 1, null);
         assertThat(page.events()).extracting(TurnDtos.TurnEventResponse::seq).containsExactly(2L, 3L);
     }
 
@@ -73,7 +76,7 @@ class AgentTurnControllerTest {
         var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
 
         var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            "study_agent", new ScopeRequest("kb-1", null), List.of()));
+            "study_agent", new ScopeRequest("kb-1", null), List.of()), null);
 
         assertThat(response.terminalEvent().type()).isEqualTo("done");
         assertThat(response.promptTokens()).isEqualTo(120L);
@@ -90,7 +93,7 @@ class AgentTurnControllerTest {
         var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
 
         var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            null, new ScopeRequest("kb-1", null), List.of()));
+            null, new ScopeRequest("kb-1", null), List.of()), null);
 
         assertThat(response.promptTokens()).isZero();
         assertThat(response.completionTokens()).isZero();
@@ -106,13 +109,13 @@ class AgentTurnControllerTest {
         var disabled = new AgentTurnController(runtime, properties(false), Duration.ofSeconds(1));
 
         assertThatThrownBy(() -> disabled.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            null, new ScopeRequest("kb-1", null), List.of())))
+            null, new ScopeRequest("kb-1", null), List.of()), null))
             .isInstanceOfSatisfying(TurnApiException.class, error ->
                 assertThat(error.code()).isEqualTo(TurnErrorCode.AGENT_FEATURE_DISABLED));
 
         var enabled = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
         assertThatThrownBy(() -> enabled.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            null, new ScopeRequest(null, null), List.of())))
+            null, new ScopeRequest(null, null), List.of()), null))
             .isInstanceOfSatisfying(TurnApiException.class, error ->
                 assertThat(error.code()).isEqualTo(TurnErrorCode.AGENT_SCOPE_REQUIRED));
     }
@@ -126,9 +129,9 @@ class AgentTurnControllerTest {
         });
         var controller = new AgentTurnController(runtime, properties(true), Duration.ofSeconds(1));
         var response = controller.start(new StartTurnRequest("learner-1", "sess-1", "question",
-            null, new ScopeRequest("kb-1", null), List.of()));
+            null, new ScopeRequest("kb-1", null), List.of()), null);
 
-        assertThatThrownBy(() -> controller.reply(response.turnId(), new ReplyRequest("reply", Map.of())))
+        assertThatThrownBy(() -> controller.reply(response.turnId(), new ReplyRequest("reply", Map.of()), null))
             .isInstanceOfSatisfying(TurnApiException.class, error ->
                 assertThat(error.code()).isEqualTo(TurnErrorCode.AGENT_TURN_NOT_WAITING_FOR_INPUT));
     }

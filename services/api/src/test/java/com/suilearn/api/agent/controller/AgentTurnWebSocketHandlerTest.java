@@ -14,6 +14,8 @@ import com.suilearn.api.agent.runtime.InMemoryTurnStore;
 import com.suilearn.api.agent.runtime.StartTurnCommand;
 import com.suilearn.api.agent.runtime.StudyScope;
 import com.suilearn.api.agent.runtime.TurnRuntimeService;
+import com.suilearn.api.security.AgentAuthProperties;
+import com.suilearn.api.security.LearnerTokenHandshakeInterceptor;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -22,7 +24,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -85,6 +89,38 @@ class AgentTurnWebSocketHandlerTest {
     }
 
     @Test
+    void authenticatedWsUsesPrincipalLearnerAndRejectsMissingPrincipal() throws Exception {
+        var captured = new AtomicReference<String>();
+        var runtime = runtime((context, events) -> {
+            captured.set(context.learnerId());
+            events.publishTerminal(EventType.DONE, com.suilearn.api.agent.runtime.TurnStatus.COMPLETED,
+                "test", null, "done", Map.of());
+        });
+        var auth = new AgentAuthProperties();
+        auth.setEnabled(true);
+        var fixture = sessionFixture(java.util.Map.of(
+            LearnerTokenHandshakeInterceptor.LEARNER_ID_ATTRIBUTE, "learner-a",
+            LearnerTokenHandshakeInterceptor.AUTH_FAILED_ATTRIBUTE, false));
+        var handler = new AgentTurnWebSocketHandler(runtime, properties(true), wsProperties(true), mapper, auth);
+        handler.handleTextMessage(fixture.session(), new TextMessage(mapper.writeValueAsString(Map.of(
+            "kind", "command", "command", "start_turn",
+            "learnerId", "learner-b",
+            "message", "question",
+            "scope", Map.of("knowledgeBaseId", "kb-1")
+        ))));
+        awaitFrames(fixture, 2);
+        assertThat(captured.get()).isEqualTo("learner-a");
+
+        var missingFixture = sessionFixture(java.util.Map.of(
+            LearnerTokenHandshakeInterceptor.AUTH_FAILED_ATTRIBUTE, true));
+        var missingHandler = new AgentTurnWebSocketHandler(runtime, properties(true), wsProperties(true), mapper, auth);
+        missingHandler.handleTextMessage(missingFixture.session(), new TextMessage(mapper.writeValueAsString(Map.of(
+            "kind", "command", "command", "ping"))));
+        assertThat(awaitFrames(missingFixture, 1).getFirst().path("code").asText())
+            .isEqualTo("AGENT_AUTH_REQUIRED");
+    }
+
+    @Test
     void pingReturnsPongWithoutPersistedEvent() throws Exception {
         var runtime = runtime((context, events) -> events.publishTerminal(EventType.DONE,
             com.suilearn.api.agent.runtime.TurnStatus.COMPLETED, "test", null, "done", Map.of()));
@@ -104,10 +140,15 @@ class AgentTurnWebSocketHandlerTest {
     private record SessionFixture(WebSocketSession session, List<TextMessage> sent) {}
 
     private SessionFixture sessionFixture() throws Exception {
+        return sessionFixture(new ConcurrentHashMap<>());
+    }
+
+    private SessionFixture sessionFixture(java.util.Map<String, Object> attributes) throws Exception {
         var session = mock(WebSocketSession.class);
         var sent = new CopyOnWriteArrayList<TextMessage>();
         when(session.isOpen()).thenReturn(true);
         when(session.getId()).thenReturn("ws-1");
+        when(session.getAttributes()).thenReturn(attributes);
         org.mockito.Mockito.doAnswer(invocation -> {
             sent.add(invocation.getArgument(0, TextMessage.class));
             return null;

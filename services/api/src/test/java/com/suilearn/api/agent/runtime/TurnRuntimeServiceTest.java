@@ -117,6 +117,26 @@ class TurnRuntimeServiceTest {
     }
 
     @Test
+    void learnerScopedAccessHidesOtherLearnerTurns() throws Exception {
+        var service = service((context, events) -> {
+            events.publish(EventType.RESULT, "test", "report", "answer", Map.of());
+            events.publishTerminal(EventType.DONE, TurnStatus.COMPLETED, "test", "report", "done", Map.of());
+        });
+
+        var outcome = service.start(command("sess-isolation", "study_agent"));
+        service.awaitResult(outcome.record().turnId(), Duration.ofSeconds(2));
+
+        assertThat(service.eventsAfter(outcome.record().turnId(), 0, "learner-1").events()).hasSize(3);
+        assertThatThrownBy(() -> service.eventsAfter(outcome.record().turnId(), 0, "learner-2"))
+            .isInstanceOfSatisfying(TurnApiException.class, error ->
+                assertThat(error.code()).isEqualTo(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        assertThatThrownBy(() -> service.cancel(outcome.record().turnId(), "learner-2"))
+            .isInstanceOfSatisfying(TurnApiException.class, error ->
+                assertThat(error.code()).isEqualTo(TurnErrorCode.AGENT_TURN_NOT_FOUND));
+        assertThat(service.checkActiveTurn("sess-isolation", "learner-2").turnId()).isNull();
+    }
+
+    @Test
     void oversizedEventPayloadBecomesSanitizedTerminalFailure() throws Exception {
         var service = service((context, events) -> events.publish(EventType.CONTENT, "test", "bad",
             "x".repeat(TurnEventSink.MAX_EVENT_PAYLOAD_BYTES + 1), Map.of()));

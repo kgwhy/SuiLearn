@@ -21,11 +21,14 @@ class AgentTurnOpenApiContractTest {
             "/api/v2/agent/turns/{turnId}/events",
             "/api/v2/agent/turns/{turnId}/cancel",
             "/api/v2/agent/turns/{turnId}/reply",
-            "/api/v2/agent/sessions/{sessionId}/active-turn"
+            "/api/v2/agent/sessions/{sessionId}/active-turn",
+            "/api/v2/agent/learners/{learnerId}/profile"
         );
         assertThat(paths.keySet()).doesNotContain("/api/v2/agents/study/runs");
 
-        Map<String, Object> schemas = map(map(document.get("components")).get("schemas"));
+        Map<String, Object> components = map(document.get("components"));
+        assertThat(map(components.get("securitySchemes")).keySet()).contains("BearerAuth");
+        Map<String, Object> schemas = map(components.get("schemas"));
         Map<String, Object> request = map(schemas.get("StartAgentTurnRequest"));
         assertThat((List<String>) request.get("required")).containsExactlyInAnyOrder("learnerId", "message", "scope");
 
@@ -40,7 +43,8 @@ class AgentTurnOpenApiContractTest {
 
         assertThat(contract).contains("AGENT_TURN_NOT_WAITING_FOR_INPUT", "TURN_EXECUTOR_UNAVAILABLE");
         assertThat(contract).doesNotContain("StudyAgentRunRequest", "StudyAgentError");
-        assertThat(contract).contains("FAILED_ORPHANED", "turn_started");
+        assertThat(schemas.keySet()).contains("LearnerProfileRequest", "LearnerProfileResponse");
+        assertThat(contract).contains("FAILED_ORPHANED", "turn_started", "BearerAuth");
     }
 
     @SuppressWarnings("unchecked")

@@ -8,6 +8,8 @@ import com.suilearn.api.agent.context.PromptBlockAssembler;
 import com.suilearn.api.agent.context.RollingSessionSummary;
 import com.suilearn.api.agent.context.SessionMessageHistory;
 import com.suilearn.api.agent.context.TokenEstimator;
+import com.suilearn.api.agent.learner.LearnerProfile;
+import com.suilearn.api.agent.learner.LearnerProfileService;
 import com.suilearn.api.agent.llm.LlmClient;
 import com.suilearn.api.agent.llm.LlmMessage;
 import com.suilearn.api.agent.llm.LlmRequest;
@@ -43,6 +45,7 @@ public final class AgentLoop {
     private final SessionMessageHistory history;
     private final RollingSessionSummary summaries;
     private final UsageTracker usageTracker;
+    private final LearnerProfileService learnerProfiles;
 
     public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
                      AgentConfigurationProperties properties, Clock clock, String model) {
@@ -69,6 +72,14 @@ public final class AgentLoop {
                      AgentConfigurationProperties properties, Clock clock, String model,
                      ContextBuilder contextBuilder, SessionMessageHistory history,
                      RollingSessionSummary summaries, UsageTracker usageTracker) {
+        this(client, dispatcher, tools, properties, clock, model, contextBuilder, history, summaries, usageTracker, null);
+    }
+
+    public AgentLoop(LlmClient client, ToolDispatcher dispatcher, ToolRegistry tools,
+                     AgentConfigurationProperties properties, Clock clock, String model,
+                     ContextBuilder contextBuilder, SessionMessageHistory history,
+                     RollingSessionSummary summaries, UsageTracker usageTracker,
+                     LearnerProfileService learnerProfiles) {
         this.client = client;
         this.dispatcher = dispatcher;
         this.tools = tools;
@@ -79,6 +90,7 @@ public final class AgentLoop {
         this.history = history;
         this.summaries = summaries;
         this.usageTracker = usageTracker;
+        this.learnerProfiles = learnerProfiles;
     }
 
     public LoopResult run(TurnContext context, CapabilityManifest manifest, TurnEventSink events) {
@@ -90,8 +102,16 @@ public final class AgentLoop {
                 sessionSummary = "";
             }
         }
+        LearnerProfile learnerProfile = null;
+        if (learnerProfiles != null) {
+            try {
+                learnerProfile = learnerProfiles.get(context.learnerId()).orElse(null);
+            } catch (RuntimeException profileFailure) {
+                learnerProfile = null;
+            }
+        }
         ContextBuildResult built = contextBuilder.build(context, manifest,
-            history == null ? List.of() : history.recent(context.sessionId(), context.turnId()), sessionSummary);
+            history == null ? List.of() : history.recent(context.sessionId(), context.turnId()), sessionSummary, learnerProfile);
         var messages = new ArrayList<>(built.messages());
         events.publish(EventType.PROGRESS, context.capability(), "context",
             "Context budget report", Map.of("estimatedContextTokens", built.estimatedContextTokens(),

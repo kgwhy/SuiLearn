@@ -17,6 +17,8 @@ import com.suilearn.api.agent.runtime.TurnApiException;
 import com.suilearn.api.agent.runtime.TurnErrorCode;
 import com.suilearn.api.agent.runtime.TurnResult;
 import com.suilearn.api.agent.runtime.TurnRuntimeService;
+import com.suilearn.api.security.AgentAuthProperties;
+import com.suilearn.api.security.LearnerPrincipal;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -24,6 +26,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.TimeoutException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,23 +41,36 @@ public class AgentTurnController {
     private final TurnRuntimeService runtime;
     private final AgentConfigurationProperties properties;
     private final Duration syncTimeout;
+    private final AgentAuthProperties authProperties;
 
-    @Autowired
     public AgentTurnController(TurnRuntimeService runtime, AgentConfigurationProperties properties) {
         this(runtime, properties, properties.runTimeout());
     }
 
+    @Autowired
+    public AgentTurnController(TurnRuntimeService runtime, AgentConfigurationProperties properties,
+                               AgentAuthProperties authProperties) {
+        this(runtime, properties, properties.runTimeout(), authProperties);
+    }
+
     AgentTurnController(TurnRuntimeService runtime, AgentConfigurationProperties properties, Duration syncTimeout) {
+        this(runtime, properties, syncTimeout, new AgentAuthProperties());
+    }
+
+    public AgentTurnController(TurnRuntimeService runtime, AgentConfigurationProperties properties,
+                               Duration syncTimeout, AgentAuthProperties authProperties) {
         this.runtime = runtime;
         this.properties = properties;
         this.syncTimeout = syncTimeout;
+        this.authProperties = authProperties;
     }
 
     @PostMapping("/api/v2/agent/turns")
-    public TurnResultResponse start(@Valid @RequestBody StartTurnRequest request) throws InterruptedException {
+    public TurnResultResponse start(@Valid @RequestBody StartTurnRequest request,
+                                  Authentication authentication) throws InterruptedException {
         requireEnabled();
         requireScope(request.scope().knowledgeBaseId(), request.scope().materialId());
-        var command = new StartTurnCommand(request.learnerId(), request.sessionId(), request.message(),
+        var command = new StartTurnCommand(learnerId(request.learnerId(), authentication), request.sessionId(), request.message(),
             request.capability(), new StudyScope(request.scope().knowledgeBaseId(), request.scope().materialId()),
             List.of(), mapAttachments(request.attachments()));
         var outcome = runtime.start(command);
@@ -69,34 +85,54 @@ public class AgentTurnController {
     @GetMapping("/api/v2/agent/turns/{turnId}/events")
     public EventPageResponse events(
         @PathVariable @Size(max = 128) String turnId,
-        @RequestParam(defaultValue = "0") @Min(0) long afterSeq
+        @RequestParam(defaultValue = "0") @Min(0) long afterSeq,
+        Authentication authentication
     ) {
         requireEnabled();
-        var page = runtime.eventsAfter(turnId, afterSeq);
+        var page = runtime.eventsAfter(turnId, afterSeq, scopedLearnerId(authentication));
         return new EventPageResponse(turnId, page.afterSeq(), page.lastSeq(),
             page.events().stream().map(AgentTurnController::map).toList());
     }
 
     @PostMapping("/api/v2/agent/turns/{turnId}/cancel")
-    public TurnControlResponse cancel(@PathVariable @Size(max = 128) String turnId) {
+    public TurnControlResponse cancel(@PathVariable @Size(max = 128) String turnId,
+                                    Authentication authentication) {
         requireEnabled();
-        var record = runtime.cancel(turnId);
+        var record = runtime.cancel(turnId, scopedLearnerId(authentication));
         return new TurnControlResponse(record.turnId(), record.status().name());
     }
 
     @PostMapping("/api/v2/agent/turns/{turnId}/reply")
     public TurnControlResponse reply(@PathVariable @Size(max = 128) String turnId,
-                                     @Valid @RequestBody ReplyRequest request) {
+                                     @Valid @RequestBody ReplyRequest request,
+                                     Authentication authentication) {
         requireEnabled();
-        var record = runtime.submitReply(turnId, request.text(), request.answers());
+        var record = runtime.submitReply(turnId, request.text(), request.answers(), scopedLearnerId(authentication));
         return new TurnControlResponse(record.turnId(), record.status().name());
     }
 
     @GetMapping("/api/v2/agent/sessions/{sessionId}/active-turn")
-    public ActiveTurnResponse activeTurn(@PathVariable @Size(max = 128) String sessionId) {
+    public ActiveTurnResponse activeTurn(@PathVariable @Size(max = 128) String sessionId,
+                                       Authentication authentication) {
         requireEnabled();
-        var info = runtime.checkActiveTurn(sessionId);
+        var info = runtime.checkActiveTurn(sessionId, scopedLearnerId(authentication));
         return new ActiveTurnResponse(info.sessionId(), info.turnId(), info.status() == null ? null : info.status().name());
+    }
+
+    private String learnerId(String requested, Authentication authentication) {
+        String principalLearnerId = scopedLearnerId(authentication);
+        return principalLearnerId == null ? requested : principalLearnerId;
+    }
+
+    private String scopedLearnerId(Authentication authentication) {
+        if (!authProperties.isEnabled()) {
+            return null;
+        }
+        LearnerPrincipal principal = LearnerPrincipal.fromAuthentication(authentication);
+        if (principal == null) {
+            throw new TurnApiException(TurnErrorCode.AGENT_AUTH_REQUIRED);
+        }
+        return principal.learnerId();
     }
 
     private void requireEnabled() {

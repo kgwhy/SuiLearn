@@ -243,7 +243,7 @@
 - `ask_user` 工具会发布 `wait_for_input`，回合进入 `WAITING_INPUT`；用户回复后继续同一 AgentLoop，不重跑回合。
 - 每回合结果信封 `AgentTurnResult` 包含状态、`terminalEvent`、`lastSeq`、创建/结束时间，以及 `promptTokens`、`completionTokens`、`usageCostUsd`、`actionTraceCount`、`estimatedContextTokens` 五个非负汇总字段；缺失或失败路径返回 0。
 - Agent 开关沿用 `suilearn.agent.enabled`（默认 false）；WebSocket 子开关为 `suilearn.agent.websocket.enabled`（默认 true）。关闭 Agent 总开关时 REST 与 WS 返回统一的 `AGENT_FEATURE_DISABLED` 语义。
-- `learnerId` 仍是调用方提供的逻辑范围标识，不是登录身份；鉴权与多租户隔离属于 Phase 8，当前未启动。
+- `learnerId` 默认仍是调用方提供的逻辑范围标识；开启 `suilearn.auth.enabled` 后，Agent 端点要求 Bearer token，并由 principal learnerId 作为权威身份。
 - Android 本地刷题、错题、收藏和统计离线闭环保持不变；本批次不切换 Android 新 Agent 协议客户端。Web 知识库工作台不调用旧 Agent 路径，本次 not affected。
 - 本能力使用轻量 Spec Key：`SPEC-AGENT-NATIVE-RUNTIME`。
 
@@ -256,6 +256,28 @@
 - usage/action/context 汇总字段可解析且非负；事件 `metadata` 不包含用户正文、Prompt、原始模型输出或密钥。
 - `suilearn.agent.enabled=false` 时入口明确降级，Android 本地学习闭环不受影响。
 
+### 需求 8：Agent 鉴权、learner 隔离与技能/人物 Prompt（Phase 8）
+
+#### 用户故事
+
+1. 作为开启多 learner 模式的使用者，我希望 Agent 端点要求有效 Bearer token，以便未授权调用不能读取或操作我的学习回合。
+2. 作为学习者，我希望自己的 turn、事件、回复和记忆只能由自己的 learner 身份访问，以便多 learner 数据互不可见。
+3. 作为个性化学习者，我希望维护自己的 persona 与 skills，并让 Agent 每回合自动注入这些设定，以便回答风格和技能重点符合我的画像。
+
+#### 需求要点
+
+- `suilearn.auth.enabled` 默认 false；开启后 `/api/v2/agent/**` 与 `/api/v2/ws` 要求 Bearer token。
+- token 通过 `suilearn.auth.tokens` 以 JSON 数组绑定到 learnerId；token 只存在于配置/环境，不进入日志、响应或事件。
+- REST 与 WS 均以 principal learnerId 覆盖请求中的 learnerId；turn/events/cancel/reply/active-turn 按 learner 归属校验，跨 learner 返回 not found。
+- 新增 `GET/PUT /api/v2/agent/learners/{learnerId}/profile`，保存有界 persona 与 skills；跨 learner 访问返回 404。
+- `PromptBlockAssembler` 在 profile 存在时注入 `persona` 与 `skills` PromptBlock；profile 缺失时保持原 prompt 顺序。
+- 本能力使用轻量 Spec Key：`SPEC-AGENT-AUTH-LEARNER`。
+
+#### 验收标准
+
+- 鉴权关闭时既有 Agent 行为不变。
+- 鉴权开启时，无 token 401、错 token 403、跨 learner turn/profile 不可见。
+- 保存 profile 后，下一回合系统 Prompt 包含 persona 与 skills；空 profile 不改变既有 PromptBlock 顺序。
 ## 产品决策
 
 - 当前文档是当前已确认产品规格，作为产品真相源。
@@ -263,7 +285,7 @@
 - 后续产品变更先进入 `openspec/changes/<change-name>/**`；通过 Approval Gate 后可作为实现依据；实现完成后把稳定结论合并回当前规格。
 - 不维护多份完整版本 PRD，不默认建立全量需求 ID；本文不承担历史需求库职责。
 - 只有跨模块、高风险、测试或审查需要稳定引用的能力，才使用轻量 Spec Key。
-- 当前保留的 Spec Key 包括：`SPEC-HOME-PACK-HEADER`、`SPEC-AI-CONTENT-GATE`、`SPEC-KB-BOUNDARY`、`SPEC-RAG-TRACEABILITY`、`SPEC-OFFLINE-CORE`、`SPEC-AGENT-NATIVE-RUNTIME`。
+- 当前保留的 Spec Key 包括：`SPEC-HOME-PACK-HEADER`、`SPEC-AI-CONTENT-GATE`、`SPEC-KB-BOUNDARY`、`SPEC-RAG-TRACEABILITY`、`SPEC-OFFLINE-CORE`、`SPEC-AGENT-NATIVE-RUNTIME`、`SPEC-AGENT-AUTH-LEARNER`。
 - 产品核心表达是：随心学是个人学习工具，Java 八股是第一批学习内容。即使第一阶段只有一个 Java 八股学习包，也要避免把产品表达限制成单纯 Java 题库 App。
 - 刷题流程支持在当前练习会话内回看上一题；该能力用于回看和继续学习，不承担撤销历史答题记录或重算统计的职责。
 - 第二阶段可以先支持 Java 面试、Spring、MySQL 等知识库场景；英语单词、古诗词等多学科内容包留到后续版本。
@@ -300,7 +322,7 @@
 - 第一阶段不支持用户从网络拉取题库，不支持用户导入题库。
 - 第二阶段不包含社交学习、公开知识库市场、多人协作编辑、企业团队管理、自动制定长期学习计划、自动发布未经用户确认的 AI 生成题。
 - 第二阶段不把 AI 回答直接等同于正式答案，不让 AI 内容绕过用户确认进入正式学习内容。
-- 本批次不实现 Android 新 Agent 协议客户端、Web 学习端、Phase 8 鉴权/learner 隔离/技能 Prompt；Android 本地学习闭环不受影响。
+- 本批次不实现 Android 新 Agent 协议客户端、Web 学习端；Android 本地学习闭环不受影响。
 - 第二阶段不正式展开英语单词、古诗词等多学科内容包；这些属于后续多学习包版本。
 - 首页启动体验修正不新增多学习包切换功能，只修正首页信息层级和启动体验表达。
 

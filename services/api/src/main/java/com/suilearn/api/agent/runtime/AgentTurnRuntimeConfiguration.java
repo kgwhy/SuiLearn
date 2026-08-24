@@ -12,6 +12,7 @@ import com.suilearn.api.agent.context.RollingSessionSummary;
 import com.suilearn.api.agent.context.SessionMessageHistory;
 import com.suilearn.api.agent.context.TokenEstimator;
 import com.suilearn.api.agent.loop.AgentLoop;
+import com.suilearn.api.agent.learner.LearnerProfileService;
 import com.suilearn.api.agent.loop.ToolDispatcher;
 import com.suilearn.api.agent.memory.MemoryL2DocRepository;
 import com.suilearn.api.agent.memory.MemoryL3DocRepository;
@@ -108,9 +109,10 @@ public class AgentTurnRuntimeConfiguration {
                         com.suilearn.api.agent.config.AgentConfigurationProperties properties,
                         Clock clock, SuiLearnAiProperties aiProperties,
                         ContextBuilder contextBuilder, SessionMessageHistory history,
-                        RollingSessionSummary summaries, UsageTracker usageTracker) {
+                        RollingSessionSummary summaries, UsageTracker usageTracker,
+                        LearnerProfileService learnerProfiles) {
         return new AgentLoop(client, dispatcher, tools, properties, clock, aiProperties.chatModel(),
-            contextBuilder, history, summaries, usageTracker);
+            contextBuilder, history, summaries, usageTracker, learnerProfiles);
     }
 
     @Bean

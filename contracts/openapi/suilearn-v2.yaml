@@ -708,6 +708,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/RagAnswer"
   /api/v2/agent/capabilities:
+    security:
+      - BearerAuth: []
     get:
       summary: List registered v2 Agent capabilities and declarative tool schemas
       description: >
@@ -726,6 +728,8 @@ paths:
         "503":
           $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/turns:
+    security:
+      - BearerAuth: []
     post:
       summary: Start a v2 Agent turn and wait synchronously for its terminal event
       description: >
@@ -755,6 +759,8 @@ paths:
         "503":
           $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/turns/{turnId}/events:
+    security:
+      - BearerAuth: []
     get:
       summary: Replay persisted turn events after afterSeq
       description: >
@@ -787,6 +793,8 @@ paths:
         "503":
           $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/turns/{turnId}/cancel:
+    security:
+      - BearerAuth: []
     post:
       summary: Cancel an active v2 Agent turn
       parameters:
@@ -813,6 +821,8 @@ paths:
         "503":
           $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/turns/{turnId}/reply:
+    security:
+      - BearerAuth: []
     post:
       summary: Deliver a reply to a WAITING_INPUT Agent turn
       parameters:
@@ -845,6 +855,8 @@ paths:
         "503":
           $ref: "#/components/responses/AgentTurnUnavailable"
   /api/v2/agent/sessions/{sessionId}/active-turn:
+    security:
+      - BearerAuth: []
     get:
       summary: Check the current active turn for a session
       description: >
@@ -865,6 +877,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AgentTurnActiveResponse"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+  /api/v2/agent/learners/{learnerId}/profile:
+    security:
+      - BearerAuth: []
+    get:
+      summary: Get the authenticated learner profile used for persona/skills prompt injection
+      parameters:
+        - in: path
+          name: learnerId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: Learner profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearnerProfileResponse"
+        "400":
+          $ref: "#/components/responses/AgentTurnBadRequest"
+        "404":
+          $ref: "#/components/responses/AgentTurnNotFound"
+        "503":
+          $ref: "#/components/responses/AgentTurnUnavailable"
+    put:
+      summary: Upsert the authenticated learner profile
+      parameters:
+        - in: path
+          name: learnerId
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LearnerProfileRequest"
+      responses:
+        "200":
+          description: Upserted learner profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LearnerProfileResponse"
         "400":
           $ref: "#/components/responses/AgentTurnBadRequest"
         "404":
@@ -926,6 +993,10 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
   parameters:
     KnowledgeBaseId:
       in: path
@@ -1257,6 +1328,31 @@ components:
         estimatedContextTokens:
           type: integer
           minimum: 0
+    LearnerProfileRequest:
+      type: object
+      properties:
+        persona:
+          type: string
+          maxLength: 2000
+        skills:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 100
+    LearnerProfileResponse:
+      type: object
+      required: [learnerId, persona, skills]
+      properties:
+        learnerId:
+          type: string
+        persona:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
     AgentTurnStatus:
       type: string
       enum: [CREATED, RUNNING, WAITING_INPUT, COMPLETED, CANCELLED, FAILED, FAILED_ORPHANED]

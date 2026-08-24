@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.suilearn.api.agent.config.AgentConfigurationProperties;
 import com.suilearn.api.agent.runtime.AgentWebSocketProperties;
 import com.suilearn.api.agent.runtime.TurnRuntimeService;
+import com.suilearn.api.security.AgentAuthProperties;
+import com.suilearn.api.security.LearnerTokenHandshakeInterceptor;
+import com.suilearn.api.security.LearnerTokenRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -18,17 +21,27 @@ public class AgentTurnWebSocketConfiguration {
         TurnRuntimeService runtime,
         AgentConfigurationProperties agentProperties,
         AgentWebSocketProperties websocketProperties,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        AgentAuthProperties authProperties
     ) {
-        return new AgentTurnWebSocketHandler(runtime, agentProperties, websocketProperties, objectMapper);
+        return new AgentTurnWebSocketHandler(runtime, agentProperties, websocketProperties, objectMapper, authProperties);
     }
 
     @Bean
-    WebSocketConfigurer agentTurnWebSocketConfigurer(AgentTurnWebSocketHandler handler) {
+    LearnerTokenHandshakeInterceptor learnerTokenHandshakeInterceptor(LearnerTokenRegistry registry,
+                                                                     AgentAuthProperties authProperties) {
+        return new LearnerTokenHandshakeInterceptor(registry, authProperties);
+    }
+
+    @Bean
+    WebSocketConfigurer agentTurnWebSocketConfigurer(AgentTurnWebSocketHandler handler,
+                                                     LearnerTokenHandshakeInterceptor handshakeInterceptor) {
         return new WebSocketConfigurer() {
             @Override
             public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-                registry.addHandler(handler, "/api/v2/ws").setAllowedOriginPatterns("*");
+                registry.addHandler(handler, "/api/v2/ws")
+                    .addInterceptors(handshakeInterceptor)
+                    .setAllowedOriginPatterns("*");
             }
         };
     }
