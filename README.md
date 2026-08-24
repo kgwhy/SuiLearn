@@ -1,8 +1,8 @@
 # SuiLearn 随心学
 
-SuiLearn（随心学）是一个面向个人学习者的本地刷题、错题复盘和 AI 知识库工作台项目。项目先用 Android App 打通离线 Java 面试题学习闭环，再用 Java 后端和 React Web 工作台承载资料导入、AI 生成题、RAG 问答和语义搜索。
+SuiLearn（随心学）是一个面向个人学习者的本地刷题、错题复盘、AI 知识库和 Agent 学习助手项目。项目用 Android App 打通离线 Java 面试题学习闭环，用 Java 后端和 React Web 工作台承载资料导入、AI 生成题、RAG 问答与语义搜索，并在后端提供可流式、可暂停恢复、可观测的 Agent-Native 学习回合运行时。
 
-第一阶段重点是打开即用：无需登录、无需服务端，也能围绕内置 Java 八股学习包完成刷题、收藏、错题本、搜索、知识点学习和统计。第二阶段在不破坏本地闭环的前提下，引入可确认、可追溯的 AI / RAG 能力。
+第一阶段重点是打开即用：无需登录、无需服务端，也能围绕内置 Java 八股学习包完成刷题、收藏、错题本、搜索、知识点学习和统计。第二阶段在不破坏本地闭环的前提下，引入可确认、可追溯的 AI / RAG 能力。当前后端已演进为 Agent-Native 运行时：能力/工具注册表、通用 AgentLoop、LlmClient 流式调用、三层记忆、RAG pipeline、UsageTracker，以及可选的 Bearer 鉴权与 learner 隔离。
 
 ![SuiLearn 首页示意图](docs/ui-mockups/suilearn-home-v3.png)
 
@@ -11,21 +11,27 @@ SuiLearn（随心学）是一个面向个人学习者的本地刷题、错题复
 - Android 离线优先，本地内置 Java 面试学习包。
 - 支持单选、多选、判断和简答题四种题型。
 - 本地保存答题记录、错题、收藏、搜索、知识点和统计数据。
-- Java Spring Boot 后端支持知识库、资料导入、AI 生成草稿、RAG 和语义搜索。
+- Java Spring Boot 后端支持知识库、资料导入、AI 生成草稿、RAG、语义搜索和 Agent-Native 学习助手。
+- Agent 回合支持 REST 与 WebSocket 双入口、事件持久化、`afterSeq` 续流、暂停追问、取消与孤儿恢复。
+- 内置 `study_agent`、`rag_qa`、`question_generation` 三个能力，工具权限由 capability manifest 强制。
+- 三层记忆与滚动会话摘要落 PostgreSQL，RAG 检索经 `pgvector-hybrid` pipeline，usage/cost 进入统一 TurnResult 信封。
+- 可选 Phase 8 安全能力：`suilearn.auth.enabled=true` 后 Agent 端点启用 Bearer token 与 learner 隔离，并支持 persona/skills Prompt 注入。
 - React + TypeScript Web 工作台承载较重的知识库管理流程。
-- 使用 OpenAPI 维护第二版后端与 Web 的跨端接口契约。
+- 使用 OpenAPI 维护第二版 REST 契约，使用 WS companion schema 维护 WebSocket 命令/事件契约。
 - AI 生成内容默认进入待确认状态，用户查看、编辑、保存、丢弃或删除后才会进入正式学习内容。
 
 ## 当前状态
 
 | 模块 | 状态 |
 | --- | --- |
-| Android 本地学习 App | 核心本地闭环已实现 |
+| Android 本地学习 App | 核心本地闭环已实现；新 Agent 协议客户端延后 |
 | Java 八股学习包 | 已内置第一版 50 道题 |
-| Backend AI / RAG API | MVP 已实现，默认 PostgreSQL + OpenAI-compatible Provider |
+| Backend AI / RAG API | 知识库、资料流水线、RAG、搜索已实现 |
+| Agent-Native 运行时 | 三能力循环、REST/WS、三层记忆、RAG pipeline、usage 信封已实现并归档 |
+| Phase 8 Agent 鉴权 | Bearer token、learner 隔离、persona/skills Prompt 已实现；默认关闭 |
 | Web 知识库工作台 | MVP 已实现 |
 | 完整 Web 学习端 | 后续规划 |
-| 登录、云同步、多用户 | 当前阶段不做 |
+| 账号系统、云同步、全站多租户 | 后续规划；现有知识库工作台仍为 trusted single-user |
 
 ## 项目结构
 
@@ -34,7 +40,8 @@ SuiLearn
 ├─ apps/android          Native Android 本地学习 App
 ├─ apps/web              React + TypeScript 知识库工作台
 ├─ services/api          Java + Spring Boot 后端 API
-├─ contracts/openapi     第二版 OpenAPI 契约
+├─ contracts/openapi     第二版 REST OpenAPI 契约
+├─ contracts/schemas    Agent WebSocket companion schema
 ├─ docs                  产品、架构、技术选型和协作流程文档
 ├─ agents                多 Agent 角色边界和执行规则
 ├─ build.gradle.kts      Android 根 Gradle 配置
@@ -46,8 +53,9 @@ SuiLearn
 | 模块 | 技术 |
 | --- | --- |
 | Android | Kotlin、Jetpack Compose、Material 3、Navigation Compose、ViewModel、Coroutines、Flow、Room |
-| Backend | Java、Spring Boot、Spring Web、Spring Data JPA、PostgreSQL、pgvector-ready 持久化模型 |
-| AI / RAG | `AiProvider` 抽象，OpenAI-compatible Provider，RAG 与语义检索服务端编排 |
+| Backend | Java 21、Spring Boot、Spring Web + WebSocket + Security、Spring Data JPA、PostgreSQL、pgvector-ready 持久化模型 |
+| Agent | `TurnRuntimeService`、`AgentLoop`、`LlmClient`、`ToolRegistry`、`CapabilityRegistry`、三层记忆、`UsageTracker` |
+| AI / RAG | `AiProvider` 抽象，OpenAI-compatible Provider，`RagPipeline`/`ParseEngineRegistry`/`SmartRetriever` |
 | Web | React、TypeScript、Vite、lucide-react |
 | 契约 | [contracts/openapi/suilearn-v2.yaml](contracts/openapi/suilearn-v2.yaml) |
 | 测试 | JUnit、AndroidX Test、Robolectric、Spring Boot Test、TypeScript build checks |
@@ -61,7 +69,7 @@ SuiLearn
 - Maven，用于运行后端服务。
 - Node.js 和 npm，用于运行 Web 工作台。
 - PostgreSQL，用于运行后端 API 和后端集成测试。
-- Docker 可选：统一使用根目录 [compose.yml](compose.yml)，可一键启动全栈，也可只启动 PostgreSQL、API 或 Web 单个组件。
+- Docker 可选：根目录 [compose.yml](compose.yml) 可一键启动 PostgreSQL、Redis、RabbitMQ、MinIO、API 和 Web；也可只启动部分组件。
 
 > 只想快速跑起来？直接看下文 [Docker 一键启动（全栈）](#docker-一键启动全栈)，无需本地安装 JDK / Maven / Node.js。
 
@@ -88,7 +96,8 @@ docker compose up --build -d
 - Web 容器内的 Nginx 默认把 `/api` 反向代理到后端容器，前端默认通过 `/api/v2` 同源访问后端，无需额外配置跨域。
 - API 和 PostgreSQL 已配置健康检查；首次启动需等待数十秒后端就绪，API 容器会在数据库未就绪时自动重启恢复。
 - 端口、数据库账号密码和 AI 配置都可在 `.env` 中覆盖（见 [.env.example](.env.example)）。
-- 不填 AI 相关变量也能启动，但 AI 生成、RAG 和语义搜索功能不可用。
+- 不填 AI 相关变量也能启动，但 AI 生成、RAG、语义搜索和 Agent 回合功能不可用。
+- Agent 总开关 `SUILEARN_AGENT_ENABLED` 默认 false；WebSocket 子开关 `SUILEARN_AGENT_WEBSOCKET_ENABLED` 默认 true。
 
 常用命令：
 
@@ -102,7 +111,7 @@ docker compose down -v          # 同时删除 PostgreSQL 数据卷
 
 ### Docker 与本地混合启动
 
-根目录 `compose.yml` 只保留一套组件服务：`postgres`、`api`、`web`。前端和后端各自只有一个 Docker image。默认配置统一走宿主机发布端口：Web 容器访问 `host.docker.internal:8080`，API 容器访问 `host.docker.internal:5432`。因此 Docker 后端、本地 Maven 后端、Docker 数据库、本地数据库在默认端口下无需手动切换环境变量。
+根目录 `compose.yml` 当前组件服务为：`postgres`、`redis`、`rabbitmq`、`minio`、`api`、`web`。前端和后端各自只有一个 Docker image。默认配置统一走宿主机发布端口：Web 容器访问 `host.docker.internal:8080`，API 容器访问 `host.docker.internal:5432`。因此 Docker 后端、本地 Maven 后端、Docker 数据库、本地数据库在默认端口下无需手动切换环境变量。
 
 常用组合：
 
@@ -299,6 +308,29 @@ DeepSeek 模型名必须使用账号可访问的实际模型，例如 `deepseek-
 
 后端状态接口会返回脱敏后的 Provider 状态，不会暴露 API Key 原文。
 
+## Agent 鉴权与 Learner Profile（Phase 8，可选）
+
+默认 `SUILEARN_AUTH_ENABLED=false`，Agent 端点保持 trusted single-user 兼容。开启鉴权：
+
+```properties
+suilearn.auth.enabled=true
+suilearn.auth.tokens=[{"token":"replace-with-a-long-token","learnerId":"learner-a"}]
+```
+
+或使用环境变量：
+
+```powershell
+$env:SUILEARN_AUTH_ENABLED="true"
+$env:SUILEARN_AUTH_TOKENS='[{"token":"replace-with-a-long-token","learnerId":"learner-a"}]'
+```
+
+开启后：
+
+- `/api/v2/agent/**` 需要 `Authorization: Bearer <token>`；无 token 返回 401，错 token 返回 403。
+- WebSocket `/api/v2/ws` 支持 Authorization header，浏览器受限时可使用 `?access_token=...`。
+- 请求中的 `learnerId` 会被 token 对应的 principal learnerId 覆盖；turn、events、cancel、reply、active-turn 均按 learner 隔离。
+- 可维护 `GET/PUT /api/v2/agent/learners/{learnerId}/profile`，保存 persona 与 skills；回合构建时自动注入对应 PromptBlock。
+
 ## 常用检查
 
 提交或交付前建议运行：
@@ -307,7 +339,7 @@ DeepSeek 模型名必须使用账号可访问的实际模型，例如 `deepseek-
 # Android 单元测试
 .\gradlew.bat :app:testDebugUnitTest
 
-# 后端测试
+# 后端测试（含 Testcontainers 时需 Docker）
 mvn -f services/api/pom.xml test -q
 
 # Web 生产构建
@@ -323,7 +355,7 @@ npm run build
 | --- | --- |
 | Workflow Policy | 校验改动是否符合 SuiLearn 协作流程约定 |
 | Android | 运行单元测试并构建 Debug APK |
-| Backend | 基于 PostgreSQL 服务容器运行后端测试 |
+| Backend | 基于 PostgreSQL 服务容器运行后端测试；本仓库当前 Docker 全量回归 419 tests 全绿 |
 | Web | 安装依赖、运行测试并执行生产构建 |
 
 本地复现 CI 检查可运行上文 [常用检查](#常用检查) 中的命令。
@@ -354,7 +386,7 @@ npm run build
 | --- | --- |
 | v1 | Android 离线 Java 面试学习闭环 |
 | v2 | AI 生成草稿、知识库、资料导入、RAG、语义搜索和 Web 工作台 |
-| v3 | 完整 Web 学习端，包括刷题、复盘、搜索和统计 |
+| v3 | Agent-Native 学习助手运行时；Phase 8 可选鉴权与 learner profile；完整 Web 学习端仍后续规划 |
 
 ## License
 
