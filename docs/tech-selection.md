@@ -140,8 +140,8 @@ Backend 约束：
 | 韧性 | Resilience4j；外部 adapter 和 AI 使用有界 timeout/retry/circuit breaker，消息退避仍由 RabbitMQ retry queue 管理 |
 | 可观测性 | Spring Boot Actuator + Micrometer；分层健康以及队列、Outbox、DLQ、阶段、OCR、AI 指标 |
 | Agent runtime | `TurnRuntimeService` + 每回合 `TurnEventBus` + PostgreSQL `turn/turn_events/session_message`；虚拟线程执行，终态唯一，重启孤儿恢复 `FAILED_ORPHANED` |
-| Agent context/memory | `ContextBuilder` 窗口守卫 + `RollingSessionSummary` PostgreSQL 水位；L1/L2/L3 记忆表、snapshot/command 与 `@Scheduled` Consolidator（在线生产者见架构开放风险） |
-| RAG engine | `RagPipeline`/`PipelineFactory`（默认 `pgvector-hybrid`）、`EmbeddingSignature`/`IndexVersionManager`、`ParseEngineRegistry`、`SmartRetriever` 多查询并行检索 |
+| Agent context/memory | `ContextBuilder` 窗口守卫 + `RollingSessionSummary` PostgreSQL 水位；L1/L2/L3 记忆表、`MemoryTurnRecorder` 在线生产者、snapshot/command 与 `@Scheduled` Consolidator |
+| RAG engine | `RagPipeline`/`PipelineFactory`（默认 `pgvector-hybrid`）已接入 RagService/SearchService；`EmbeddingIndexVersionRecorder` 在 embedding 成功后写 ready 版本；`ParseEngineRegistry` 提供统一解析 IR；`SmartRetriever` 可选 |
 
 约束：
 

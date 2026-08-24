@@ -237,7 +237,7 @@
 - 当前 Agent 学习助手是 Backend 能力，入口为 v2 REST 与 WebSocket：
   - REST：`POST /api/v2/agent/turns` 同步等待终态；`GET /api/v2/agent/turns/{turnId}/events` 按 `afterSeq` 重放；`POST /api/v2/agent/turns/{turnId}/cancel` 取消；`POST /api/v2/agent/turns/{turnId}/reply` 提交暂停追问回复；`GET /api/v2/agent/sessions/{sessionId}/active-turn` 查询当前活动回合；`GET /api/v2/agent/capabilities` 枚举能力与工具 schema。
   - WebSocket：`/api/v2/ws`，支持 `start_turn`、`subscribe_turn`、`resume_from`、`cancel_turn`、`submit_user_reply`、`check_active_turn`、`ping`。
-- 能力注册表内置 `study_agent`（默认）、`rag_qa`、`question_generation`。当前 `study_agent` 已接入通用 AgentLoop；`rag_qa` 与 `question_generation` 已注册清单但尚未接入独立循环，启动对应能力时服务端返回显式 `TURN_EXECUTOR_UNAVAILABLE`，不伪造回答。
+- 能力注册表内置 `study_agent`（默认）、`rag_qa`、`question_generation`，三个能力均接入通用 AgentLoop；按 capability 切换 prompt policy，工具面仍由 manifest 限制，未注册能力返回显式错误，不伪造回答。
 - `study_agent` 工具面为 `search_knowledge`、`read_evidence`、`generate_practice`、`recall_memory`、`persist_memory`、`ask_user`；`rag_qa` 为 `search_knowledge`、`read_evidence`；`question_generation` 为 `generate_practice`、`ask_user`。工具允许集由 `CapabilityManifest.ownedTools()` + 服务端权限校验决定。
 - 回合事件 `seq` 按 `turnId` 从 1 单调递增且唯一；REST/WS 均支持按 `afterSeq` 续流。应用重启后残留 `RUNNING` 回合标记为 `FAILED_ORPHANED` 并产生唯一终态事件。
 - `ask_user` 工具会发布 `wait_for_input`，回合进入 `WAITING_INPUT`；用户回复后继续同一 AgentLoop，不重跑回合。
@@ -268,7 +268,7 @@
 - 刷题流程支持在当前练习会话内回看上一题；该能力用于回看和继续学习，不承担撤销历史答题记录或重算统计的职责。
 - 第二阶段可以先支持 Java 面试、Spring、MySQL 等知识库场景；英语单词、古诗词等多学科内容包留到后续版本。
 - 架构边界、服务端介入程度、资料处理方式和 AI / RAG 技术细节由架构 Agent 在实现前进一步确认。
-- Agent 学习助手是第二阶段已有 AI/RAG 能力之上的通用回合运行时：`study_agent` 是当前唯一接线的学习能力，`rag_qa`/`question_generation` 保持显式 unavailable，直到各自循环策略通过新 change 验收。
+- Agent 学习助手是第二阶段已有 AI/RAG 能力之上的通用回合运行时：`study_agent` 执行有界学习闭环，`rag_qa` 只做证据问答，`question_generation` 只生成临时练习草稿；三者的差异由能力清单、工具面与 prompt policy 表达。
 
 ## 测试决策
 
@@ -308,7 +308,7 @@
 
 - 第一阶段成功指标只使用客观、可验证的开发指标：50 道内置题、四种题型可完成、刷题入口可达、记录可持久化、搜索和知识点详情可用、错题本可复盘。
 - 第二阶段成功指标同样使用客观指标：用户可以生成并确认 AI 内容，保存后的 AI 题目可以完成刷题和错题流程，可以创建至少一个知识库，可以完成资料导入、语义搜索和资料问答。
-- Agent 学习助手成功指标使用客观指标：`study_agent` 回合可启动、可流式/重放、可暂停追问、可取消，REST 结果信封包含 usage/action/context 汇总；`rag_qa`/`question_generation` 在未接线时只返回显式 unavailable，不伪造成功。
+- Agent 学习助手成功指标使用客观指标：三个能力回合均可启动、可流式/重放、可暂停追问、可取消，REST 结果信封包含 usage/action/context 汇总；未注册能力返回显式错误，不伪造成功。
 - 第一阶段角色影响：产品 Agent 维护需求范围；架构 Agent 确认 Android 本地架构和数据模型边界；内容 Agent 准备 Java 八股题库、分类、知识点和解析；Android Agent 实现本地 App；测试 Agent 围绕最终验收标准设计测试范围。
 - 第二阶段角色影响：架构 Agent 确认 AI、知识库、资料导入、语义搜索和本地数据之间的边界；内容 Agent 定义 AI 生成题、知识点解释、复习建议的内容质量标准和人工修正规则；Android Agent 复用第一阶段能力并实现新增学习流程；Server Backend Agent 可能介入 AI 调用、资料处理、RAG 和知识库能力；Web Frontend Agent 承载知识库工作台；测试 Agent 覆盖 AI 内容可控、知识库边界、资料问答不确定性表达和第一阶段兼容。
 - 本文档是可发布的产品规格正文；发布到 issue tracker 的步骤由 `$to-prd` 流程负责，发布被阻塞时本文档仍保持可直接使用的规格正文格式。

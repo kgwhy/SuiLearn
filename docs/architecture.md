@@ -434,7 +434,7 @@ agent_semantic_memories      # 兼容语义召回索引；新增 L2/L3 不读取
 - `turn_events.metadata` 不得包含用户正文、Prompt、原始模型输出或 API key。
 - `session_summary` 的 `summary_up_to_message_id/created_at` 只在摘要成功后推进。
 - `memory_trace` 只追加摘要，不复制原文；`MemoryConsolidator` 只消费 `memory_snapshot`，不读 L1。
-- 当前在线回合尚未挂接 L1/snapshot 生产者，L2/L3 组件与调度器已落地；见开放风险。
+- `TurnOrchestrator` 在 AgentLoop 终态后调用 `MemoryTurnRecorder` 记录 L1 trace、`turn` snapshot 并提交 consolidation command；记忆失败只记录诊断，不改变回合终态。
 
 ### 3.4 AI 与 RAG 边界
 
@@ -456,7 +456,7 @@ RagController / SearchController
   -> RagService / SearchService
   -> Retriever / RagPipeline
      -> PgvectorHybridRagPipeline（包装 KeywordRetriever）
-     -> SmartRetriever（可选多查询改写，直接实例化于测试；生产未强制替换 KeywordRetriever）
+     -> SmartRetriever（可选多查询改写，生产默认不启用）
      -> EmbeddingProvider
 ```
 
@@ -497,7 +497,7 @@ REST /api/v2/agent/turns  +  WebSocket /api/v2/ws
 - `TurnEventBus` 每回合一个，默认容量 256；慢消费者丢实时帧，仍可经 `afterSeq` 从 PostgreSQL 完整续流。
 - 终态唯一：`DONE/CANCELLED/FAILED`，终态后拒绝新事件；`FAILED_ORPHANED` 用于应用重启后的孤儿恢复。
 - `TurnRuntimeService` 使用虚拟线程执行回合；同步 REST 等待终态的超时默认由 `suilearn.agent.run-timeout` 控制。
-- 内置能力：`study_agent`（默认，已接 AgentLoop）、`rag_qa`、`question_generation`（后两者已注册但未接线，返回 `TURN_EXECUTOR_UNAVAILABLE`）。
+- 内置能力：`study_agent`（默认）、`rag_qa`、`question_generation` 均路由到同一个 AgentLoop；`PromptBlockAssembler` 按 capability 选择 policy resource，工具面由 manifest 限制。
 - `study_agent` 工具：`search_knowledge`、`read_evidence`、`generate_practice`、`recall_memory`、`persist_memory`、`ask_user`；工具权限由 `CapabilityManifest.ownedTools()` + `ToolRegistry` 服务端校验。
 - `AgentLoop` 以原生 function calling 为主，最多 `suilearn.agent.max-steps` 步、工具调用预算 `suilearn.agent.max-tool-calls`、空回答 nudge 后 fail closed；`ask_user` 发布 `wait_for_input` 并原地恢复。
 - `ContextBuilder` 历史预算 = `context-max-tokens × 0.35`，超限先裁旧 tool 消息并加截断标记；`RollingSessionSummary` 使用 PostgreSQL 水位与反漂移重建。
@@ -514,8 +514,10 @@ REST /api/v2/agent/turns  +  WebSocket /api/v2/ws
 - `RagPipeline` / `PipelineFactory`：默认 pipeline 名为 `pgvector-hybrid`，包装现有 `KeywordRetriever`，现有 RAG 行为不变。
 - `EmbeddingSignature` / `IndexVersionManager`：binding/model/dim/baseUrl/apiVersion 哈希；签名变化返回 `needs_reindex`。
 - `ParseEngine` / `ParseEngineRegistry`：text-only、PDF、Office 和 OCR 引擎统一输出 `ParsedDocument`；复杂引擎复用 `DocumentParser` / `TesseractOcrAdapter`。
-- `SmartRetriever`：fake/real LlmClient 可生成最多 3 个查询变体，虚拟线程并行检索并按结果 id 去重；检索失败回退原查询。
-- 当前这些组件以新增边界和测试形式存在，尚未替换 `RagService` 生产检索主路径；接入切换需要新的 change 与运行态验证。
+- `SmartRetriever`：fake/real LlmClient 可生成最多 3 个查询变体，虚拟线程并行检索并按结果 id 去重；检索失败回退原查询。生产默认不启用。
+- `RagService` 与 `SearchService` 已通过 `RagPipeline` 调用检索；存在 pipeline bean 时 Spring 注入 `pgvector-hybrid`，测试路径缺 bean 时回退为直接包装 `KeywordRetriever`。
+- `EmbeddingIndexVersionRecorder` 在资料 embedding 成功后写入 `index_versions` ready 版本；同签名幂等，签名变化时 beginVersion -> markReady，期间旧版本语义由 `IndexVersionManager.status` 表达。
+- `ParseEngineRegistry` 已装配为 Spring bean；material revision/block 主路径仍使用 `DocumentParser`，Registry 提供统一 `ParsedDocument` IR 供 RAG 侧解析入口复用。
 
 ## 4. Web 当前结构
 
@@ -659,7 +661,7 @@ REST / WebSocket command
 
 - 事件先写 `turn_events` 再进入实时总线；客户端断线后按 `afterSeq` 重放。
 - `session_message` 当前记录用户回合输入；助手/工具轮次内容存在于 `turn_events` 的 `result`/`tool_result` 等结构化事件中，未作为独立会话消息回填。
-- 记忆召回工具当前走 `agent_semantic_memories` 兼容索引；L2/L3 文档与合并组件已落地，但尚未接入在线召回主路径。
+- `RecallMemoryTool` 在线 bean 同时读取旧语义召回索引与最近 L2 docs / L3 slots；L2/L3 文本作为受控 metadata 返回给 loop。
 
 ## 7. 关键业务边界
 
@@ -750,6 +752,6 @@ REST / WebSocket command
 - Backend 以模块化单体承载 HTTP 与 RabbitMQ listener，并用隔离有界线程池控制任务资源。只有未来出现经验证的独立扩缩容或故障隔离需求时，才通过新架构变更评估拆分 Worker。
 - pgvector 能力仍需按 PostgreSQL 部署环境验证；关键词检索保留为非语义兜底，真实向量能力落地时需要补契约、配置和集成验证。
 - Agent 运行态真实模型/真实 PostgreSQL/WS 联调仍属具名 follow-up；当前回归排除 Testcontainers WSL socket。
-- `rag_qa`、`question_generation` 尚未接线独立循环，启动会返回 `TURN_EXECUTOR_UNAVAILABLE`；Android 新协议客户端由用户明确延后。
-- L1 trace/snapshot 生产者尚未挂入在线 AgentLoop，L2/L3 文档与 Consolidator 以组件和测试形式落地；在线 `recall_memory` 仍走旧 `agent_semantic_memories` 索引。
+- Android 新协议客户端由用户明确延后；真实模型 / 真实 PostgreSQL / WS 运行态联调仍是具名 follow-up。
+- `SmartRetriever` 多查询改写保持可选，不默认替换 `pgvector-hybrid` 生产 pipeline。
 - `session_message` 当前只持久化用户回合输入，助手/工具消息以 `turn_events` 结构化事件保存；若后续需要在上下文中回放完整多轮原文，需要单独 change。
