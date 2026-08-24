@@ -78,6 +78,7 @@ class DurablePipelineTestcontainersIntegrationTest {
         registry.add("spring.rabbitmq.port", rabbit::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbit::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbit::getAdminPassword);
+        registry.add("spring.rabbitmq.virtual-host", () -> "/");
         registry.add("suilearn.minio.endpoint", () -> "http://" + minio.getHost() + ":" + minio.getMappedPort(9000));
         registry.add("suilearn.minio.access-key", () -> MINIO_ACCESS_KEY);
         registry.add("suilearn.minio.secret-key", () -> MINIO_SECRET_KEY);
