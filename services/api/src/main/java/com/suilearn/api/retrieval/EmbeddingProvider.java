@@ -17,6 +17,18 @@ public interface EmbeddingProvider {
         return supportsEmbeddings() ? embed("").values().size() : 0;
     }
 
+    default String binding() {
+        return "default";
+    }
+
+    default String baseUrl() {
+        return "";
+    }
+
+    default String apiVersion() {
+        return "";
+    }
+
     record Embedding(List<Double> values) {
     }
 }

@@ -21,4 +21,17 @@ class PromptBlockAssemblerTest {
             .containsExactly("general", "policy", "capability", "memory", "tools", "skills");
         assertThat(first.content()).contains("study_agent", "search_knowledge", "ask_user");
     }
+
+    @Test
+    void capabilitySpecificPoliciesAreSelected() {
+        var assembler = new PromptBlockAssembler(TokenEstimator.conservativeCharacters());
+
+        var rag = assembler.assemble(BuiltinCapabilities.ragQa().manifest(), List.of());
+        var generation = assembler.assemble(BuiltinCapabilities.questionGeneration().manifest(), List.of());
+
+        assertThat(rag.content()).contains("RAG question-answering agent", "rag_qa", "search_knowledge")
+            .doesNotContain("generate_practice");
+        assertThat(generation.content()).contains("practice question generator", "question_generation",
+            "generate_practice").doesNotContain("search_knowledge");
+    }
 }

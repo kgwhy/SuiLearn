@@ -8,6 +8,8 @@ import org.springframework.core.io.ClassPathResource;
 
 public final class PromptBlockAssembler {
     public static final String POLICY_RESOURCE = "agents/agent-loop/v1/system.md";
+    public static final String RAG_QA_POLICY_RESOURCE = "agents/agent-loop/v1/rag-qa.md";
+    public static final String QUESTION_GENERATION_POLICY_RESOURCE = "agents/agent-loop/v1/question-generation.md";
 
     private final TokenEstimator estimator;
 
@@ -17,8 +19,8 @@ public final class PromptBlockAssembler {
 
     public Assembled assemble(CapabilityManifest manifest, List<PromptBlock> memoryBlocks) {
         var blocks = new java.util.ArrayList<PromptBlock>();
-        blocks.add(block("general", "You are SuiLearn's bounded study agent."));
-        blocks.add(block("policy", policy()));
+        blocks.add(block("general", generalFor(manifest.name())));
+        blocks.add(block("policy", policy(manifest.name())));
         blocks.add(block("capability", "Capability: " + manifest.name()));
         blocks.add(block("memory", memoryBlocks == null || memoryBlocks.isEmpty()
             ? "No long-term memory injected for this turn." : join(memoryBlocks)));
@@ -33,9 +35,25 @@ public final class PromptBlockAssembler {
         return new PromptBlock(name, content, estimator.estimate(content));
     }
 
-    private String policy() {
+    private String generalFor(String capability) {
+        return switch (capability) {
+            case com.suilearn.api.agent.capability.BuiltinCapabilities.RAG_QA ->
+                "You are SuiLearn's bounded RAG question-answering agent.";
+            case com.suilearn.api.agent.capability.BuiltinCapabilities.QUESTION_GENERATION ->
+                "You are SuiLearn's bounded practice question generator.";
+            default -> "You are SuiLearn's bounded study agent.";
+        };
+    }
+
+    private String policy(String capability) {
+        String resource = switch (capability) {
+            case com.suilearn.api.agent.capability.BuiltinCapabilities.RAG_QA -> RAG_QA_POLICY_RESOURCE;
+            case com.suilearn.api.agent.capability.BuiltinCapabilities.QUESTION_GENERATION ->
+                QUESTION_GENERATION_POLICY_RESOURCE;
+            default -> POLICY_RESOURCE;
+        };
         try {
-            return new String(new ClassPathResource(POLICY_RESOURCE).getInputStream().readAllBytes(),
+            return new String(new ClassPathResource(resource).getInputStream().readAllBytes(),
                 StandardCharsets.UTF_8);
         } catch (IOException exception) {
             throw new IllegalStateException("agent loop policy resource is unavailable", exception);

@@ -159,6 +159,16 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
         return 0;
     }
 
+    @Override
+    public String binding() {
+        return "openai-compatible";
+    }
+
+    @Override
+    public String baseUrl() {
+        return properties.effectiveEmbeddingBaseUrl();
+    }
+
     private String requestBody(String input) {
         try {
             return objectMapper.writeValueAsString(Map.of(

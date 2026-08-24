@@ -1,9 +1,15 @@
 package com.suilearn.api.agent.tool;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.suilearn.api.agent.memory.AgentSemanticMemory;
 import com.suilearn.api.agent.memory.EmbeddingResult;
+import com.suilearn.api.agent.memory.MemoryL2DocEntity;
+import com.suilearn.api.agent.memory.MemoryL2DocRepository;
+import com.suilearn.api.agent.memory.MemoryL3DocEntity;
+import com.suilearn.api.agent.memory.MemoryL3DocRepository;
 import com.suilearn.api.agent.memory.MemoryManager;
 import com.suilearn.api.agent.memory.MemoryPromotionPolicy;
 import com.suilearn.api.agent.memory.MemoryType;
@@ -86,6 +92,26 @@ class AgentDeclarativeToolsTest {
         assertThat(askResult.success()).isFalse();
         assertThat(askResult.pauseForUser().questionId()).isEqualTo("q1");
         assertThat(askResult.pauseForUser().options()).hasSize(1);
+    }
+
+    @Test
+    void recallMemoryIncludesL2AndL3DocsWhenProvided() {
+        var memory = memoryManager();
+        var l2 = mock(MemoryL2DocRepository.class);
+        var l3 = mock(MemoryL3DocRepository.class);
+        when(l2.findByLearnerIdOrderByUpdatedAtDesc("learner-1")).thenReturn(List.of(
+            new MemoryL2DocEntity("l2-1", "learner-1", "turn", "## turn\nWeak point.", "snapshot:turn", java.time.Instant.EPOCH)));
+        when(l3.findByLearnerIdOrderBySlotAsc("learner-1")).thenReturn(List.of(
+            new MemoryL3DocEntity("learner-1:recent", "learner-1", "recent", "## recent\nGoal.", java.time.Instant.EPOCH)));
+
+        var recall = new RecallMemoryTool(memory, l2, l3);
+        var result = recall.execute(context(), Map.of("query", "goal"));
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.metadata()).containsKey("l2Docs");
+        assertThat(result.metadata()).containsKey("l3Slots");
+        assertThat((java.util.Collection<?>) result.metadata().get("l2Docs")).singleElement()
+            .asString().contains("Weak point");
     }
 
     private MemoryManager memoryManager() {

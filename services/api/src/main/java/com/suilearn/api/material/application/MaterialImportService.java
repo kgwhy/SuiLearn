@@ -19,6 +19,7 @@ import com.suilearn.api.knowledgebase.infrastructure.KnowledgeBaseStore;
 import com.suilearn.api.knowledgepoint.infrastructure.KnowledgePointStore;
 import com.suilearn.api.material.infrastructure.MaterialChunkStore;
 import com.suilearn.api.material.infrastructure.MaterialStore;
+import com.suilearn.api.rag.index.EmbeddingIndexVersionRecorder;
 import com.suilearn.api.retrieval.EmbeddingProvider;
 import com.suilearn.api.task.application.TaskExecutor;
 import com.suilearn.api.task.application.TaskOutboxSubmissionService;
@@ -56,8 +57,8 @@ public class MaterialImportService {
     private final LibreOfficePreviewAssetService previewAssets;
     private final MaterialImportFailurePersistence failurePersistence;
     private final KnowledgePointStore knowledgePoints;
+    private EmbeddingIndexVersionRecorder indexVersionRecorder;
 
-    @Autowired
     public MaterialImportService(
         KnowledgeBaseStore knowledgeBases,
         MaterialStore materials,
@@ -98,6 +99,37 @@ public class MaterialImportService {
         this.previewAssets = previewAssets;
         this.failurePersistence = failurePersistence;
         this.knowledgePoints = knowledgePoints;
+        this.indexVersionRecorder = null;
+    }
+
+    @Autowired
+    public MaterialImportService(
+        KnowledgeBaseStore knowledgeBases,
+        MaterialStore materials,
+        MaterialChunkStore materialChunks,
+        MaterialParser materialParser,
+        MaterialChunker materialChunker,
+        EmbeddingProvider embeddingProvider,
+        Clock clock,
+        TaskService taskService,
+        TaskExecutor taskExecutor,
+        AsyncProcessingAdmissionGuard asyncAdmission,
+        TaskOutboxSubmissionService taskOutboxSubmissionService,
+        AssetPromotionCoordinator assetPromotionCoordinator,
+        OriginalAssetMaterialContentReader originalAssetContentReader,
+        DocumentRevisionJpaRepository documentRevisions,
+        DocumentBlockJpaRepository documentBlocks,
+        MaterialUploadValidator uploadValidator,
+        LibreOfficePreviewAssetService previewAssets,
+        MaterialImportFailurePersistence failurePersistence,
+        KnowledgePointStore knowledgePoints,
+        EmbeddingIndexVersionRecorder indexVersionRecorder
+    ) {
+        this(knowledgeBases, materials, materialChunks, materialParser, materialChunker, embeddingProvider, clock,
+            taskService, taskExecutor, asyncAdmission, taskOutboxSubmissionService, assetPromotionCoordinator,
+            originalAssetContentReader, documentRevisions, documentBlocks, uploadValidator, previewAssets,
+            failurePersistence, knowledgePoints);
+        this.indexVersionRecorder = indexVersionRecorder;
     }
 
     /**
@@ -356,8 +388,10 @@ public class MaterialImportService {
                     embeddingExecution -> {
                         var indexing = materials.save(withEmbeddingTaskId(withStatus(materialForIndexing, MaterialStatus.INDEXING), embeddingExecution.current().id()));
                         materialRef.set(indexing);
-                        materialChunks.replace(indexing.id(), chunks.stream().map(this::withEmbedding).toList());
+                        var embeddedChunks = chunks.stream().map(this::withEmbedding).toList();
+                        materialChunks.replace(indexing.id(), embeddedChunks);
                         var indexed = materials.save(withStatus(indexing, MaterialStatus.READY));
+                        recordIndexVersion(indexed, embeddedChunks);
                         materialRef.set(indexed);
                         embeddingExecution.succeed(
                             "READY",
@@ -546,6 +580,14 @@ public class MaterialImportService {
         } catch (java.security.NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }
+    }
+
+    void recordIndexVersion(LearningMaterial material, java.util.List<MaterialChunk> chunks) {
+        if (indexVersionRecorder == null || chunks == null || chunks.isEmpty()) {
+            return;
+        }
+        indexVersionRecorder.recordReadyVersion(material.knowledgeBaseId(), chunks.get(0), embeddingProvider,
+            "pgvector-hybrid:" + material.id());
     }
 
     private MaterialChunk withEmbedding(MaterialChunk chunk) {

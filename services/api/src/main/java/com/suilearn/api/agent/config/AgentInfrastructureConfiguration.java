@@ -9,6 +9,7 @@ import com.suilearn.api.agent.memory.MemoryConsolidator;
 import com.suilearn.api.agent.memory.MemoryL2DocRepository;
 import com.suilearn.api.agent.memory.MemoryL3DocRepository;
 import com.suilearn.api.agent.memory.MemoryManager;
+import com.suilearn.api.agent.memory.MemoryTurnRecorder;
 import com.suilearn.api.agent.memory.MemoryMetaRepository;
 import com.suilearn.api.agent.memory.MemorySnapshotRecorder;
 import com.suilearn.api.agent.memory.MemorySnapshotRepository;
@@ -130,6 +131,12 @@ public class AgentInfrastructureConfiguration {
                                           Clock clock) {
         return new MemoryConsolidator(commands, snapshots, l2, l3, meta, client, objectMapper,
             properties.chatModel(), clock);
+    }
+
+    @Bean
+    MemoryTurnRecorder memoryTurnRecorder(MemoryTraceRecorder traces, MemorySnapshotRecorder snapshots,
+                                          MemoryConsolidator consolidator, ObjectMapper objectMapper) {
+        return new MemoryTurnRecorder(traces, snapshots, consolidator, objectMapper);
     }
 
     @Bean

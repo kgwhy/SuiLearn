@@ -7,8 +7,11 @@ import com.suilearn.api.model.MaterialChunk;
 import com.suilearn.api.model.MaterialStatus;
 import com.suilearn.api.model.RagAnswer;
 import com.suilearn.api.model.RagStatement;
+import com.suilearn.api.rag.pipeline.PgvectorHybridRagPipeline;
+import com.suilearn.api.rag.pipeline.RagPipeline;
 import com.suilearn.api.retrieval.Retriever;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -17,7 +20,7 @@ public class RagService {
     private final CitationValidator citationValidator;
     private final KnowledgeBaseStore knowledgeBases;
     private final MaterialStore materials;
-    private final Retriever retriever;
+    private final RagPipeline pipeline;
 
     public RagService(
         AiProvider aiProvider,
@@ -26,11 +29,22 @@ public class RagService {
         MaterialStore materials,
         Retriever retriever
     ) {
+        this(aiProvider, citationValidator, knowledgeBases, materials, new PgvectorHybridRagPipeline(retriever));
+    }
+
+    @Autowired
+    public RagService(
+        AiProvider aiProvider,
+        CitationValidator citationValidator,
+        KnowledgeBaseStore knowledgeBases,
+        MaterialStore materials,
+        RagPipeline pipeline
+    ) {
         this.aiProvider = aiProvider;
         this.citationValidator = citationValidator;
         this.knowledgeBases = knowledgeBases;
         this.materials = materials;
-        this.retriever = retriever;
+        this.pipeline = pipeline;
     }
 
     public RagAnswer ask(String question, String knowledgeBaseId, String materialId) {
@@ -53,7 +67,7 @@ public class RagService {
             knowledgeBases.find(requestedKnowledgeBaseId)
                 .orElseThrow(() -> new IllegalArgumentException("Knowledge base not found: " + requestedKnowledgeBaseId));
         }
-        var citations = retriever.retrieveEvidence(
+        var citations = pipeline.retrieveEvidence(
             new Retriever.RetrievalRequest(question, scopedKnowledgeBaseId, materialId),
             5
         );

@@ -13,7 +13,10 @@ import com.suilearn.api.agent.context.SessionMessageHistory;
 import com.suilearn.api.agent.context.TokenEstimator;
 import com.suilearn.api.agent.loop.AgentLoop;
 import com.suilearn.api.agent.loop.ToolDispatcher;
+import com.suilearn.api.agent.memory.MemoryL2DocRepository;
+import com.suilearn.api.agent.memory.MemoryL3DocRepository;
 import com.suilearn.api.agent.memory.MemoryManager;
+import com.suilearn.api.agent.memory.MemoryTurnRecorder;
 import com.suilearn.api.agent.tool.AskUserTool;
 import com.suilearn.api.agent.tool.EvidenceReadPort;
 import com.suilearn.api.agent.tool.EvidenceSearchPort;
@@ -111,8 +114,9 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
-    TurnOrchestrator turnOrchestrator(CapabilityRegistry capabilities, AgentLoop loop) {
-        return new TurnOrchestrator(capabilities, loop);
+    TurnOrchestrator turnOrchestrator(CapabilityRegistry capabilities, AgentLoop loop,
+                                      MemoryTurnRecorder memory) {
+        return new TurnOrchestrator(capabilities, loop, memory);
     }
 
     @Bean
@@ -131,8 +135,9 @@ public class AgentTurnRuntimeConfiguration {
     }
 
     @Bean
-    RecallMemoryTool recallMemoryTool(ObjectProvider<MemoryManager> memory) {
-        return new RecallMemoryTool(memory.getIfAvailable());
+    RecallMemoryTool recallMemoryTool(ObjectProvider<MemoryManager> memory,
+                                     MemoryL2DocRepository l2, MemoryL3DocRepository l3) {
+        return new RecallMemoryTool(memory.getIfAvailable(), l2, l3);
     }
 
     @Bean
