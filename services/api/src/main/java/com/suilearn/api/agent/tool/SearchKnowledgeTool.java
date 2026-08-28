@@ -2,6 +2,7 @@ package com.suilearn.api.agent.tool;
 
 import com.suilearn.api.agent.runtime.TurnContext;
 import java.util.LinkedHashMap;
+import java.util.StringBuilder;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -41,11 +42,27 @@ public final class SearchKnowledgeTool implements Tool {
             var sources = pointers.stream()
                 .map(pointer -> new ToolCitation(pointer.stableId(), pointer.sourceRef()))
                 .toList();
-            return new ToolResult("Found " + pointers.size() + " evidence pointer(s).", sources, metadata, true, null);
+            return new ToolResult(describe(pointers), sources, metadata, true, null);
         } catch (RuntimeException exception) {
             return new ToolResult("Knowledge search failed.", List.of(),
                 Map.of("code", "SEARCH_FAILED"), false, null);
         }
+    }
+
+    private static String describe(List<EvidencePointer> pointers) {
+        var content = new StringBuilder();
+        content.append("Found ").append(pointers.size()).append(" evidence pointer(s). ")
+            .append("Call read_evidence with one stableId (or sourceRef):");
+        for (int index = 0; index < pointers.size(); index++) {
+            EvidencePointer pointer = pointers.get(index);
+            content.append("\n- stableId=").append(pointer.stableId())
+                .append(", sourceRef=").append(pointer.sourceRef())
+                .append(", relevance=").append(pointer.relevance());
+            if (pointer.excerpt() != null && !pointer.excerpt().isBlank()) {
+                content.append(", excerpt=").append(pointer.excerpt());
+            }
+        }
+        return content.toString();
     }
 
     private static Map<String, Object> pointer(EvidencePointer pointer) {

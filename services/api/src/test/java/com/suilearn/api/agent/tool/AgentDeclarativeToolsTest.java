@@ -34,6 +34,7 @@ class AgentDeclarativeToolsTest {
         assertThat(searchResult.sources()).singleElement().satisfies(source ->
             assertThat(source.stableId()).isEqualTo("stable-1"));
         assertThat(searchResult.metadata()).containsEntry("count", 1);
+        assertThat(searchResult.content()).contains("stableId=stable-1", "sourceRef=ref-1");
 
         var read = new ReadEvidenceTool(request -> Optional.of(
             new EvidenceRecord("stable-1", "ref-1", "kb-1", "mat-1", "verified content", false,
