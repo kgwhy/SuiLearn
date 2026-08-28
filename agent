@@ -1,0 +1,14 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT=$0
+while [ -h "$SCRIPT" ]; do
+    LINK_TARGET=$(readlink "$SCRIPT")
+    case "$LINK_TARGET" in
+        /*) SCRIPT=$LINK_TARGET ;;
+        *) SCRIPT=$(dirname "$SCRIPT")/$LINK_TARGET ;;
+    esac
+done
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT")" && pwd)
+SUILEARN_AGENT_PROG=agent exec python3 "$SCRIPT_DIR/scripts/agent_cli.py" "$@"
