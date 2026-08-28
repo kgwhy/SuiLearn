@@ -25,6 +25,7 @@ import com.suilearn.api.agent.tool.LlmPracticeModelPort;
 import com.suilearn.api.agent.tool.PracticeCoachSubAgent;
 import com.suilearn.api.agent.tool.PracticeModelPort;
 import com.suilearn.api.agent.tool.RetrievalEvidenceTools;
+import com.suilearn.api.material.infrastructure.MaterialChunkStore;
 import com.suilearn.api.ai.application.RetrievalPort;
 import com.suilearn.api.config.SuiLearnAiProperties;
 import com.suilearn.api.retrieval.Retriever;
@@ -71,9 +72,11 @@ public class AgentInfrastructureConfiguration {
     }
 
     @Bean
-    RetrievalEvidenceTools retrievalEvidenceTools(ObjectProvider<RetrievalPort> retrievalPort) {
+    RetrievalEvidenceTools retrievalEvidenceTools(ObjectProvider<RetrievalPort> retrievalPort,
+                                                    ObjectProvider<MaterialChunkStore> chunkStoreProvider) {
         RetrievalPort available = retrievalPort.getIfAvailable();
-        return available == null ? null : new RetrievalEvidenceTools(available);
+        MaterialChunkStore chunkStore = chunkStoreProvider.getIfAvailable();
+        return available == null ? null : new RetrievalEvidenceTools(available, chunkStore);
     }
 
     @Bean
