@@ -413,6 +413,14 @@ class CliInvocationTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("one of --knowledge-base or --material is required", result.stderr)
 
+    def test_windows_launchers_exist_and_reference_cli(self):
+        for name in ("agent.cmd", "agent.ps1"):
+            launcher = ROOT / name
+            self.assertTrue(launcher.exists(), f"{name} missing")
+            text = launcher.read_text(encoding="utf-8")
+            self.assertIn("scripts\\agent_cli.py", text)
+            self.assertIn("SUILEARN_AGENT_PROG", text)
+
     def test_root_launcher_shows_agent_usage(self):
         launcher = ROOT / "agent"
         if not launcher.exists():
