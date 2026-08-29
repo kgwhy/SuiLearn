@@ -40,18 +40,13 @@ public final class RetrievalEvidenceTools implements EvidenceSearchPort, Evidenc
 
     @Override
     public Optional<EvidenceRecord> read(ReadRequest request) {
-        Optional<MaterialChunk> byId;
         try {
-            byId = readById(request.pointer(), request.scope());
-        } catch (RuntimeException ignored) {
-            byId = Optional.empty();
-        }
-        if (byId.isPresent()) {
-            return toRecord(request.pointer(), byId.get());
-        }
-        var retrievalRequest = new RetrievalRequest(request.query(), request.scope().knowledgeBaseId(),
-            request.scope().materialId());
-        try {
+            Optional<MaterialChunk> byId = readById(request.pointer(), request.scope());
+            if (byId.isPresent()) {
+                return toRecord(request.pointer(), byId.get());
+            }
+            var retrievalRequest = new RetrievalRequest(request.query(), request.scope().knowledgeBaseId(),
+                request.scope().materialId());
             return retrievalPort.retrieveEvidence(retrievalRequest, 20).stream()
                 .filter(chunk -> matches(chunk, request.pointer(), request.scope()))
                 .flatMap(chunk -> toRecord(request.pointer(), chunk).stream())

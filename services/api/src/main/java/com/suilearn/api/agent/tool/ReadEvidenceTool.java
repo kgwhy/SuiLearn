@@ -60,8 +60,9 @@ public final class ReadEvidenceTool implements Tool {
                 .orElseGet(() -> new ToolResult("No readable evidence found for this source.", List.of(),
                     Map.of("code", "EVIDENCE_NOT_FOUND"), false, null));
         } catch (RuntimeException exception) {
-            return new ToolResult("Evidence reading failed.", List.of(),
-                Map.of("code", "EVIDENCE_READ_FAILED"), false, null);
+            return new ToolResult("Evidence reading failed: " + exception.getMessage(), List.of(),
+                Map.of("code", "EVIDENCE_READ_FAILED", "message", exception.getMessage() == null ? "" : exception.getMessage()),
+                false, null);
         }
     }
 }
