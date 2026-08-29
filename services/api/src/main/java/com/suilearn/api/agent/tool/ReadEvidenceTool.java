@@ -47,12 +47,12 @@ public final class ReadEvidenceTool implements Tool {
                     var metadata = new LinkedHashMap<String, Object>();
                     metadata.put("stableId", record.stableId());
                     metadata.put("sourceRef", record.sourceRef());
-                    metadata.put("knowledgeBaseId", record.knowledgeBaseId());
-                    metadata.put("materialId", record.materialId());
-                    metadata.put("revisionId", record.revisionId());
-                    metadata.put("pageNumber", record.pageNumber());
-                    metadata.put("blockId", record.blockId());
-                    metadata.put("excerpt", record.excerpt());
+                    metadata.put("knowledgeBaseId", valueOrEmpty(record.knowledgeBaseId()));
+                    metadata.put("materialId", valueOrEmpty(record.materialId()));
+                    metadata.put("revisionId", valueOrEmpty(record.revisionId()));
+                    metadata.put("pageNumber", record.pageNumber() == null ? "" : record.pageNumber());
+                    metadata.put("blockId", valueOrEmpty(record.blockId()));
+                    metadata.put("excerpt", valueOrEmpty(record.excerpt()));
                     metadata.put("content", record.content());
                     return new ToolResult(record.content(), List.of(new ToolCitation(record.stableId(), record.sourceRef())),
                         metadata, true, null);
@@ -64,5 +64,9 @@ public final class ReadEvidenceTool implements Tool {
                 Map.of("code", "EVIDENCE_READ_FAILED", "message", exception.getMessage() == null ? "" : exception.getMessage()),
                 false, null);
         }
+    }
+
+    private static String valueOrEmpty(String value) {
+        return value == null ? "" : value;
     }
 }

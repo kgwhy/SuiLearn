@@ -48,6 +48,13 @@ class AgentDeclarativeToolsTest {
         var deletedResult = deletedRead.execute(context(), Map.of("stableId", "stable-1"));
         assertThat(deletedResult.success()).isFalse();
         assertThat(deletedResult.metadata()).containsEntry("code", "EVIDENCE_NOT_FOUND");
+
+        var nullableMetadataRead = new ReadEvidenceTool(request -> Optional.of(
+            new EvidenceRecord("stable-1", "ref-1", null, null, "content", false,
+                null, null, null, null)));
+        var nullableMetadataResult = nullableMetadataRead.execute(context(), Map.of("stableId", "stable-1"));
+        assertThat(nullableMetadataResult.success()).isTrue();
+        assertThat(nullableMetadataResult.content()).isEqualTo("content");
     }
 
     @Test
