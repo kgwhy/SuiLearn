@@ -40,16 +40,25 @@ public final class RetrievalEvidenceTools implements EvidenceSearchPort, Evidenc
 
     @Override
     public Optional<EvidenceRecord> read(ReadRequest request) {
-        Optional<MaterialChunk> byId = readById(request.pointer(), request.scope());
+        Optional<MaterialChunk> byId;
+        try {
+            byId = readById(request.pointer(), request.scope());
+        } catch (RuntimeException ignored) {
+            byId = Optional.empty();
+        }
         if (byId.isPresent()) {
-            return byId.map(chunk -> record(request.pointer(), chunk));
+            return toRecord(request.pointer(), byId.get());
         }
         var retrievalRequest = new RetrievalRequest(request.query(), request.scope().knowledgeBaseId(),
             request.scope().materialId());
-        return retrievalPort.retrieveEvidence(retrievalRequest, 20).stream()
-            .filter(chunk -> matches(chunk, request.pointer(), request.scope()))
-            .findFirst()
-            .map(chunk -> record(request.pointer(), chunk));
+        try {
+            return retrievalPort.retrieveEvidence(retrievalRequest, 20).stream()
+                .filter(chunk -> matches(chunk, request.pointer(), request.scope()))
+                .flatMap(chunk -> toRecord(request.pointer(), chunk).stream())
+                .findFirst();
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
     }
 
     private Optional<MaterialChunk> readById(EvidencePointer pointer, StudyScope scope) {
@@ -64,19 +73,25 @@ public final class RetrievalEvidenceTools implements EvidenceSearchPort, Evidenc
             .filter(chunk -> matches(chunk, pointer, scope));
     }
 
-    private static EvidenceRecord record(EvidencePointer pointer, MaterialChunk chunk) {
+    private static Optional<EvidenceRecord> toRecord(EvidencePointer pointer, MaterialChunk chunk) {
         SourceRef source = chunk.sourceRef();
-        return new EvidenceRecord(
+        String content = firstNonBlank(chunk.content(),
+            source != null ? source.excerpt() : null,
+            pointer.excerpt());
+        if (content == null || content.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(new EvidenceRecord(
             pointer.stableId(),
             pointer.sourceRef(),
             chunk.knowledgeBaseId(),
             chunk.materialId(),
-            chunk.content(),
+            content,
             source != null && source.deleted(),
             source != null ? source.revisionId() : pointer.revisionId(),
             source != null ? source.pageNumber() : pointer.pageNumber(),
             source != null ? source.blockId() : pointer.blockId(),
-            source != null ? source.excerpt() : pointer.excerpt());
+            source != null ? source.excerpt() : pointer.excerpt()));
     }
 
     private static String firstNonBlank(String... values) {

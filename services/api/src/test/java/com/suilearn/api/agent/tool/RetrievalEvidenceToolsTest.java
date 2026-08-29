@@ -20,6 +20,43 @@ import org.junit.jupiter.api.Test;
 
 class RetrievalEvidenceToolsTest {
     @Test
+    void readFallsBackToExcerptWhenChunkContentIsBlank() {
+        var sourceRef = new SourceRef(
+            SourceType.MATERIAL_CHUNK,
+            "chunk-blank",
+            "kb-1",
+            "Java",
+            "mat-1",
+            "chunk-blank",
+            false,
+            "fallback excerpt",
+            "rev-1",
+            1,
+            "chunk-blank"
+        );
+        var chunk = new MaterialChunk(
+            "chunk-blank",
+            "kb-1",
+            "mat-1",
+            null,
+            1,
+            sourceRef
+        );
+        var store = mock(MaterialChunkStore.class);
+        when(store.find("chunk-blank")).thenReturn(Optional.of(chunk));
+        var port = mock(RetrievalPort.class);
+        var tools = new RetrievalEvidenceTools(port, store);
+        var pointer = new EvidencePointer(
+            "chunk-blank", "chunk-blank", "kb-1", "mat-1", 0.9,
+            "rev-1", 1, "chunk-blank", "fallback excerpt"
+        );
+        var scope = new StudyScope("kb-1", "mat-1");
+        var result = tools.read(new EvidenceReadPort.ReadRequest("chunk-blank", pointer, scope));
+        assertThat(result).isPresent();
+        assertThat(result.get().content()).isEqualTo("fallback excerpt");
+    }
+
+    @Test
     void readUsesChunkStoreByIdWhenSearchFindsMaterialChunkPointer() {
         var sourceRef = new SourceRef(
             SourceType.MATERIAL_CHUNK,

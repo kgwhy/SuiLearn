@@ -34,6 +34,7 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     private final Retry retry;
     private final CircuitBreaker circuitBreaker;
     private final AiOperationalMetrics metrics;
+    private volatile int cachedDimensions;
 
     public OpenAiCompatibleEmbeddingProvider(SuiLearnAiProperties properties, ObjectMapper objectMapper) {
         this(properties, objectMapper, HttpClient.newBuilder()
@@ -100,6 +101,7 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
                 return candidate;
             });
             var embedding = parseEmbedding(response.body());
+            cachedDimensions = embedding.values().size();
             metrics.record("embedding", AiFailureKind.SUCCESS, System.nanoTime() - startedAt);
             return embedding;
         } catch (RuntimeException exception) {
@@ -156,7 +158,7 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
 
     @Override
     public int dimensions() {
-        return 0;
+        return cachedDimensions;
     }
 
     @Override
